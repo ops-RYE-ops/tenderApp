@@ -1,0 +1,78 @@
+{
+  "sites": [
+    {
+      "mpxn": "1200035438587",
+      "site_name": "Head Office",
+      "eac": 50000.0,
+      "kva": null,
+      "eac_source": "quote"
+    },
+    {
+      "mpxn": "1200035000000",
+      "site_name": "Warehouse 1",
+      "eac": 120000.0,
+      "kva": 100.0,
+      "eac_source": "quote"
+    }
+  ],
+  "quotes": [
+    {
+      "supplier": "Testco",
+      "term": "12 months",
+      "category": "fixed",
+      "lines": [
+        {
+          "mpxn": "1200035438587",
+          "supplyStartDate": "2026-08-01",
+          "unitRate": 24.5,
+          "dayRate": null,
+          "nightRate": null,
+          "standingCharge": 45.2,
+          "capacityCharge": null,
+          "networkCharge": 1.1,
+          "meterCharge": 0.5
+        },
+        {
+          "mpxn": "1200035000000",
+          "supplyStartDate": "2026-08-01",
+          "unitRate": null,
+          "dayRate": 26.1,
+          "nightRate": 18.3,
+          "standingCharge": 60.0,
+          "capacityCharge": null,
+          "networkCharge": 2.0,
+          "meterCharge": 0.5
+        }
+      ]
+    },
+    {
+      "supplier": "Testco",
+      "term": "24 months",
+      "category": "fixed",
+      "lines": [
+        {
+          "mpxn": "1200035438587",
+          "supplyStartDate": "2026-08-01",
+          "unitRate": 23.9,
+          "dayRate": null,
+          "nightRate": null,
+          "standingCharge": 45.2,
+          "capacityCharge": null,
+          "networkCharge": 1.1,
+          "meterCharge": 0.5
+        },
+        {
+          "mpxn": "1200035000000",
+          "supplyStartDate": "2026-08-01",
+          "unitRate": null,
+          "dayRate": 25.4,
+          "nightRate": 17.8,
+          "standingCharge": 60.0,
+          "capacityCharge": null,
+          "networkCharge": 2.0,
+          "meterCharge": 0.5
+        }
+      ]
+    }
+  ]
+}

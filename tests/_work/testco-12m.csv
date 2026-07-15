@@ -1,0 +1,3 @@
+siteName,mpxn,updatedEac,supplyStartDate,unitRate,dayRate,nightRate,standingCharge,capacityCharge,networkCharge,meterCharge,kva
+Head Office,1200035438587,50000,2026-08-01,24.5,,,45.2,,1.1,0.5,
+Warehouse 1,1200035000000,120000,2026-08-01,,26.1,18.3,60,,2,0.5,100

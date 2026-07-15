@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rye.energy/schemas/tender.schema.json",
+  "title": "RYE canonical tender",
+  "description": "The single canonical object every pipeline stage reads and writes. Superset of the processed-quote CSV line schema + today's tender.json + the tender spine (id/version/status/expiry/URL). Stored versioned as the `payload` JSONB column in the Retool `tenders` table.\n\nNaming convention (deliberate, do not 'fix'): tender/meta fields are snake_case (client_name, day_split, expires_at) to match the spec and Postgres columns; fields INSIDE a line keep the exact fixed CSV field names (camelCase: unitRate, standingCharge, ...) so lines round-trip through process_quote.py and build_dashboard.py with zero renaming.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "client_name",
+    "tender_label",
+    "utility",
+    "status",
+    "version",
+    "created_at",
+    "created_by",
+    "sites",
+    "quotes"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable tender identity. Constant across versions (the same tender re-saved keeps this id; `version` increments)."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonic version number. Every save writes a new Retool DB row; never overwrite. The register shows the latest per id."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "published", "expired"],
+      "description": "draft = editable, not yet public; published = live dashboard URL exists; expired = past expires_at, page shows the 'expired — contact RYE' state."
+    },
+    "client_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Client display name, e.g. 'Amorino UK'."
+    },
+    "tender_label": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human tender label, e.g. 'Electricity tender — July 2026'."
+    },
+    "utility": {
+      "type": "string",
+      "default": "electricity",
+      "description": "Display label only. The engine is fuel-agnostic — rate handling is driven by what's in the lines (single vs day/night, kVA present or not)."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp this version was written."
+    },
+    "created_by": {
+      "type": "string",
+      "format": "email",
+      "description": "Team member who saved this version (their Retool/SSO email)."
+    },
+    "expires_at": {
+      "type": ["string", "null"],
+      "format": "date",
+      "description": "Link lifecycle date. Defaults to the supplier quote's validity date so the URL guards against clients acting on stale pricing. After this date the page shows the expired state. Null = no expiry set."
+    },
+    "day_split": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0.7,
+      "description": "Day fraction for two-rate meters (night = 1 - day_split). Always disclosed as a dashboard footnote. Set from a known profile / half-hourly data where available."
+    },
+    "url_uuid": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "The unguessable secret in the public URL (rye.energy/<slug>/<url_uuid>). Regenerating this instantly revokes a leaked link. Distinct from `id` so the link can be rotated without changing tender identity."
+    },
+    "slug": {
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "URL-safe client segment, e.g. 'amorino-uk'."
+    },
+    "dashboard_url": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Full published URL, set by /render once the dashboard is live. Null until published."
+    },
+    "recommended": {
+      "$ref": "#/$defs/recommended"
+    },
+    "rye_fee": {
+      "$ref": "#/$defs/rye_fee"
+    },
+    "charge_basis": {
+      "$ref": "#/$defs/charge_basis",
+      "description": "Tender-wide default charge bases. Overridden per quote by that quote's own charge_basis."
+    },
+    "sites": {
+      "type": "array",
+      "description": "The site universe for this tender — the authoritative meter facts (consumption, capacity, our name), keyed by mpxn. EAC and kVA live HERE, once, not on every quote line: they are properties of the meter, not of a supplier's offer, and the comparison must use one consumption basis across all offers. Sourced from RYE's DB / company Postgres where available; from the quote as a fallback.",
+      "items": { "$ref": "#/$defs/site" }
+    },
+    "incumbent": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/incumbent" }
+      ],
+      "description": "The client's current contract, used as the savings baseline. Null when unknown."
+    },
+    "quotes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per supplier per term. supplier + term is the client-facing offer label.",
+      "items": { "$ref": "#/$defs/quote" }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tender-specific footnotes shown to the client (e.g. 'Drax offer valid until 10 July')."
+    }
+  },
+  "$defs": {
+    "mpxn": {
+      "type": "string",
+      "minLength": 1,
+      "description": "MPAN (electricity) or MPRN (gas) — the meter point. The universal join key between RYE's data, the site reference DB, and every supplier line. Always a string (an identifier, never arithmetic); no trailing '.0'."
+    },
+    "value": {
+      "type": ["number", "null"],
+      "description": "A rate or charge, already parsed to a number by the shared deterministic parser (currency/unit decoration stripped, numeric value preserved exactly). null = not quoted / not applicable. Units are NOT converted here — the annualisation basis is declared separately in charge_basis."
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mpxn", "site_name"],
+      "properties": {
+        "mpxn": { "$ref": "#/$defs/mpxn" },
+        "site_name": {
+          "type": "string",
+          "description": "RYE's own site label (from our DB via the mpxn join). Falls back to the supplier's address only when the mpxn isn't in our DB."
+        },
+        "eac": {
+          "type": ["number", "null"],
+          "description": "Estimated annual consumption (EAC), or AQ for gas, in kWh. Authoritative consumption basis for the whole comparison."
+        },
+        "kva": {
+          "type": ["number", "null"],
+          "description": "Agreed kVA capacity (HH/capacity sites). null where not applicable."
+        },
+        "eac_source": {
+          "type": "string",
+          "enum": ["db", "quote", "manual"],
+          "description": "Provenance of the EAC/kVA figures for auditability. 'db' = RYE reference data (preferred); 'quote' = taken from the supplier file; 'manual' = operator-entered."
+        }
+      }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mpxn"],
+      "description": "One supplier's offered rates for one meter point. Rate mode is exclusive: a single-rate line has unitRate set with dayRate/nightRate null; a two-rate line has dayRate/nightRate set with unitRate null. This exclusivity is enforced by the deterministic extractor, never by hand.",
+      "properties": {
+        "mpxn": { "$ref": "#/$defs/mpxn" },
+        "supplyStartDate": {
+          "type": ["string", "null"],
+          "description": "Contract start date for this line, ISO 'YYYY-MM-DD' where present."
+        },
+        "unitRate": { "$ref": "#/$defs/value", "description": "Single (standard) rate, p/kWh. Null on two-rate lines." },
+        "dayRate": { "$ref": "#/$defs/value", "description": "Day rate, p/kWh. Null on single-rate lines." },
+        "nightRate": { "$ref": "#/$defs/value", "description": "Night rate, p/kWh. Null on single-rate lines." },
+        "standingCharge": { "$ref": "#/$defs/value", "description": "Standing charge (default basis p/day)." },
+        "capacityCharge": { "$ref": "#/$defs/value", "description": "Capacity charge (default basis p/kVA/day)." },
+        "networkCharge": { "$ref": "#/$defs/value", "description": "Network / DUoS charge (default basis p/day)." },
+        "meterCharge": { "$ref": "#/$defs/value", "description": "Meter charge (default basis p/day)." }
+      }
+    },
+    "charge_basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How each charge is annualised. Only non-default entries need be present. A wrong basis silently mis-ranks offers — the highest-risk failure mode — so every non-default basis is auto-footnoted on the dashboard.",
+      "properties": {
+        "unitRate": { "$ref": "#/$defs/basisValue" },
+        "dayRate": { "$ref": "#/$defs/basisValue" },
+        "nightRate": { "$ref": "#/$defs/basisValue" },
+        "standingCharge": { "$ref": "#/$defs/basisValue" },
+        "capacityCharge": { "$ref": "#/$defs/basisValue" },
+        "networkCharge": { "$ref": "#/$defs/basisValue" },
+        "meterCharge": { "$ref": "#/$defs/basisValue" }
+      }
+    },
+    "basisValue": {
+      "type": "string",
+      "enum": ["p/day", "p/kwh", "p/kva/day", "p/mpan/day", "gbp/year", "gbp/month", "gbp/day"],
+      "description": "Must match build_dashboard.py VALID_BASIS exactly."
+    },
+    "quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supplier", "lines"],
+      "properties": {
+        "supplier": { "type": "string", "minLength": 1, "description": "Supplier name, client-facing (e.g. 'EDF')." },
+        "term": { "type": "string", "description": "Contract term, client-facing (e.g. '12 months', 'Fixed to 2028-03-31')." },
+        "category": {
+          "type": "string",
+          "description": "Drives the offer-type filter. 'fixed' or 'coterminous', or any custom label. Inferred from the term text when omitted."
+        },
+        "charge_basis": { "$ref": "#/$defs/charge_basis" },
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/line" }
+        }
+      }
+    },
+    "incumbent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supplier", "lines"],
+      "properties": {
+        "supplier": { "type": "string", "minLength": 1 },
+        "term": { "type": "string" },
+        "charge_basis": { "$ref": "#/$defs/charge_basis" },
+        "lines": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/line" }
+        }
+      }
+    },
+    "recommended": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supplier"],
+      "description": "The offer the dashboard leads with — the takeaway. Defaults to the cheapest full-coverage offer; set explicitly when the call isn't purely on price.",
+      "properties": {
+        "supplier": { "type": "string" },
+        "term": { "type": "string" }
+      }
+    },
+    "rye_fee": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "RYE's flat SaaS fee (no commission). Lets the client see the net saving. List price £90/site/month unless overridden.",
+      "properties": {
+        "list_price_site_month": { "type": "number", "default": 90 },
+        "discount_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "per_site_month": { "type": "number", "description": "Overrides the discount calc if given." },
+        "annual": { "type": "number", "description": "Overrides per_site_month if given." },
+        "label": { "type": "string", "description": "Client-facing fee label." }
+      }
+    },
+    "extractResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sites", "quotes"],
+      "description": "Output of ONE /extract run (one supplier file). Not a full tender — /assemble concatenates the quotes from several extract runs, merges the sites (deduped on mpxn), attaches the incumbent + meta, and stamps id/version/status to form a valid tender document. Kept as a distinct shape so the extractor stays single-file / single-supplier and headless-testable.",
+      "properties": {
+        "sites": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/site" }
+        },
+        "quotes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/quote" }
+        }
+      }
+    }
+  }
+}
