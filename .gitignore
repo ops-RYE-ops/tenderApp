@@ -5,3 +5,4 @@ tests/_work/
 .env
 *.env
 .DS_Store
+.venv/
