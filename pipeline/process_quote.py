@@ -72,11 +72,7 @@ import os
 import re
 import sys
 
-TARGET_HEADERS = [
-    "siteName", "mpxn", "updatedEac", "supplyStartDate",
-    "unitRate", "dayRate", "nightRate", "standingCharge",
-    "capacityCharge", "networkCharge", "meterCharge", "kva",
-]
+from rye_quote_core import TARGET_FIELDS as TARGET_HEADERS, parse_num
 
 # Fields that live on a canonical quote LINE (rates/charges), in schema order.
 LINE_RATE_FIELDS = [
@@ -112,27 +108,6 @@ def clean_val(v):
     if isinstance(v, float) and v.is_integer():
         return str(int(v))
     return str(v).strip()
-
-
-def parse_num(raw):
-    """Parse a value into a float, tolerating currency/unit decoration.
-
-    IDENTICAL to build_dashboard.py's parse_num — this is the ONE canonical
-    numeric parser for the whole pipeline. If it ever changes, change it in both
-    (or, better, factor it into a shared module) so extraction and the cost
-    engine can never diverge on what a cell means. Returns None for blanks / n/a.
-    """
-    if raw is None:
-        return None
-    s = str(raw).strip()
-    if s == "" or s.lower() in {"n/a", "na", "-", "—", "tbc", "none", "null"}:
-        return None
-    s = re.sub(r"[£,\s]", "", s)
-    s = re.sub(r"(?i)(p/kwh|p/day|pence|kwh|kva|p)$", "", s)
-    try:
-        return float(s)
-    except ValueError:
-        return None
 
 
 def build_name_lookup(db_csv, mpxn_col, name_col):

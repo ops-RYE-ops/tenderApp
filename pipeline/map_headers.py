@@ -31,11 +31,7 @@ import os
 import re
 import sys
 
-TARGET_FIELDS = [
-    "siteName", "mpxn", "updatedEac", "supplyStartDate", "unitRate", "dayRate",
-    "nightRate", "standingCharge", "capacityCharge", "networkCharge",
-    "meterCharge", "kva",
-]
+from rye_quote_core import TARGET_FIELDS
 
 # Keywords that hint a row is the real header row (not a metadata/branding row).
 HEADER_HINTS = [

@@ -10,8 +10,12 @@ schema/
   retool_tables.sql               Retool DB DDL (tenders + supplier_mappings)
   examples/                       a valid extractResult and a valid full tender
 pipeline/
+  rye_quote_core.py               shared parse_num + TARGET_FIELDS (one definition)
   process_quote.py                deterministic extractor -> CSVs + canonical JSON
   map_headers.py                  the single LLM call (header mapping only)
+  build_dashboard.py              deterministic cost engine + HTML builder
+assets/
+  dashboard_template.html         RYE-branded dashboard template
 tests/
   make_and_verify.py              headless end-to-end check (no network)
 PHASE0-NOTES.md                   schema decisions + what's next

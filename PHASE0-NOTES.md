@@ -44,9 +44,11 @@ emission around it and an optional `--auto-map` hook. The CSVs it always produce
 are still produced (so today's `build_dashboard.py` keeps working unchanged). This
 respects the "deterministic scripts are the single source of truth" principle.
 
-One deliberate TODO: `parse_num` is currently duplicated in `process_quote.py` and
-`build_dashboard.py`. Before Phase 1 it should be factored into a shared module so
-the two can never drift. Flagged in-code.
+Resolved: `parse_num` and `TARGET_FIELDS` now live once in `pipeline/rye_quote_core.py`.
+`process_quote.py`, `map_headers.py` and `build_dashboard.py` all import them, and the
+test asserts they share the *same object* — so extraction and the cost engine cannot
+drift on what a cell means. `build_dashboard.py` and its template were brought into the
+repo at the same time (the backend imports both scripts per the spec).
 
 ## Immediate next step (drops out for free)
 

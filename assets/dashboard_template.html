@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tender comparison — RYE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --rye-display: 'Slussen Display', 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --rye-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --rye-mono: 'Geist Mono', ui-monospace, monospace;
+  --rye-green: #0cce6b;
+  --rye-amber: #f5a623;
+  --rye-red: #ee0000;
+  --rye-blue: #0070f3;
+  --rye-purple: #7928ca;
+  --rye-green-fill: rgba(12, 206, 107, 0.85);
+  --rye-green-soft: rgba(12, 206, 107, 0.35);
+  --rye-green-faint: rgba(12, 206, 107, 0.12);
+  --rye-amber-fill: rgba(245, 166, 35, 0.85);
+  --rye-amber-soft: rgba(245, 166, 35, 0.35);
+  --rye-amber-faint: rgba(245, 166, 35, 0.10);
+  --rye-orange: #F96A2E; /* RYE brand orange */
+  --bg: #000000; --surface: #0a0a0a; --surface-raised: #141414;
+  --border: #1f1f1f; --border-strong: #2e2e2e;
+  --t1: #ededed; --t2: #a1a1a1; --t3: #7a7a7a; --t4: #4a4a4a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { color-scheme: dark; }
+body {
+  background: var(--bg);
+  background-image: radial-gradient(circle, #111 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--t1);
+  font-family: var(--rye-sans);
+  font-size: 13px; letter-spacing: -0.005em; line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #000; }
+::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 5px; border: 2px solid #000; }
+::-webkit-scrollbar-thumb:hover { background: #2a2a2a; }
+::selection { background: rgba(255,255,255,.18); }
+
+/* ---- Nav ---- */
+nav {
+  height: 52px; border-bottom: 1px solid var(--border); background: #000;
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: 10px; padding: 0 20px;
+}
+.logo { width: 22px; height: 22px; border-radius: 5px; background: var(--rye-orange); color: #fff;
+  font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.brand { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; }
+.nav-right { margin-left: auto; font-family: var(--rye-mono); font-size: 11px; color: var(--t3); }
+
+/* ---- Layout ---- */
+main { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
+section { margin-top: 28px; }
+.section-label { font-family: var(--rye-mono); font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--t3); margin-bottom: 12px; }
+h1 { font-family: var(--rye-display); font-size: 44px; font-weight: 500;
+  letter-spacing: -0.03em; line-height: 1.05; text-wrap: balance; }
+.subtitle { color: var(--t2); font-size: 13px; margin-top: 8px; }
+.subtitle .mono { font-family: var(--rye-mono); font-size: 11px; color: var(--t3); }
+
+/* ---- Cards / KPI ---- */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 18px 20px; transition: border-color 120ms; }
+.card:hover { border-color: var(--border-strong); }
+.card.accent-green { border-left: 2px solid var(--rye-green); }
+.card.accent-amber { border-left: 2px solid var(--rye-amber); }
+.card.accent-blue { border-left: 2px solid var(--rye-blue); }
+.kpi-label { font-family: var(--rye-mono); font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--t3); }
+.kpi-value { font-size: 30px; font-weight: 600; letter-spacing: -0.035em; line-height: 1;
+  margin-top: 10px; font-variant-numeric: tabular-nums; }
+.kpi-sub { font-family: var(--rye-mono); font-size: 11px; color: var(--t3); margin-top: 8px; }
+.pos { color: var(--rye-green); } .neg { color: var(--rye-red); } .warn { color: var(--rye-amber); }
+
+/* ---- Chips ---- */
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px;
+  border-radius: 4px; font-family: var(--rye-mono); font-size: 11px; font-weight: 500; }
+.chip.neutral { background: var(--surface-raised); color: var(--t2); border: 1px solid var(--border); }
+.chip.success { color: var(--rye-green); border: 1px solid var(--rye-green-soft); }
+.chip.warning { color: var(--rye-amber); border: 1px solid var(--rye-amber-soft); }
+.chip.danger  { color: var(--rye-red); border: 1px solid rgba(238,0,0,.35); }
+.chip.info    { color: var(--rye-blue); border: 1px solid rgba(0,112,243,.35); }
+
+/* ---- Bar chart ---- */
+.bars { display: flex; flex-direction: column; gap: 12px; }
+.bar-row { display: grid; grid-template-columns: 220px 1fr 110px; gap: 12px; align-items: center; }
+.bar-name { font-size: 13px; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-name .term { font-family: var(--rye-mono); font-size: 11px; color: var(--t3); margin-left: 6px; }
+.bar-track { height: 22px; position: relative; }
+.bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 1px;
+  transform-origin: left; animation: growBarH 600ms ease-out both; }
+.bar-val { font-family: var(--rye-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: -0.02em; text-align: right; font-variant-numeric: tabular-nums; }
+@keyframes growBarH { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes growBar  { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ---- Tables ---- */
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { font-family: var(--rye-mono); font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--t3); text-align: right; padding: 10px 14px;
+  border-bottom: 1px solid var(--border); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+td { padding: 9px 14px; font-family: var(--rye-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: -0.02em; color: var(--t2); text-align: right;
+  font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border); white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td.name { font-family: var(--rye-sans); font-size: 13px; color: var(--t1); }
+td .sub { display: block; font-size: 10px; color: var(--t4); font-weight: 400; }
+tr:hover td { background: rgba(255,255,255,0.015); }
+td.best { color: var(--rye-green); }
+td.total { color: var(--t1); }
+tr.incumbent-row td { color: var(--t3); }
+tr.incumbent-row td.name { color: var(--t2); }
+
+/* ---- Details / rate books ---- */
+details { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; }
+details[open] { border-color: var(--border-strong); }
+summary { cursor: pointer; padding: 14px 20px; font-size: 14px; font-weight: 500;
+  letter-spacing: -0.011em; display: flex; align-items: center; gap: 10px; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary .caret { color: var(--t3); font-family: var(--rye-mono); font-size: 10px; transition: transform 120ms; }
+details[open] summary .caret { transform: rotate(90deg); }
+details .table-wrap { border: none; border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; }
+
+/* ---- Fee control ---- */
+.fee-controls { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+.fee-controls input[type=range] { -webkit-appearance: none; appearance: none; width: 100%;
+  height: 4px; background: var(--surface-raised); border-radius: 2px; outline: none; cursor: pointer; }
+.fee-controls input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
+  height: 14px; border-radius: 50%; background: var(--rye-green); border: 2px solid #000; cursor: pointer; }
+.fee-controls input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%;
+  background: var(--rye-green); border: 2px solid #000; cursor: pointer; }
+.fee-controls input[type=number] { width: 80px; height: 28px; padding: 0 8px; background: #000;
+  border: 1px solid var(--border); border-radius: 6px; color: var(--t1);
+  font-family: var(--rye-mono); font-size: 12px; color-scheme: dark; }
+.fee-controls input[type=number]:focus { border-color: var(--border-strong); outline: none; }
+@media print { .fee-controls { display: none; } }
+
+/* ---- Notices / footer ---- */
+.notice { border: 1px solid var(--rye-amber-soft); background: var(--rye-amber-faint);
+  border-radius: 8px; padding: 12px 16px; font-size: 12px; color: var(--t2); margin-bottom: 14px; }
+.notice .chip { margin-right: 8px; }
+footer { margin-top: 40px; border-top: 1px solid var(--border); padding-top: 20px; }
+.assumptions li { font-family: var(--rye-mono); font-size: 11px; color: var(--t3);
+  line-height: 1.6; list-style: none; padding-left: 14px; position: relative; }
+.assumptions li::before { content: "—"; position: absolute; left: 0; color: var(--t4); }
+.prepared { margin-top: 20px; font-family: var(--rye-mono); font-size: 11px; color: var(--t4); }
+
+@media (max-width: 720px) {
+  h1 { font-size: 32px; }
+  .bar-row { grid-template-columns: 130px 1fr 90px; }
+  .rec-grid { grid-template-columns: 1fr !important; }
+}
+@media print {
+  body { background-image: none; }
+  nav { position: static; }
+}
+
+/* Offer filter (design-system tab bar) */
+.offer-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.offer-filter { display: inline-flex; height: 28px; padding: 2px; background: #000; border: 1px solid var(--border); border-radius: 6px; gap: 2px; flex: 0 0 auto; }
+.offer-filter button { font-family: var(--rye-mono); font-size: 11px; font-weight: 500; letter-spacing: -0.005em; color: var(--t3); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0 10px; cursor: pointer; transition: all 80ms; }
+.offer-filter button:hover { color: var(--t1); }
+.offer-filter button.on { background: var(--surface-raised); border: 1px solid var(--border); color: var(--t1); }
+@media print { .offer-filter { display: none !important; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">R</div>
+  <div class="brand">RYE</div>
+  <div class="nav-right" id="nav-meta"></div>
+</nav>
+
+<main id="app"></main>
+
+<script>
+const TENDER = __TENDER_DATA__;
+
+const gbp = v => "£" + Math.round(v).toLocaleString("en-GB");
+const gbpSigned = v => (v > 0 ? "+" : v < 0 ? "−" : "") + "£" + Math.round(Math.abs(v)).toLocaleString("en-GB");
+const num = v => v == null ? "—" : Number(v).toLocaleString("en-GB", { maximumFractionDigits: 3 });
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const allOffers = (TENDER.incumbent ? [TENDER.incumbent] : []).concat(TENDER.offers);
+const rec = TENDER.offers.find(o => o.id === (TENDER.recommendedId || TENDER.bestId)) || TENDER.offers[0];
+const fee = TENDER.fee;
+const inc = TENDER.incumbent;
+const savings = inc ? inc.total - rec.total : null;
+const totalEac = TENDER.sites.reduce((a, s) => a + (s.eac || 0), 0);
+const comps = TENDER.components;
+
+document.title = `${TENDER.client} — ${TENDER.label} — RYE`;
+document.getElementById("nav-meta").textContent =
+  `${TENDER.client} · prepared ${TENDER.generated}`;
+
+let html = "";
+
+/* ---- Hero ---- */
+html += `<header>
+  <div class="section-label">${esc(TENDER.utility || "energy")} tender · ${TENDER.offers.length} offers · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
+  <h1>${esc(TENDER.label)}</h1>
+  <div class="subtitle">Prepared for ${esc(TENDER.client)} by RYE.
+    <span class="mono">Standardised annual costs — like-for-like across all offers.</span></div>
+</header>`;
+
+/* ---- Global warnings ---- */
+if (TENDER.globalWarnings.length) {
+  html += `<section>` + TENDER.globalWarnings.map(w =>
+    `<div class="notice"><span class="chip warning">note</span>${esc(w)}</div>`).join("") + `</section>`;
+}
+
+/* ---- KPI row ---- */
+html += `<section><div class="kpi-row">
+  <div class="card accent-blue">
+    <div class="kpi-label">Portfolio</div>
+    <div class="kpi-value">${TENDER.sites.length}</div>
+    <div class="kpi-sub">site${TENDER.sites.length === 1 ? "" : "s"} · ${num(totalEac)} kWh/yr</div>
+  </div>
+  <div class="card accent-green">
+    <div class="kpi-label">Recommended offer</div>
+    <div class="kpi-value">${gbp(rec.total)}</div>
+    <div class="kpi-sub">${esc(rec.supplier)} · ${esc(rec.term)}</div>
+  </div>`;
+if (inc) {
+  html += `<div class="card accent-amber">
+    <div class="kpi-label">Current contract</div>
+    <div class="kpi-value">${gbp(inc.total)}</div>
+    <div class="kpi-sub">${esc(inc.supplier)}</div>
+  </div>
+  <div class="card ${savings >= 0 ? "accent-green" : "accent-amber"}">
+    <div class="kpi-label">Est. annual ${savings >= 0 ? "saving" : "increase"}</div>
+    <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}">${gbp(Math.abs(savings))}</div>
+    <div class="kpi-sub">${fee && fee.netSaving != null
+      ? `<span id="kpi-net">${gbp(fee.netSaving)}</span> net after ${esc(fee.label)}`
+      : `${(Math.abs(savings) / inc.total * 100).toFixed(1)}% vs current contract`}</div>
+  </div>`;
+}
+html += `</div></section>`;
+
+/* ---- Recommendation vs incumbent (the takeaway) ---- */
+if (inc) {
+  const pk = (v, cls) => `<td class="${cls || ""}">${v == null ? "—" : Number(v).toFixed(2)}</td>`;
+  const perSite = TENDER.sites.length || 1;
+  html += `<section>
+    <div class="section-label">Our recommendation — ${esc(rec.supplier)} · ${esc(rec.term)}</div>
+    <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:14px" class="rec-grid">
+      <div class="card accent-green">
+        <span class="chip success">recommended</span>
+        <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-top:12px">${esc(rec.supplier)}</div>
+        <div class="kpi-sub">${esc(rec.term)} fixed · covers all ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
+        <div class="kpi-label" style="margin-top:18px">Forecasted annual ${savings >= 0 ? "saving" : "increase"}</div>
+        <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}" style="font-size:40px;margin-top:8px">${gbp(Math.abs(savings))}</div>
+        <div class="kpi-sub">${(Math.abs(savings) / inc.total * 100).toFixed(1)}% vs ${esc(inc.supplier)}</div>
+        ${fee && fee.netSaving != null ? `
+        <div class="kpi-label" style="margin-top:14px">Net saving after ${esc(fee.label)}</div>
+        <div class="kpi-value ${fee.netSaving >= 0 ? "pos" : "warn"}" id="net-saving" style="font-size:26px;margin-top:6px">${gbp(fee.netSaving)}</div>
+        <div class="kpi-sub"><span id="net-per-site">${gbp(fee.netSavingPerSite)}</span> per site · fee <span id="fee-annual">${gbp(fee.annual)}</span>/yr · no commission</div>
+        <div class="fee-controls">
+          <div class="kpi-label" style="margin-bottom:10px">RYE fee</div>
+          <input type="range" id="fee-slider" min="0" max="100" step="5" value="${fee.discountPct}" aria-label="RYE fee discount">
+          <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+            <input type="number" id="fee-input" min="0" step="0.5" value="${fee.perSiteMonth}" aria-label="Fee per site per month">
+            <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/site/month · <span id="fee-disc"></span></span>
+          </div>
+        </div>` : ""}
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Standardised comparison</th>
+          <th>Current</th>
+          <th>${esc(rec.supplier)} · ${esc(rec.term)}</th></tr></thead>
+        <tbody>
+          <tr><td class="name">Mean unit rate (p/kWh)</td>${pk(inc.perKwh.unit)}${pk(rec.perKwh.unit, rec.perKwh.unit <= inc.perKwh.unit ? "best" : "")}</tr>
+          <tr><td class="name">Mean non-commodity costs (p/kWh)</td>${pk(inc.perKwh.nonCommodity)}${pk(rec.perKwh.nonCommodity, rec.perKwh.nonCommodity <= inc.perKwh.nonCommodity ? "best" : "")}</tr>
+          <tr><td class="name">Mean effective rate (p/kWh)</td>${pk(inc.perKwh.effective, "neg")}${pk(rec.perKwh.effective, rec.perKwh.effective <= inc.perKwh.effective ? "best" : "warn")}</tr>
+          <tr><td class="name">Forecasted annual spend</td><td>${gbp(inc.total)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total)}</td></tr>
+          <tr><td class="name">Annual spend per site</td><td>${gbp(inc.total / perSite)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total / perSite)}</td></tr>
+          <tr><td class="name">Forecasted annual saving</td><td></td><td class="${savings >= 0 ? "best" : "warn"}">${gbpSigned(rec.total - inc.total)}</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>`;
+}
+
+/* ---- Standalone RYE fee (shown when there is no incumbent baseline) ---- */
+if (fee && !inc) {
+  const sites = TENDER.sites.length || 1;
+  html += `<section>
+    <div class="section-label">RYE fee</div>
+    <div class="card accent-green" style="max-width:440px">
+      <div class="kpi-label">${esc(fee.label)}</div>
+      <div class="kpi-value" id="fee-annual" style="font-size:36px;margin-top:8px">${gbp(fee.annual)}</div>
+      <div class="kpi-sub"><span id="fee-per-site">${gbp(fee.perSiteMonth)}</span>/site/month × ${sites} site${sites === 1 ? "" : "s"} × 12 months · flat fee, no commission</div>
+      <div class="fee-controls">
+        <div class="kpi-label" style="margin-bottom:10px">Adjust fee</div>
+        <input type="range" id="fee-slider" min="0" max="100" step="5" value="${fee.discountPct}" aria-label="RYE fee discount">
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+          <input type="number" id="fee-input" min="0" step="0.5" value="${fee.perSiteMonth}" aria-label="Fee per site per month">
+          <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/site/month · <span id="fee-disc"></span></span>
+        </div>
+      </div>
+    </div>
+  </section>`;
+}
+
+/* ---- Cost comparison bars ---- */
+const maxTotal = Math.max(...allOffers.map(o => o.total));
+const CAT_LABELS = { coterminous: "Coterminous", fixed: "Fixed length" };
+const catLabel = c => CAT_LABELS[c] || (c.charAt(0).toUpperCase() + c.slice(1));
+const offerCats = [...new Set(allOffers.filter(o => !o.isIncumbent && o.category).map(o => o.category))];
+const showOfferFilter = offerCats.length >= 2;
+html += `<section>
+  <div class="offer-filter-row">
+    <div class="section-label">All offers tendered — estimated annual cost</div>
+    ${showOfferFilter ? `<div class="offer-filter" id="offer-filter"><button data-f="all" class="on">All</button>${offerCats.map(c => `<button data-f="${esc(c)}">${esc(catLabel(c))}</button>`).join("")}</div>` : ""}
+  </div>
+  <div class="card"><div class="bars">` +
+  allOffers.slice().sort((a, b) => a.total - b.total).map((o, i) => {
+    const fill = o.isIncumbent ? "var(--rye-amber-fill)"
+      : o.id === rec.id ? "var(--rye-green-fill)" : "rgba(237,237,237,0.7)";
+    const chip = o.isIncumbent ? `<span class="chip warning">current</span>`
+      : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
+    return `<div class="bar-row" data-cat="${esc(o.category || 'other')}">
+      <div class="bar-name">${esc(o.supplier)}<span class="term">${esc(o.term)}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(o.total / maxTotal * 100).toFixed(1)}%;background:${fill};animation-delay:${i * 60}ms"></div></div>
+      <div class="bar-val">${gbp(o.total)} ${chip}</div>
+    </div>`;
+  }).join("") + `</div></div></section>`;
+
+/* ---- Offer breakdown table ---- */
+html += `<section>
+  <div class="section-label">Cost breakdown by offer (£/year)</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Offer</th>` +
+    comps.map(c => `<th>${esc(c.label)}</th>`).join("") +
+    `<th>Eff. p/kWh</th><th>Total</th>${inc ? "<th>vs current</th>" : ""}<th></th></tr></thead><tbody>` +
+  allOffers.slice().sort((a, b) => (a.isIncumbent ? -1 : b.isIncumbent ? 1 : a.total - b.total)).map(o => {
+    const delta = (inc && !o.isIncumbent)
+      ? `<td class="${o.deltaVsIncumbent <= 0 ? "best" : ""}">${gbpSigned(o.deltaVsIncumbent)}</td>`
+      : (inc ? "<td>—</td>" : "");
+    const chip = o.isIncumbent ? `<span class="chip warning">current</span>`
+      : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
+    return `<tr class="${o.isIncumbent ? "incumbent-row" : ""}">
+      <td class="name">${esc(o.supplier)}<span class="sub">${esc(o.term)}</span></td>` +
+      comps.map(c => `<td>${o.totals[c.key] ? gbp(o.totals[c.key]) : "—"}</td>`).join("") +
+      `<td>${o.perKwh.effective == null ? "—" : o.perKwh.effective.toFixed(2)}</td>` +
+      `<td class="total ${o.id === rec.id ? "best" : ""}">${gbp(o.total)}</td>${delta}<td>${chip}</td></tr>`;
+  }).join("") + `</tbody></table></div></section>`;
+
+/* ---- Site-by-site matrix ---- */
+if (TENDER.sites.length > 1) {
+  const byId = {};
+  allOffers.forEach(o => { byId[o.id] = {}; o.sites.forEach(s => byId[o.id][s.mpxn] = s); });
+  html += `<section>
+    <div class="section-label">Site-by-site annual cost (£/year)</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Site</th><th>EAC kWh</th>` +
+      allOffers.map(o => `<th>${o.isIncumbent ? "Current" : esc(o.supplier) + "<br>" + esc(o.term)}</th>`).join("") +
+      `</tr></thead><tbody>` +
+    TENDER.sites.map(site => {
+      const cells = allOffers.map(o => byId[o.id][site.mpxn]);
+      const min = Math.min(...cells.map((c, i) => (c && !allOffers[i].isIncumbent) ? c.total : Infinity));
+      return `<tr><td class="name">${esc(site.name)}<span class="sub">${esc(site.mpxn)}</span></td>
+        <td>${num(site.eac)}</td>` +
+        cells.map((c, i) => c
+          ? `<td class="${!allOffers[i].isIncumbent && c.total === min ? "best" : ""}">${gbp(c.total)}</td>`
+          : `<td>—</td>`).join("") + `</tr>`;
+    }).join("") + `</tbody></table></div></section>`;
+}
+
+/* ---- Rate books per offer ---- */
+const rateCols = [
+  ["unitRate", "Unit p/kWh"], ["dayRate", "Day p/kWh"], ["nightRate", "Night p/kWh"],
+  ["standingCharge", "Standing"], ["capacityCharge", "Capacity"],
+  ["networkCharge", "Network"], ["meterCharge", "Meter"],
+];
+html += `<section><div class="section-label">Quoted rates — full detail</div>` +
+  allOffers.map(o => {
+    const used = rateCols.filter(([k]) => o.sites.some(s => s.rates[k] != null));
+    const warn = o.warnings.length
+      ? `<div class="notice" style="margin:12px 20px">` +
+        o.warnings.map(w => `<div><span class="chip warning">note</span>${esc(w)}</div>`).join("") + `</div>` : "";
+    return `<details>
+      <summary><span class="caret">▶</span>${esc(o.supplier)}
+        <span class="chip ${o.isIncumbent ? "warning" : "neutral"}">${esc(o.isIncumbent ? "current" : o.term)}</span>
+        <span style="margin-left:auto" class="chip neutral">${gbp(o.total)}/yr</span></summary>
+      ${warn}
+      <div class="table-wrap"><table>
+        <thead><tr><th>Site</th><th>EAC kWh</th>` +
+        used.map(([, lbl]) => `<th>${lbl}</th>`).join("") +
+        `<th>Start</th><th>£/year</th></tr></thead><tbody>` +
+      o.sites.map(s => `<tr>
+        <td class="name">${esc(s.name)}<span class="sub">${esc(s.mpxn)}</span></td>
+        <td>${num(s.eac)}</td>` +
+        used.map(([k]) => `<td>${num(s.rates[k])}</td>`).join("") +
+        `<td>${esc(s.startDate) || "—"}</td><td class="total">${gbp(s.total)}</td></tr>`).join("") +
+      `</tbody></table></div></details>`;
+  }).join("") + `</section>`;
+
+/* ---- Footer ---- */
+html += `<footer>
+  <div class="section-label">Basis of comparison</div>
+  <ul class="assumptions">${TENDER.assumptions.map(a => `<li>${esc(a)}</li>`).join("")}${fee ? `<li id="assump-fee"></li>` : ""}</ul>
+  <div class="prepared">Prepared by RYE · independent, flat-fee energy brokerage — we take no supplier commission ·
+    generated ${TENDER.generated}</div>
+</footer>`;
+
+document.getElementById("app").innerHTML = html;
+
+/* ---- Offer filter interactivity ---- */
+(function () {
+  const fw = document.getElementById("offer-filter");
+  if (!fw) return;
+  const rows = Array.from(document.querySelectorAll(".bars .bar-row"));
+  fw.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    const f = b.dataset.f;
+    rows.forEach(r => { r.style.display = (f === "all" || r.dataset.cat === f) ? "" : "none"; });
+    fw.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  });
+})();
+
+/* ---- Live fee control: net saving recalculates as the fee moves ---- */
+if (fee) {
+  const sites = TENDER.sites.length || 1;
+  const gross = savings;                 // null when there is no incumbent baseline
+  const list = fee.listPerSiteMonth || 90;
+  const slider = document.getElementById("fee-slider");
+  const input = document.getElementById("fee-input");
+  const el = id => document.getElementById(id);
+
+  function apply(psm) {
+    psm = Math.max(0, psm || 0);
+    const annual = psm * sites * 12;
+    const disc = list ? Math.round((1 - psm / list) * 100) : 0;
+    if (el("fee-annual")) el("fee-annual").textContent = gbp(annual);
+    if (el("fee-per-site")) el("fee-per-site").textContent = gbp(psm);
+    if (el("fee-disc")) el("fee-disc").textContent = disc > 0
+      ? `${disc}% off list £${list}/site/month`
+      : `list price £${list}/site/month`;
+    if (gross != null) {                 // net saving only exists with a baseline
+      const net = gross - annual;
+      if (el("net-saving")) {
+        el("net-saving").textContent = gbp(net);
+        el("net-saving").classList.toggle("pos", net >= 0);
+        el("net-saving").classList.toggle("warn", net < 0);
+      }
+      if (el("net-per-site")) el("net-per-site").textContent = gbp(net / sites);
+      if (el("kpi-net")) el("kpi-net").textContent = gbp(net);
+    }
+    if (el("assump-fee")) el("assump-fee").textContent =
+      `${fee.label}: £${psm.toFixed(2)}/site/month ` +
+      `(£${Math.round(annual).toLocaleString("en-GB")}/year across ${sites} site${sites === 1 ? "" : "s"}). ` +
+      `RYE charges a flat subscription fee and takes no supplier commission.`;
+  }
+
+  slider.addEventListener("input", () => {
+    const psm = +(list * (1 - slider.value / 100)).toFixed(2);
+    input.value = psm;
+    apply(psm);
+  });
+  input.addEventListener("input", () => {
+    const psm = parseFloat(input.value) || 0;
+    slider.value = Math.min(100, Math.max(0, Math.round((1 - psm / list) * 100)));
+    apply(psm);
+  });
+  apply(fee.perSiteMonth);
+}
+</script>
+</body>
+</html>

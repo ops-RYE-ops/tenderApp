@@ -30,6 +30,8 @@ from jsonschema import Draft202012Validator
 
 import process_quote as pq
 import map_headers as mh
+import build_dashboard as bd
+import rye_quote_core as core
 
 WORK = os.path.join(HERE, "_work")
 os.makedirs(WORK, exist_ok=True)
@@ -177,9 +179,40 @@ def main():
     check(mh.mapping_tool_schema()["properties"]["columns"]["properties"].keys()
           == {f: 0 for f in mh.TARGET_FIELDS}.keys(), "tool schema covers all target fields")
 
+    print("6) shared core — no drift possible")
+    check(pq.parse_num is core.parse_num, "process_quote uses the shared parse_num")
+    check(bd.parse_num is core.parse_num, "build_dashboard uses the SAME parse_num object")
+    check(pq.TARGET_HEADERS is core.TARGET_FIELDS is bd.TARGET_FIELDS,
+          "all scripts share one TARGET_FIELDS definition")
+
+    print("7) build_dashboard renders from the extracted CSVs (imports work)")
+    csv_by_term = {("12 months" if "12m" in p else "24 months"): p for p, _ in written}
+    cfg = {
+        "client_name": "Testco UK",
+        "tender_label": "Electricity tender — July 2026",
+        "utility": "electricity",
+        "day_split": 0.7,
+        "quotes": [
+            {"supplier": "Testco", "term": "12 months", "csv": csv_by_term["12 months"]},
+            {"supplier": "Testco", "term": "24 months", "csv": csv_by_term["24 months"]},
+        ],
+        "rye_fee": {"list_price_site_month": 90, "discount_pct": 80,
+                    "label": "RYE fee (year 1, 80% discount)"},
+    }
+    cfg_path = os.path.join(WORK, "tender.json")
+    out_html = os.path.join(WORK, "testco-dashboard.html")
+    with open(cfg_path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f)
+    bd.main([cfg_path, out_html])
+    html = open(out_html, encoding="utf-8").read()
+    check(os.path.exists(out_html) and "__TENDER_DATA__" not in html,
+          "dashboard HTML built and template placeholder was filled")
+    check("Testco" in html, "client/offer data injected into the dashboard")
+
     print("\nALL CHECKS PASSED")
     print(f"  canonical JSON: {extract['_json_path']}")
     print(f"  CSVs: " + ", ".join(os.path.basename(p) for p, _ in written))
+    print(f"  dashboard: {os.path.basename(out_html)}")
     return 0
 
 
