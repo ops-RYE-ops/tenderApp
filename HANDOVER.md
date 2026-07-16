@@ -148,23 +148,43 @@ source .venv/bin/activate          # macOS venv; needed for this project's Pytho
 python3 tests/make_and_verify.py   # extraction→schema→assemble→dashboard, no drift
 python3 tests/test_assemble.py     # multi-extract merge / dedupe / versioning
 python3 tests/test_weekend.py      # weekend band: capture + warn-vs-cost
+python3 tests/test_map.py          # /api/map: fingerprint, cache-vs-LLM, confirm (mocked)
+python3 tests/test_extract.py      # /api/extract: value pass-through, site-ref join, 400s
 ```
-All three should print their "ALL … PASSED" line. No network needed.
+All five should print their "ALL … PASSED" line. No network needed (the LLM and DB
+are mocked in test_map).
 (Claude's Linux sandbox can't use the macOS `.venv`; install deps with
 `pip install --break-system-packages fastapi openpyxl jsonschema psycopg2-binary python-multipart httpx` to run tests there.)
 
 ## Next steps (in priority order)
 
-1. ~~**`/api/map`**~~ **DONE** (on `feat/api-map`, pending push + PR → main).
-   Cache-lookup by supplier + layout fingerprint in `supplier_mappings`; on a miss
-   calls `map_headers.propose_mapping`; returns proposed mapping + sample values for
+1. ~~**`/api/map`**~~ **DONE & merged** (PR #4; prompt fix PR #5). Cache-lookup by
+   supplier + layout fingerprint in `supplier_mappings`; on a miss calls
+   `map_headers.propose_mapping`; returns proposed mapping + sample values for
    confirm/override; `/api/map/confirm` saves confirmed mappings to the cache.
-   `ANTHROPIC_API_KEY` is set in Vercel. Optional `ANTHROPIC_BASE_URL` routes via
-   the AI Gateway (no code change). **Verify after merge:** hit the preview/prod
-   `/api/map` with a real supplier file to confirm the live Claude call + the
-   cache round-trip (upload once → confirm → upload again → `source:"cache"`).
-2. **`/api/extract`** → wrap `process_quote.run` (upload + confirmed mapping +
-   optional site-reference → canonical `extractResult`).
+   `ANTHROPIC_API_KEY` + `RETOOL_DATABASE_URL` set in Vercel (Prod+Preview).
+   Optional `ANTHROPIC_BASE_URL` routes via the AI Gateway (no code change).
+   Verified live on a preview against a real UrbanChain quote (LLM → confirm →
+   cache-hit round-trip all green).
+2. ~~**`/api/extract`**~~ **DONE** (on `feat/api-extract`, pending push + PR → main).
+   Thin wrapper over `process_quote.run`: multipart upload + confirmed `mapping`
+   (JSON form field) + optional `site_reference` CSV → canonical `extractResult`
+   ({sites, quotes}). No LLM. Returns counts + `unmatched_mpxn` (meter points with
+   no site-reference match, surfaced not swallowed) + `site_reference_used`. Temp
+   files cleaned up; `emit_csv=False` (endpoint returns JSON, not files). Covered by
+   `tests/test_extract.py` (verbatim value pass-through, site-ref join + unmatched
+   flagging, 400 validation) and smoke-tested locally on the real UrbanChain quote
+   (3 sites, 2 terms, KVA charge → capacityCharge, kva null). **Verify after merge:**
+   POST a real quote + its confirmed mapping to the preview `/api/extract` and check
+   the lines match the known-good CSVs. NOTE: the site-reference is an optional
+   uploaded **sites.csv** (MPAN = unique key), read via `process_quote.build_site_lookup`.
+   Columns configurable in `mapping.db_lookup` (defaults: `mpxn`, `siteName`, `eac`,
+   `kva`). Behaviour: RYE's site name always overrides the quote's; **EAC/kVA from
+   sites.csv override the supplier quote and are stamped `eac_source:"db"`** (a meter
+   absent from sites.csv keeps the quote's EAC as `"quote"`). Incumbent columns in
+   sites.csv are NOT read at /extract — they feed the tender `incumbent` block at
+   /assemble. Wiring sites.csv to the read-only company Postgres (instead of an
+   upload) is still open (see blockers).
 3. **`/api/assemble`** → wrap `assemble_tender.assemble` and write a versioned row
    to the Retool `tenders` table (payload JSONB + denormalised columns).
 4. **`/api/render`** → wrap `build_dashboard`; static publish + UUID link is really

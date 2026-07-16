@@ -59,8 +59,13 @@ mapping.json shape (produced by the skill's AI header-mapping step):
       "kva":             "kVa Capacity"
   },
   "rate_logic": "auto",
-  "db_lookup": { "mpxn_col": "mpxn", "name_col": "siteName" }
+  "db_lookup": { "mpxn_col": "mpxn", "name_col": "siteName",
+                 "eac_col": "eac", "kva_col": "kva" }
 }
+
+db_lookup names the columns of RYE's sites.csv export. mpxn/name are required;
+eac/kva are optional and, when present, override the quote's figures (eac_source
+becomes "db"). Defaults: mpxn_col=mpxn, name_col=siteName, eac_col=eac, kva_col=kva.
 
 The TARGET header order is fixed by TARGET_HEADERS below to match RYE's internal CSV.
 """
@@ -110,22 +115,48 @@ def clean_val(v):
     return str(v).strip()
 
 
-def build_name_lookup(db_csv, mpxn_col, name_col):
-    """mpxn -> our site name, from RYE's DB export. Keys are normalised mpxns."""
+def build_site_lookup(db_csv, dbl):
+    """mpxn -> {site_name, eac, kva} from RYE's sites.csv export.
+
+    MPAN/MPRN is the unique key. RYE's site name always overrides the quote's;
+    EAC and kVA, WHERE the export provides them, are RYE's authoritative meter
+    facts and override the supplier's (stamped `eac_source: "db"` downstream) —
+    the "one consumption basis, RYE-controlled" principle. Column names come from
+    the mapping's `db_lookup`; only the mpxn + name columns are required, the
+    eac/kva columns are optional (a site with no DB EAC keeps the quote's).
+    (Incumbent columns in sites.csv are NOT read here — they belong to the tender's
+    `incumbent` block, joined in at /assemble.)
+    """
+    mpxn_col = dbl.get("mpxn_col", "mpxn")
+    name_col = dbl.get("name_col", "siteName")
+    eac_col = dbl.get("eac_col", "eac")
+    kva_col = dbl.get("kva_col", "kva")
     lookup = {}
     with open(db_csv, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        if mpxn_col not in reader.fieldnames or name_col not in reader.fieldnames:
+        fields = reader.fieldnames or []
+        if mpxn_col not in fields or name_col not in fields:
             raise SystemExit(
-                f"DB CSV must contain columns '{mpxn_col}' and '{name_col}'. "
-                f"Found: {reader.fieldnames}"
+                f"sites.csv must contain columns '{mpxn_col}' and '{name_col}'. "
+                f"Found: {fields}"
             )
+        has_eac, has_kva = eac_col in fields, kva_col in fields
         for r in reader:
             key = clean_id(r.get(mpxn_col))
-            name = (r.get(name_col) or "").strip()
-            if key and name:
-                lookup[key] = name
+            if not key:
+                continue
+            lookup[key] = {
+                "site_name": (r.get(name_col) or "").strip(),
+                "eac": parse_num(r.get(eac_col)) if has_eac else None,
+                "kva": parse_num(r.get(kva_col)) if has_kva else None,
+            }
     return lookup
+
+
+def build_name_lookup(db_csv, mpxn_col, name_col):
+    """Back-compat mpxn -> site-name view of build_site_lookup (name only)."""
+    full = build_site_lookup(db_csv, {"mpxn_col": mpxn_col, "name_col": name_col})
+    return {k: v["site_name"] for k, v in full.items() if v["site_name"]}
 
 
 def resolve_constants(mapping, src_path):
@@ -324,13 +355,17 @@ def run(src, mapping, out_dir, db_csv=None, supplier=None, emit_csv=True,
         out_dir = os.path.join(out_dir, f"run-{stamp}")
     os.makedirs(out_dir, exist_ok=True)
 
+    # sites.csv (RYE's DB export): site names + optional authoritative EAC/kVA,
+    # keyed on MPAN. name_lookup drives the siteName override + unmatched flagging
+    # in process_rows (unchanged); site_lookup additionally overrides EAC/kVA at
+    # site-collection time below.
     name_lookup = None
+    site_lookup = None
     if db_csv:
         dbl = mapping.get("db_lookup", {})
-        name_lookup = build_name_lookup(
-            db_csv, dbl.get("mpxn_col", "mpxn"), dbl.get("name_col", "siteName")
-        )
-        print(f"loaded {len(name_lookup)} site names from {db_csv}")
+        site_lookup = build_site_lookup(db_csv, dbl)
+        name_lookup = {k: v["site_name"] for k, v in site_lookup.items() if v["site_name"]}
+        print(f"loaded {len(site_lookup)} sites from {db_csv}")
 
     constants = resolve_constants(mapping, src)
     if constants:
@@ -343,9 +378,6 @@ def run(src, mapping, out_dir, db_csv=None, supplier=None, emit_csv=True,
     supplier = supplier or mapping.get("supplier") or prefix
     category = mapping.get("category")
     charge_basis = mapping.get("charge_basis") or None
-    # EAC/kVA here come off the supplier quote, so record that provenance. The
-    # backend can promote these to 'db' once site reference data is joined in.
-    eac_source = "quote"
 
     written = []
     combined = []
@@ -356,8 +388,18 @@ def run(src, mapping, out_dir, db_csv=None, supplier=None, emit_csv=True,
     def collect_sites(rows):
         for r in rows:
             m = r.get("mpxn")
-            if m and m not in sites_by_mpxn:
-                sites_by_mpxn[m] = row_to_site(r, eac_source)
+            if not m or m in sites_by_mpxn:
+                continue
+            # Default provenance is the quote; sites.csv promotes EAC/kVA to 'db'.
+            site = row_to_site(r, "quote")
+            db = site_lookup.get(m) if site_lookup else None
+            if db:
+                if db.get("eac") is not None:
+                    site["eac"] = db["eac"]
+                    site["eac_source"] = "db"
+                if db.get("kva") is not None:
+                    site["kva"] = db["kva"]
+            sites_by_mpxn[m] = site
 
     for sheet in sheets:
         records = load_rows(src, sheet, header_row)
