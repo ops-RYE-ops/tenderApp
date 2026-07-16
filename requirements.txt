@@ -6,3 +6,4 @@ anthropic>=0.40
 # Vercel backend (Phase 1)
 fastapi>=0.110
 psycopg2-binary>=2.9
+python-multipart>=0.0.9
