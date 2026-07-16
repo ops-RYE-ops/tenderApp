@@ -89,22 +89,43 @@ python3 tests/test_assemble.py     # expect: ALL ASSEMBLE CHECKS PASSED (no netw
 schema, assembles a full tender (via `assemble_tender.py`), renders a dashboard,
 and asserts no parse_num drift. `test_assemble.py` covers the multi-extract merge.
 
+## Phase 1 spike — deployed & green (2026-07-16)
+
+`main.py` is a throwaway FastAPI app (root entrypoint, Vercel auto-detects
+`app`), deployed on Rory's Vercel HOBBY account from the GitHub repo. Two
+endpoints, both verified live:
+- `GET /api/health` → Python runtime deploys and runs on Vercel. ✅
+- `GET /api/db-check` → a Vercel function reaches the Retool DB over SSL and
+  sees the schema (`{ok:true, tables:[pricebook, supplier_mappings, tenders,
+  tenders_latest], tenders_rows:0}`). ✅
+
+DB connection string lives in the Vercel env var `RETOOL_DATABASE_URL` (Settings
+→ Environment Variables, Production), never in code. So the two big Vercel
+unknowns (Python runtime, external DB connectivity) are both resolved. `main.py`
+imports none of the pipeline code and is safe to delete/replace when the real
+endpoints land.
+
+Also done: the Retool DDL is applied (`schema/retool_tables.sql`, run via
+TablePlus over the external connection string). `tenders`, `supplier_mappings`
+and the `tenders_latest` view all exist — schema only, no client data yet,
+pending the EU-region confirmation in Open checks.
+
+Gotcha logged: on Vercel, "Environments" (custom pre-production ones) are Pro-
+only, but "Environment Variables" are free on Hobby — don't confuse the two.
+
 ## Next steps (in priority order)
 
-1. **Phase 1 (Vercel backend)** — Rory is starting the Vercel build now rather
-   than waiting on their sales answers (tight deadline; validate assumptions by
-   doing). FastAPI functions that IMPORT the existing scripts, not paraphrase
-   them: `/inspect` + `/map` → `map_headers.py`; `/extract` → `process_quote.run`;
-   `/assemble` → `assemble_tender.assemble`; `/render` → `build_dashboard.main`.
-   Deploy to an EU region. Things to prove first (these are the Vercel unknowns):
-   Python 3.12 runtime + openpyxl within the 500MB bundle / 300s limits; AI
-   Gateway BYOK (or fall back to direct API — `map_headers.py` already switches on
-   `ANTHROPIC_BASE_URL`, no code change); external DB connection to Retool DB.
-2. ~~**Run the Retool DDL**~~ — DONE (2026-07-16). Applied `schema/retool_tables.sql`
-   to the Retool DB via the external connection string (TablePlus). `tenders`,
-   `supplier_mappings` and the `tenders_latest` view all exist. This also proved
-   the external connection string works (a Phase 1 open question). NOTE: schema
-   only — no client data loaded yet, pending the EU-region confirmation below.
+1. **Phase 1 proper — wrap the scripts as real endpoints.** FastAPI functions
+   that IMPORT the existing scripts, never paraphrase them: `/inspect` + `/map` →
+   `map_headers.py`; `/extract` → `process_quote.run`; `/assemble` →
+   `assemble_tender.assemble`; `/render` → `build_dashboard.main`. Can be built
+   and tested on Hobby with synthetic data (the spike proved runtime + DB). Set
+   `ANTHROPIC_API_KEY` (+ optional `ANTHROPIC_BASE_URL` for the AI Gateway) as
+   Vercel env vars for `/map`.
+2. **Upgrade to Vercel Pro before going live / handling real client data.**
+   Required for: commercial use (Hobby is non-commercial only), team seats, spend
+   controls, EU-region pinning of functions, and the static-IP add-on if the
+   company Postgres is IP-firewalled. Not needed to keep building on synthetic data.
 
 The pipeline core is deliberately transport-agnostic: every script is a plain
 importable function, so the Vercel functions are thin wrappers and nothing built
