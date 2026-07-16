@@ -68,6 +68,19 @@ through, never computed. Completes the headless "quotes in → tender JSON out" 
 - **`/api/inspect`** (on main, live) — upload a quote (.xlsx/.xlsm/.csv) → per-sheet
   ranked header-row candidates, best guess, first ~40 rows. Thin wrapper over
   `map_headers.inspect_file`. Pure, no network. Tested on 11 real supplier files.
+- **`/api/map` + `/api/map/confirm`** (on `feat/api-map`, needs push + PR) — the
+  live Claude call. `/api/map`: inspect → compute layout fingerprint
+  (`map_headers.layout_fingerprint`, a sha256 of the normalised header signature,
+  values-independent) → cache lookup in `supplier_mappings` by (supplier,
+  fingerprint); on a hit return the cached mapping and **skip the LLM**, on a miss
+  call `map_headers.propose_mapping`. Returns `{source: cache|llm, mapping,
+  sample_values, layout_fingerprint, ...}`; `sample_values` are read
+  deterministically for the confirm screen and never returned to the model.
+  `/api/map/confirm`: upserts a confirmed/overridden mapping to the cache so the
+  next identical layout skips the LLM. Degrades gracefully with no DB (goes to the
+  LLM) and returns a clean 503 on cache-miss-with-no-API-key. Covered by
+  `tests/test_map.py` (fingerprint stability, cache-vs-LLM, confirm/save — all
+  mocked, no network). **`ANTHROPIC_API_KEY` is now set in Vercel (Prod+Preview).**
 - **Header detection improved** (on `feat/weekend-rate`) — scans 40 rows (not 15),
   rejects value/summary rows, rewards the row a wide consistent data block sits
   under. Correctly finds the header on all 11 sample files incl. the Octopus
@@ -124,12 +137,14 @@ All three should print their "ALL … PASSED" line. No network needed.
 
 ## Next steps (in priority order)
 
-1. **`/api/map`** — the live Claude call. Cache-lookup by supplier + layout
-   fingerprint in `supplier_mappings`; on a miss call `map_headers.propose_mapping`;
-   return proposed mapping + sample values for confirm/override; save confirmed
-   mappings to the cache. **Needs `ANTHROPIC_API_KEY` in Vercel env vars
-   (Production + Preview)** — not yet set. Optional `ANTHROPIC_BASE_URL` routes via
-   the AI Gateway (no code change).
+1. ~~**`/api/map`**~~ **DONE** (on `feat/api-map`, pending push + PR → main).
+   Cache-lookup by supplier + layout fingerprint in `supplier_mappings`; on a miss
+   calls `map_headers.propose_mapping`; returns proposed mapping + sample values for
+   confirm/override; `/api/map/confirm` saves confirmed mappings to the cache.
+   `ANTHROPIC_API_KEY` is set in Vercel. Optional `ANTHROPIC_BASE_URL` routes via
+   the AI Gateway (no code change). **Verify after merge:** hit the preview/prod
+   `/api/map` with a real supplier file to confirm the live Claude call + the
+   cache round-trip (upload once → confirm → upload again → `source:"cache"`).
 2. **`/api/extract`** → wrap `process_quote.run` (upload + confirmed mapping +
    optional site-reference → canonical `extractResult`).
 3. **`/api/assemble`** → wrap `assemble_tender.assemble` and write a versioned row

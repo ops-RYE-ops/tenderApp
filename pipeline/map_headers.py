@@ -26,6 +26,7 @@ CLI:
     (proving the payload is headers + samples only) and makes no network call.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -148,6 +149,104 @@ def inspect_file(path, max_rows=40):
             "first_rows": grid,
         })
     return {"path": os.path.basename(path), "sheets": sheets}
+
+
+# --- layout fingerprint : the learned-mappings cache key -------------------
+
+def _norm_header(cell):
+    """Normalise a header label so cosmetic differences don't fork the cache.
+
+    Lower-cases, strips currency/percent decoration, and collapses any run of
+    non-alphanumerics to a single space. 'Unit Rate (p/kWh)' and 'unit rate'
+    both reduce to 'unit rate' — the same layout, the same fingerprint.
+    """
+    s = str(cell).strip().lower()
+    s = re.sub(r"[£$%]", "", s)
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    return s
+
+
+def header_signature(inspection):
+    """A stable, human-readable signature of a file's layout.
+
+    Built ONLY from each sheet's best-guess header labels (never data values),
+    so the same supplier layout filled with a different client's numbers yields
+    the same signature. Sheet order is preserved; sheet *names* are excluded
+    because they often carry the client/date and would over-fork the cache.
+    """
+    parts = []
+    for s in inspection.get("sheets", []):
+        labels = [_norm_header(h) for h in s.get("headers", []) if str(h).strip()]
+        labels = [l for l in labels if l]
+        parts.append("|".join(labels))
+    return "||".join(parts)
+
+
+def layout_fingerprint(inspection):
+    """Hash of the header signature — the `layout_fingerprint` cache column.
+
+    Deterministic and collision-resistant; paired with `supplier` it is the
+    unique key of the `supplier_mappings` cache. Same layout in, same hash out,
+    so a repeat supplier layout is served from cache and skips the LLM.
+    """
+    sig = header_signature(inspection)
+    return hashlib.sha256(sig.encode("utf-8")).hexdigest()[:16]
+
+
+# --- sample values : the confirm/override screen ---------------------------
+
+def _mapped_headers(mapping):
+    """Flatten a mapping's `columns` into {target_field: source_header}.
+
+    Column specs are null | "H" | {"single": "H"} | {"split": "H"}; the sentinel
+    "__none__" (used by the prompt to say 'no such band') is treated as unmapped.
+    """
+    out = {}
+    for field, spec in (mapping.get("columns") or {}).items():
+        header = None
+        if isinstance(spec, str):
+            header = spec
+        elif isinstance(spec, dict):
+            header = spec.get("single") or spec.get("split")
+        if header and header != "__none__":
+            out[field] = header
+    return out
+
+
+def sample_values(inspection, mapping, max_samples=3):
+    """For each mapped field, the source header + a few example cell values.
+
+    Powers the human confirm/override screen: the reviewer sees which column
+    feeds each field and what actually sits in it, WITHOUT the values ever going
+    back to the model. Read deterministically here — code moves numbers, the LLM
+    only ever named the column. Returns {} for fields whose header isn't found.
+    """
+    # Locate each header (by normalised label) to a (sheet, column index).
+    index = {}
+    for s in inspection.get("sheets", []):
+        best = s.get("header_row_best_guess", 1)
+        rows = s.get("first_rows", [])
+        headers = s.get("headers", [])
+        for col, label in enumerate(headers):
+            key = _norm_header(label)
+            if key and key not in index:
+                index[key] = (best, rows, col)
+
+    out = {}
+    for field, header in _mapped_headers(mapping).items():
+        loc = index.get(_norm_header(header))
+        if not loc:
+            out[field] = {"header": header, "samples": []}
+            continue
+        best, rows, col = loc
+        samples = []
+        for r in rows[best:]:  # rows AFTER the header row are data
+            if col < len(r) and str(r[col]).strip():
+                samples.append(str(r[col]).strip())
+            if len(samples) >= max_samples:
+                break
+        out[field] = {"header": header, "samples": samples}
+    return out
 
 
 # --- /map : the single LLM call --------------------------------------------

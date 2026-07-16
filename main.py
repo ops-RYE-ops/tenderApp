@@ -15,6 +15,12 @@ Endpoints (built incrementally):
   POST /api/inspect   — read an uploaded quote: sheets, first rows, header
                         candidates. Pure, no network, no LLM. Backs the mapping
                         review screen.
+  POST /api/map       — propose a mapping.json for an uploaded quote. Cache
+                        lookup by supplier + layout fingerprint first; on a miss,
+                        the single Claude call (map_headers.propose_mapping).
+                        Returns the mapping + sample values for confirm/override.
+  POST /api/map/confirm — save a confirmed/overridden mapping to the learned-
+                        mappings cache so the same layout skips the LLM next time.
 
 Config via env vars (set in Vercel project settings, never in code):
   RETOOL_DATABASE_URL  — Postgres connection string for the Retool DB.
@@ -25,8 +31,10 @@ Config via env vars (set in Vercel project settings, never in code):
 import os
 import sys
 import tempfile
+from typing import Any, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 # Make the deterministic pipeline importable (same trick as tests/ and the CLI).
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline"))
@@ -56,6 +64,66 @@ def _with_sslmode(dsn: str) -> str:
     if "://" in dsn:
         return dsn + ("&" if "?" in dsn else "?") + "sslmode=require"
     return dsn + " sslmode=require"
+
+
+# --- learned-mappings cache (supplier_mappings table) ----------------------
+
+def _db_connect():
+    """Open a short-lived SSL connection to the Retool DB, or None if unconfigured.
+
+    /map degrades gracefully without a DB: it just can't consult or write the
+    cache, so it always goes to the LLM. That keeps mapping usable in local dev
+    where RETOOL_DATABASE_URL may be unset.
+    """
+    dsn = os.environ.get("RETOOL_DATABASE_URL")
+    if not dsn:
+        return None
+    import psycopg2
+
+    return psycopg2.connect(_with_sslmode(dsn), connect_timeout=10)
+
+
+def _cache_get(supplier: str, fingerprint: str) -> Optional[dict]:
+    """Return a cached mapping for (supplier, fingerprint), or None on a miss."""
+    conn = _db_connect()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select mapping from supplier_mappings "
+                "where supplier = %s and layout_fingerprint = %s limit 1;",
+                (supplier, fingerprint),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None  # jsonb comes back as a dict
+    finally:
+        conn.close()
+
+
+def _cache_put(supplier: str, fingerprint: str, mapping: dict, confirmed_by: Optional[str]) -> None:
+    """Upsert a confirmed mapping. One row per (supplier, layout_fingerprint)."""
+    from psycopg2.extras import Json
+
+    conn = _db_connect()
+    if conn is None:
+        raise HTTPException(
+            status_code=503,
+            detail="RETOOL_DATABASE_URL is not set — cannot save to the mappings cache.",
+        )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "insert into supplier_mappings (supplier, layout_fingerprint, mapping, confirmed_by) "
+                "values (%s, %s, %s, %s) "
+                "on conflict (supplier, layout_fingerprint) do update set "
+                "mapping = excluded.mapping, confirmed_by = excluded.confirmed_by, "
+                "created_at = now();",
+                (supplier, fingerprint, Json(mapping), confirmed_by),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @app.get("/api/db-check")
@@ -135,3 +203,108 @@ async def inspect(file: UploadFile = File(...)):
             pass
     inspection["path"] = filename  # show the real upload name, not the temp name
     return inspection
+
+
+# --- /map ------------------------------------------------------------------
+
+@app.post("/api/map")
+async def map_quote(
+    file: UploadFile = File(...),
+    supplier: Optional[str] = Form(None),
+    sample_rows: int = Form(3),
+):
+    """Propose a mapping for an uploaded quote — cache first, then Claude.
+
+    Steps: inspect the file (pure) → compute the layout fingerprint → if a
+    supplier is given and this (supplier, fingerprint) is in the cache, return
+    that mapping and skip the LLM; otherwise make the single Claude call. Either
+    way, return the mapping plus per-field sample values so a human can confirm
+    or override before /extract runs. Confirmed mappings are saved back via
+    /api/map/confirm. AI maps, code moves numbers: the model only ever named the
+    columns; the sample values are read here deterministically and never returned
+    to it.
+    """
+    import map_headers as mh
+
+    tmp_path, filename = await _save_upload(file)
+    notes: list[str] = []
+    try:
+        inspection = mh.inspect_file(tmp_path)
+        inspection["path"] = filename
+        fingerprint = mh.layout_fingerprint(inspection)
+
+        mapping = None
+        source = None
+        if supplier:
+            try:
+                mapping = _cache_get(supplier, fingerprint)
+            except Exception as e:  # a cache read must never break mapping
+                notes.append(f"cache lookup failed ({type(e).__name__}); falling back to the LLM")
+                mapping = None
+            if mapping is not None:
+                source = "cache"
+        else:
+            notes.append("no supplier provided — cache lookup skipped; saving will need a supplier")
+
+        if mapping is None:
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise HTTPException(
+                    status_code=503,
+                    detail="No cached mapping for this layout and ANTHROPIC_API_KEY is not set, "
+                           "so Claude can't be called. Set the key in the Vercel env vars.",
+                )
+            try:
+                mapping = mh.propose_mapping(inspection, supplier=supplier, sample_rows=sample_rows)
+            except HTTPException:
+                raise
+            except (Exception, SystemExit) as e:
+                raise HTTPException(status_code=502, detail=f"Mapping call failed: {type(e).__name__}: {e}")
+            source = "llm"
+
+        return {
+            "source": source,                       # 'cache' or 'llm'
+            "cache_hit": source == "cache",
+            "supplier": supplier,
+            "layout_fingerprint": fingerprint,
+            "file": filename,
+            "mapping": mapping,
+            "sample_values": mh.sample_values(inspection, mapping),
+            "sheets": [                              # light context for the review UI
+                {"name": s["name"],
+                 "header_row_best_guess": s["header_row_best_guess"],
+                 "headers": s["headers"]}
+                for s in inspection["sheets"]
+            ],
+            "notes": notes,
+        }
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+class ConfirmMappingBody(BaseModel):
+    supplier: str
+    layout_fingerprint: str
+    mapping: dict[str, Any]
+    confirmed_by: Optional[str] = None
+
+
+@app.post("/api/map/confirm")
+def confirm_mapping(body: ConfirmMappingBody):
+    """Save a confirmed/overridden mapping to the learned-mappings cache.
+
+    Upserts on (supplier, layout_fingerprint) so re-confirming updates in place.
+    Next time the same supplier layout is uploaded, /api/map serves this from the
+    cache and skips the LLM entirely — the spend-saving path in the build spec.
+    """
+    if not body.mapping.get("columns"):
+        raise HTTPException(status_code=400, detail="mapping.columns is required to save a usable mapping.")
+    _cache_put(body.supplier, body.layout_fingerprint, body.mapping, body.confirmed_by)
+    return {
+        "ok": True,
+        "saved": True,
+        "supplier": body.supplier,
+        "layout_fingerprint": body.layout_fingerprint,
+    }
