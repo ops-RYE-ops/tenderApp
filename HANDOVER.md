@@ -150,9 +150,10 @@ python3 tests/test_assemble.py     # multi-extract merge / dedupe / versioning
 python3 tests/test_weekend.py      # weekend band: capture + warn-vs-cost
 python3 tests/test_map.py          # /api/map: fingerprint, cache-vs-LLM, confirm (mocked)
 python3 tests/test_extract.py      # /api/extract: value pass-through, site-ref join, 400s
+python3 tests/test_assemble_api.py # /api/assemble: incumbent-from-sites.csv + endpoint (DB mocked)
 ```
-All five should print their "ALL … PASSED" line. No network needed (the LLM and DB
-are mocked in test_map).
+All six should print their "ALL … PASSED" line. No network needed (the LLM and DB
+are mocked in test_map / test_assemble_api).
 (Claude's Linux sandbox can't use the macOS `.venv`; install deps with
 `pip install --break-system-packages fastapi openpyxl jsonschema psycopg2-binary python-multipart httpx` to run tests there.)
 
@@ -185,10 +186,30 @@ are mocked in test_map).
    sites.csv are NOT read at /extract — they feed the tender `incumbent` block at
    /assemble. Wiring sites.csv to the read-only company Postgres (instead of an
    upload) is still open (see blockers).
-3. **`/api/assemble`** → wrap `assemble_tender.assemble` and write a versioned row
-   to the Retool `tenders` table (payload JSONB + denormalised columns).
+3. ~~**`/api/assemble`**~~ **DONE** (on `feat/api-assemble`, pending push + PR → main).
+   Multipart: `extracts` (JSON array
+   of extractResults) + `meta` (JSON; client_name + tender_label required) + optional
+   `sites_csv` → `assemble_tender.assemble` → `validate_tender` → versioned row in the
+   Retool `tenders` table (payload JSONB + denormalised columns). Incumbent is built
+   from sites.csv by a new `assemble_tender.incumbent_from_sites_csv`: reads the rate
+   columns + `incumbentSupplier`, keyed on MPAN, scoped to the tender's meters +
+   client (`clientName`); a row with no rate data is skipped (site-reference-only), so
+   a sites.csv with no incumbent data → no incumbent (schema-valid). Supplier rule:
+   one distinct → that name; several → `"Various"`; rates but none named → `"Unknown"`
+   (each surfaced as a warning). Versioning: existing `meta.id` bumps to max(version)+1;
+   new tender → version 1. `persist=false` assembles + validates WITHOUT a DB write
+   (dry run / no-DB dev). Covered by `tests/test_assemble_api.py` (incumbent builder,
+   schema drift guard, endpoint with DB mocked). **Finalised sites.csv contract**
+   (Retool export): `clientName, siteName, mpxn, eac, supplyStartDate, unitRate,
+   dayRate, nightRate, weekendRate, standingCharge, capacityCharge, networkCharge,
+   meterCharge, kva, incumbentSupplier`. (`updatedEac`→`eac` so build_site_lookup's
+   default matches.) **Verify after merge:** POST extracts + meta + sites.csv to the
+   preview `/api/assemble` and confirm a versioned row lands in `tenders` (re-POST
+   with the same id → version increments).
 4. **`/api/render`** → wrap `build_dashboard`; static publish + UUID link is really
-   Phase 3, so first cut can return HTML inline.
+   Phase 3, so first cut can return HTML inline. The canonical tender is now
+   available end-to-end (map → extract → assemble), so /render can read a stored
+   tender's `payload` and produce the dashboard.
 5. **Upgrade to Vercel Pro** before going live / real client data: commercial use
    (Hobby is non-commercial only), team seats, spend controls, EU-region pinning,
    static-IP add-on if needed.

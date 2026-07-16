@@ -25,6 +25,9 @@ Endpoints (built incrementally):
                         confirmed mapping + optional site-reference CSV → the
                         canonical extractResult ({sites, quotes}). No LLM. Flags any
                         meter points with no site-reference match.
+  POST /api/assemble  — merge extractResults + incumbent (from sites.csv) + meta into
+                        a canonical tender (assemble_tender.assemble), validate it,
+                        and write a versioned row to the Retool `tenders` table.
 
 Config via env vars (set in Vercel project settings, never in code):
   RETOOL_DATABASE_URL  — Postgres connection string for the Retool DB.
@@ -126,6 +129,55 @@ def _cache_put(supplier: str, fingerprint: str, mapping: dict, confirmed_by: Opt
                 "mapping = excluded.mapping, confirmed_by = excluded.confirmed_by, "
                 "created_at = now();",
                 (supplier, fingerprint, Json(mapping), confirmed_by),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# --- tenders table (versioned canonical store) -----------------------------
+
+def _next_version(tender_id: str) -> Optional[int]:
+    """Next version for a tender id (max existing + 1; 1 if new). None if no DB.
+
+    'Version, never overwrite': each save is a new (id, version) row. Returns None
+    only when there's no DB configured, so callers can decide how to degrade.
+    """
+    conn = _db_connect()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("select coalesce(max(version), 0) from tenders where id = %s;", (tender_id,))
+            return cur.fetchone()[0] + 1
+    finally:
+        conn.close()
+
+
+def _write_tender(tender: dict) -> None:
+    """Insert one canonical tender as a new versioned row in the Retool DB.
+
+    Scalar columns are denormalised copies of top-level payload fields (so the
+    register lists/filters without opening JSONB); `payload` holds the full tender.
+    """
+    from psycopg2.extras import Json
+
+    conn = _db_connect()
+    if conn is None:
+        raise HTTPException(status_code=503, detail="RETOOL_DATABASE_URL is not set — cannot save the tender.")
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "insert into tenders (id, version, client_name, utility, tender_label, status, "
+                "created_at, created_by, expires_at, slug, url_uuid, dashboard_url, payload) "
+                "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                (
+                    tender["id"], tender["version"], tender["client_name"],
+                    tender.get("utility", "electricity"), tender["tender_label"],
+                    tender.get("status", "draft"), tender.get("created_at"),
+                    tender.get("created_by"), tender.get("expires_at"), tender.get("slug"),
+                    tender.get("url_uuid"), tender.get("dashboard_url"), Json(tender),
+                ),
             )
         conn.commit()
     finally:
@@ -387,3 +439,127 @@ async def extract(
                 except OSError:
                     pass
         shutil.rmtree(out_dir, ignore_errors=True)
+
+
+# --- /assemble -------------------------------------------------------------
+
+def _extract_mpxns(extracts: list) -> set:
+    """Every meter point mentioned across the extracts (for incumbent filtering)."""
+    out = set()
+    for e in extracts:
+        for s in e.get("sites", []):
+            if s.get("mpxn"):
+                out.add(str(s["mpxn"]))
+        for q in e.get("quotes", []):
+            for ln in q.get("lines", []):
+                if ln.get("mpxn"):
+                    out.add(str(ln["mpxn"]))
+    return out
+
+
+@app.post("/api/assemble")
+async def assemble_endpoint(
+    extracts: str = Form(...),
+    meta: str = Form(...),
+    sites_csv: Optional[UploadFile] = File(None),
+    persist: bool = Form(True),
+):
+    """Stitch extractResults + incumbent + meta into a canonical tender, and save it.
+
+    `extracts` is a JSON array of extractResult objects (the /extract outputs).
+    `meta` is a JSON object (client_name and tender_label required; optional id,
+    version, status, utility, expires_at, day_split, recommended, rye_fee, notes,
+    …). An optional `sites_csv` provides the incumbent contract (its rate columns +
+    incumbentSupplier), joined on MPAN and restricted to this tender's meters.
+
+    Assembles via assemble_tender.assemble (moves NO values; stamps meta), validates
+    against the canonical schema, then writes a new versioned row to the Retool
+    `tenders` table — version, never overwrite. Set persist=false to assemble +
+    validate without writing (useful before a DB is wired, or for a dry run).
+    """
+    import assemble_tender as at
+
+    try:
+        extracts_obj = json.loads(extracts)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"`extracts` is not valid JSON: {e}")
+    if isinstance(extracts_obj, dict):
+        extracts_obj = [extracts_obj]
+    if not isinstance(extracts_obj, list) or not extracts_obj:
+        raise HTTPException(status_code=400, detail="`extracts` must be a non-empty array of extractResult objects.")
+    try:
+        meta_obj = json.loads(meta)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"`meta` is not valid JSON: {e}")
+    if not isinstance(meta_obj, dict) or not meta_obj.get("client_name") or not meta_obj.get("tender_label"):
+        raise HTTPException(status_code=400, detail="`meta` must include client_name and tender_label.")
+
+    warnings: list[str] = []
+
+    # Build the incumbent from sites.csv, scoped to this tender's meters + client.
+    incumbent = None
+    csv_path = None
+    if sites_csv is not None and sites_csv.filename:
+        csv_path, _ = await _save_upload(sites_csv)
+    try:
+        if csv_path:
+            try:
+                incumbent = at.incumbent_from_sites_csv(
+                    csv_path,
+                    client_name=meta_obj.get("client_name"),
+                    mpxns=_extract_mpxns(extracts_obj),
+                )
+            except (Exception, SystemExit) as e:
+                raise HTTPException(status_code=422, detail=f"Could not read incumbent from sites.csv: {type(e).__name__}: {e}")
+            if incumbent is None:
+                warnings.append("sites.csv had no incumbent rate data for this tender's meters — assembling with no incumbent.")
+            elif incumbent.get("supplier") == "Various":
+                warnings.append("Meters span multiple incumbent suppliers — incumbent shown as 'Various'.")
+            elif incumbent.get("supplier") == "Unknown":
+                warnings.append("Incumbent rates present but no incumbentSupplier named — shown as 'Unknown'.")
+
+        # Version, never overwrite: bump to the next version for an existing id.
+        if meta_obj.get("id") and persist:
+            nv = _next_version(meta_obj["id"])
+            if nv is not None:
+                meta_obj["version"] = nv
+
+        try:
+            tender = at.assemble(extracts_obj, meta_obj, incumbent=incumbent)
+            at.validate_tender(tender)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Assembly/validation failed: {type(e).__name__}: {e}")
+
+        persisted = False
+        if persist:
+            _write_tender(tender)
+            persisted = True
+        else:
+            warnings.append("persist=false — tender assembled and validated but NOT written to the DB.")
+
+        return {
+            "ok": True,
+            "persisted": persisted,
+            "id": tender["id"],
+            "version": tender["version"],
+            "status": tender["status"],
+            "slug": tender.get("slug"),
+            "url_uuid": tender.get("url_uuid"),
+            "dashboard_url": tender.get("dashboard_url"),
+            "counts": {
+                "sites": len(tender.get("sites", [])),
+                "quotes": len(tender.get("quotes", [])),
+                "incumbent_lines": len((incumbent or {}).get("lines", [])),
+            },
+            "incumbent_supplier": (incumbent or {}).get("supplier"),
+            "warnings": warnings,
+            "tender": tender,
+        }
+    finally:
+        if csv_path:
+            try:
+                os.unlink(csv_path)
+            except OSError:
+                pass
