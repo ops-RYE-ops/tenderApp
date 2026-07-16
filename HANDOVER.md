@@ -100,8 +100,11 @@ and asserts no parse_num drift. `test_assemble.py` covers the multi-extract merg
    Python 3.12 runtime + openpyxl within the 500MB bundle / 300s limits; AI
    Gateway BYOK (or fall back to direct API — `map_headers.py` already switches on
    `ANTHROPIC_BASE_URL`, no code change); external DB connection to Retool DB.
-2. **Run the Retool DDL** — once the Retool DB region is confirmed UK/EU, run
-   `schema/retool_tables.sql` in Retool.
+2. ~~**Run the Retool DDL**~~ — DONE (2026-07-16). Applied `schema/retool_tables.sql`
+   to the Retool DB via the external connection string (TablePlus). `tenders`,
+   `supplier_mappings` and the `tenders_latest` view all exist. This also proved
+   the external connection string works (a Phase 1 open question). NOTE: schema
+   only — no client data loaded yet, pending the EU-region confirmation below.
 
 The pipeline core is deliberately transport-agnostic: every script is a plain
 importable function, so the Vercel functions are thin wrappers and nothing built
@@ -112,7 +115,9 @@ now has to be redone once the sales answers land.
 - Awaiting Vercel answers (Rory's email): Python runtime + libs within limits,
   AI Gateway BYOK, external DB connections, custom domains + noindex, EU region +
   GDPR DPA, seat model, spend cap, startup discount.
-- Retool DB region must be confirmed UK/EU before creating tables.
+- Retool DB region must be confirmed UK/EU before loading any live CLIENT DATA
+  (schema/tables already created — that's fine; the residency question is about
+  stored client data). Support emailed 2026-07-16, awaiting reply.
 - Company Postgres may be IP-firewalled — if so, either a Vercel static IP
   (~$100/mo) or sync site-reference data into Retool DB and read it from there.
 
