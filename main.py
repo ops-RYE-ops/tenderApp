@@ -1,68 +1,69 @@
 #!/usr/bin/env python3
 """
-Vercel FastAPI spike — proves the two Phase-1 unknowns before we build the real
-backend on top:
+RYE Tender Tool — Vercel backend (FastAPI).
 
-  1. GET /api/health   — the Python runtime deploys and runs on Vercel at all.
-  2. GET /api/db-check — a Vercel function can reach the Retool DB over SSL and
-                         see the schema we just created.
+Thin HTTP layer over the deterministic pipeline. Every endpoint IMPORTS and calls
+the existing scripts in pipeline/ — it never re-implements extraction, mapping or
+cost logic (the spec's "functions import the scripts, never paraphrase them").
 
-Deliberately throwaway and self-contained: it imports none of the pipeline code
-and writes nothing. Once these two endpoints go green on the deployed URL, we
-know the stack works and can start wrapping process_quote / assemble_tender /
-build_dashboard as real endpoints.
+Vercel auto-detects the `app` instance below (root entrypoint). The pipeline dir
+is put on sys.path so the scripts import exactly as they do in the tests and CLI.
 
-Vercel auto-detects the `app` instance below (a supported root entrypoint), so
-no vercel.json or routing config is needed for the spike. The DB connection
-string is read from the RETOOL_DATABASE_URL environment variable set in the
-Vercel project settings — never hard-coded, never committed.
+Endpoints (built incrementally):
+  GET  /api/health    — liveness (Python runtime).
+  GET  /api/db-check  — Retool DB reachable over SSL + schema visible.
+  POST /api/inspect   — read an uploaded quote: sheets, first rows, header
+                        candidates. Pure, no network, no LLM. Backs the mapping
+                        review screen.
+
+Config via env vars (set in Vercel project settings, never in code):
+  RETOOL_DATABASE_URL  — Postgres connection string for the Retool DB.
+  ANTHROPIC_API_KEY    — (later, for /map) Claude key.
+  ANTHROPIC_BASE_URL   — (optional) route Claude via the Vercel AI Gateway.
+  ANTHROPIC_MODEL      — (optional) mapping model; defaults to claude-sonnet-5.
 """
 import os
 import sys
+import tempfile
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, HTTPException, UploadFile
 
-app = FastAPI(title="RYE Tender Tool API (Phase-1 spike)")
+# Make the deterministic pipeline importable (same trick as tests/ and the CLI).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline"))
 
+app = FastAPI(title="RYE Tender Tool API")
+
+# Quote file types the extractor can read.
+ALLOWED_EXT = {".xlsx", ".xlsm", ".csv"}
+
+
+# --- diagnostics -----------------------------------------------------------
 
 @app.get("/")
 def root():
-    return {"ok": True, "service": "rye-tender-tool", "note": "spike — see /api/health"}
+    return {"ok": True, "service": "rye-tender-tool", "see": "/docs"}
 
 
 @app.get("/api/health")
 def health():
-    """Liveness check: if this returns, the Python runtime deployed and runs."""
-    return {
-        "ok": True,
-        "service": "rye-tender-tool",
-        "python_version": sys.version.split()[0],
-    }
+    """Liveness: if this returns, the Python runtime deployed and runs."""
+    return {"ok": True, "service": "rye-tender-tool", "python_version": sys.version.split()[0]}
 
 
 def _with_sslmode(dsn: str) -> str:
-    """Ensure the connection enforces SSL, whichever form the DSN is in.
-
-    Retool DB only accepts encrypted connections. Retool's own connection URL
-    usually already includes sslmode=require; this just guarantees it.
-    """
     if "sslmode" in dsn:
         return dsn
-    if "://" in dsn:  # URL form: postgres://...
+    if "://" in dsn:
         return dsn + ("&" if "?" in dsn else "?") + "sslmode=require"
-    return dsn + " sslmode=require"  # keyword form: host=... dbname=...
+    return dsn + " sslmode=require"
 
 
 @app.get("/api/db-check")
 def db_check():
-    """Connectivity check: can a Vercel function reach the Retool DB + see our schema?
-
-    Returns the public tables and the tenders row count. Read-only. On failure
-    it returns the error text (not a 500) so the cause is visible in the browser.
-    """
+    """Read-only check that a Vercel function can reach the Retool DB + see the schema."""
     dsn = os.environ.get("RETOOL_DATABASE_URL")
     if not dsn:
-        return {"ok": False, "error": "RETOOL_DATABASE_URL is not set in the Vercel project's environment variables"}
+        return {"ok": False, "error": "RETOOL_DATABASE_URL is not set in the Vercel env vars"}
     try:
         import psycopg2
 
@@ -79,5 +80,58 @@ def db_check():
         finally:
             conn.close()
         return {"ok": True, "tables": tables, "tenders_rows": tenders_rows}
-    except Exception as e:  # surface the reason rather than a bare 500
+    except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+# --- helpers ---------------------------------------------------------------
+
+async def _save_upload(file: UploadFile) -> tuple[str, str]:
+    """Persist an uploaded quote to a temp file, preserving its extension.
+
+    Returns (temp_path, original_filename). Vercel functions get an ephemeral,
+    writable /tmp, which is exactly what the file-reading scripts expect: they
+    take a path, not a stream. Caller is responsible for deleting temp_path.
+    """
+    filename = file.filename or "upload"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_EXT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext or '(none)'}'. Upload .xlsx, .xlsm or .csv.",
+        )
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    fd, tmp_path = tempfile.mkstemp(suffix=ext)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+    return tmp_path, filename
+
+
+# --- /inspect --------------------------------------------------------------
+
+@app.post("/api/inspect")
+async def inspect(file: UploadFile = File(...)):
+    """Read an uploaded quote and return its structure for the mapping screen.
+
+    Per sheet: ranked header-row candidates, the best-guess header row, and the
+    first ~15 rows. Pure — no network, no LLM, no values leave. This is what the
+    team confirms/overrides before /map or /extract runs.
+    """
+    import map_headers as mh
+
+    tmp_path, filename = await _save_upload(file)
+    try:
+        inspection = mh.inspect_file(tmp_path)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Could not read '{filename}': {type(e).__name__}: {e}")
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+    inspection["path"] = filename  # show the real upload name, not the temp name
+    return inspection
