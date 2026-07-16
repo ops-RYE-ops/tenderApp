@@ -21,6 +21,10 @@ Endpoints (built incrementally):
                         Returns the mapping + sample values for confirm/override.
   POST /api/map/confirm — save a confirmed/overridden mapping to the learned-
                         mappings cache so the same layout skips the LLM next time.
+  POST /api/extract   — run the deterministic extractor (process_quote.run) with a
+                        confirmed mapping + optional site-reference CSV → the
+                        canonical extractResult ({sites, quotes}). No LLM. Flags any
+                        meter points with no site-reference match.
 
 Config via env vars (set in Vercel project settings, never in code):
   RETOOL_DATABASE_URL  — Postgres connection string for the Retool DB.
@@ -28,7 +32,9 @@ Config via env vars (set in Vercel project settings, never in code):
   ANTHROPIC_BASE_URL   — (optional) route Claude via the Vercel AI Gateway.
   ANTHROPIC_MODEL      — (optional) mapping model; defaults to claude-sonnet-5.
 """
+import json
 import os
+import shutil
 import sys
 import tempfile
 from typing import Any, Optional
@@ -308,3 +314,76 @@ def confirm_mapping(body: ConfirmMappingBody):
         "supplier": body.supplier,
         "layout_fingerprint": body.layout_fingerprint,
     }
+
+
+# --- /extract --------------------------------------------------------------
+
+@app.post("/api/extract")
+async def extract(
+    file: UploadFile = File(...),
+    mapping: str = Form(...),
+    supplier: Optional[str] = Form(None),
+    site_reference: Optional[UploadFile] = File(None),
+):
+    """Extract canonical lines from a quote using a confirmed mapping.
+
+    Thin wrapper over `process_quote.run` — the deterministic extractor. No LLM,
+    no network beyond the upload: the mapping (already confirmed via /map) names
+    the columns, and Python copies the actual values verbatim. Returns the
+    canonical `extractResult` ({sites, quotes}) that /assemble later stitches into
+    a full tender.
+
+    `mapping` is the confirmed mapping.json as a form field (string). An optional
+    `site_reference` CSV joins meter points to RYE's site names on MPxN; any meter
+    point with no match is returned in `unmatched_mpxn` so the team can resolve it
+    rather than it being silently accepted (a spec requirement).
+    """
+    import process_quote as pq
+
+    try:
+        mapping_obj = json.loads(mapping)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"`mapping` is not valid JSON: {e}")
+    if not isinstance(mapping_obj, dict) or not mapping_obj.get("columns"):
+        raise HTTPException(status_code=400, detail="`mapping` must be an object with a non-empty `columns`.")
+
+    quote_path, filename = await _save_upload(file)
+    ref_path = None
+    if site_reference is not None and site_reference.filename:
+        ref_path, _ = await _save_upload(site_reference)
+    out_dir = tempfile.mkdtemp(prefix="rye-extract-")
+    try:
+        try:
+            _written, extract_result, unmatched = pq.run(
+                quote_path, mapping_obj, out_dir,
+                db_csv=ref_path, supplier=supplier, emit_csv=False,
+            )
+        except HTTPException:
+            raise
+        except (Exception, SystemExit) as e:
+            raise HTTPException(status_code=422, detail=f"Extraction failed for '{filename}': {type(e).__name__}: {e}")
+
+        extract_result.pop("_json_path", None)  # a temp path — meaningless to the caller
+        sites = extract_result.get("sites", [])
+        quotes = extract_result.get("quotes", [])
+        return {
+            "ok": True,
+            "file": filename,
+            "supplier": supplier or mapping_obj.get("supplier"),
+            "extract_result": extract_result,
+            "counts": {
+                "sites": len(sites),
+                "quotes": len(quotes),
+                "lines": sum(len(q.get("lines", [])) for q in quotes),
+            },
+            "unmatched_mpxn": sorted(unmatched),
+            "site_reference_used": ref_path is not None,
+        }
+    finally:
+        for p in (quote_path, ref_path):
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+        shutil.rmtree(out_dir, ignore_errors=True)
