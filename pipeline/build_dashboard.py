@@ -117,6 +117,7 @@ def compute_offer(entry, tender, incumbent=False):
     csv_path = entry["_csv_path"]
     rows = load_csv(csv_path)
     day_split = float(tender.get("day_split", 0.7))
+    weekend_split = float(tender.get("weekend_split", 0) or 0)
     basis = {**DEFAULT_BASIS, **tender.get("charge_basis", {}), **entry.get("charge_basis", {})}
     for b in basis.values():
         if b not in VALID_BASIS:
@@ -129,20 +130,35 @@ def compute_offer(entry, tender, incumbent=False):
         mpxn = (row.get("mpxn") or "").strip()
         eac = parse_num(row.get("updatedEac"))
         kva = parse_num(row.get("kva"))
-        unit, day, night = (parse_num(row.get(k)) for k in ("unitRate", "dayRate", "nightRate"))
+        unit, day, night, weekend = (
+            parse_num(row.get(k)) for k in ("unitRate", "dayRate", "nightRate", "weekendRate"))
 
         if eac is None:
             warnings.add(f"No EAC for '{name}' — energy cost treated as £0")
             eac = 0
 
-        # Energy: single-rate wins if present, else day/night with the split.
+        # Energy: single-rate wins if present, else day/night(/weekend) with the split.
         if unit is not None:
             energy = unit * eac / 100
             split_used = False
-        elif day is not None or night is not None:
-            d = day if day is not None else night
-            n = night if night is not None else day
-            energy = (d * eac * day_split + n * eac * (1 - day_split)) / 100
+        elif day is not None or night is not None or weekend is not None:
+            # Fill any missing day/night band from whatever rate we do have.
+            fallback = day if day is not None else (night if night is not None else weekend)
+            d = day if day is not None else fallback
+            n = night if night is not None else fallback
+            # Night takes the residual after the day and (optional) weekend shares.
+            night_frac = max(0.0, 1 - day_split - weekend_split)
+            energy = (d * day_split + n * night_frac) * eac / 100
+            if weekend is not None:
+                if weekend_split > 0:
+                    energy += weekend * weekend_split * eac / 100
+                else:
+                    # Capture it, show it, but never silently mis-cost it.
+                    warnings.add(
+                        f"'{name}' has a weekend rate but no weekend consumption split "
+                        "is set — weekend rate shown but NOT costed. Set weekend_split "
+                        "if weekend usage is material."
+                    )
             split_used = True
         else:
             warnings.add(f"No unit/day/night rate for '{name}' — energy cost treated as £0")
@@ -162,7 +178,7 @@ def compute_offer(entry, tender, incumbent=False):
             "kva": kva,
             "splitUsed": split_used,
             "rates": {k: parse_num(row.get(k)) for k in
-                      ("unitRate", "dayRate", "nightRate", "standingCharge",
+                      ("unitRate", "dayRate", "nightRate", "weekendRate", "standingCharge",
                        "capacityCharge", "networkCharge", "meterCharge")},
             "startDate": (row.get("supplyStartDate") or "").strip(),
             "costs": {k: round(v, 2) for k, v in costs.items()},
@@ -321,9 +337,14 @@ def main(argv):
     # --- Assumption footnotes (auto-built, always disclosed) ----------------
     assumptions = []
     if any(s["splitUsed"] for o in offers + ([incumbent] if incumbent else []) for s in o["sites"]):
-        pct = round(float(tender.get("day_split", 0.7)) * 100)
+        pct_day = round(float(tender.get("day_split", 0.7)) * 100)
+        pct_weekend = round(float(tender.get("weekend_split", 0) or 0) * 100)
+        pct_night = max(0, 100 - pct_day - pct_weekend)
+        split_txt = f"{pct_day}% day / {pct_night}% night"
+        if pct_weekend:
+            split_txt += f" / {pct_weekend}% weekend"
         assumptions.append(
-            f"Two-rate meters: annual consumption split {pct}% day / {100 - pct}% night. "
+            f"Multi-rate meters: annual consumption split {split_txt}. "
             "Adjustable — tell us if you have half-hourly data."
         )
     assumptions.append("Daily charges annualised over 365 days.")

@@ -68,7 +68,14 @@
       "minimum": 0,
       "maximum": 1,
       "default": 0.7,
-      "description": "Day fraction for two-rate meters (night = 1 - day_split). Always disclosed as a dashboard footnote. Set from a known profile / half-hourly data where available."
+      "description": "Day fraction for two-rate meters (night = 1 - day_split - weekend_split). Always disclosed as a dashboard footnote. Set from a known profile / half-hourly data where available."
+    },
+    "weekend_split": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0,
+      "description": "Fraction of annual consumption at the weekend rate, for suppliers pricing weekends as a distinct band. Default 0 = weekend rate captured/shown but not separately costed (a warning is raised). Set this (with day_split) only from a known profile / half-hourly data; night gets the residual 1 - day_split - weekend_split."
     },
     "url_uuid": {
       "type": ["string", "null"],
@@ -168,6 +175,7 @@
         "unitRate": { "$ref": "#/$defs/value", "description": "Single (standard) rate, p/kWh. Null on two-rate lines." },
         "dayRate": { "$ref": "#/$defs/value", "description": "Day rate, p/kWh. Null on single-rate lines." },
         "nightRate": { "$ref": "#/$defs/value", "description": "Night rate, p/kWh. Null on single-rate lines." },
+        "weekendRate": { "$ref": "#/$defs/value", "description": "Weekend rate, p/kWh, where a supplier prices weekends as a distinct band. Null when not applicable. Captured verbatim; only costed when a weekend_split is set, else surfaced as a warning (see build_dashboard)." },
         "standingCharge": { "$ref": "#/$defs/value", "description": "Standing charge (default basis p/day)." },
         "capacityCharge": { "$ref": "#/$defs/value", "description": "Capacity charge (default basis p/kVA/day)." },
         "networkCharge": { "$ref": "#/$defs/value", "description": "Network / DUoS charge (default basis p/day)." },
@@ -182,6 +190,7 @@
         "unitRate": { "$ref": "#/$defs/basisValue" },
         "dayRate": { "$ref": "#/$defs/basisValue" },
         "nightRate": { "$ref": "#/$defs/basisValue" },
+        "weekendRate": { "$ref": "#/$defs/basisValue" },
         "standingCharge": { "$ref": "#/$defs/basisValue" },
         "capacityCharge": { "$ref": "#/$defs/basisValue" },
         "networkCharge": { "$ref": "#/$defs/basisValue" },
