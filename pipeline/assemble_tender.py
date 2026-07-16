@@ -57,6 +57,7 @@ The incumbent JSON is an object matching the schema's #/$defs/incumbent
 ({ "supplier": ..., "lines": [...] }); pass none for an unknown incumbent.
 """
 import argparse
+import csv
 import datetime
 import json
 import os
@@ -64,9 +65,85 @@ import re
 import sys
 import uuid
 
+from rye_quote_core import parse_num
+
 # Provenance ranking for site facts: prefer RYE reference data, then an operator
 # figure, then whatever the supplier stated. Higher wins on conflict.
 _EAC_SOURCE_RANK = {"db": 3, "manual": 2, "quote": 1}
+
+# The incumbent line's rate fields — mirrors the schema #/$defs/line rate props
+# (and process_quote.LINE_RATE_FIELDS). A test asserts they stay in sync.
+_INCUMBENT_RATE_FIELDS = [
+    "unitRate", "dayRate", "nightRate", "weekendRate", "standingCharge",
+    "capacityCharge", "networkCharge", "meterCharge",
+]
+
+
+def _norm_mpxn(v):
+    """Normalise a meter point to a bare string key (drops a stray trailing .0)."""
+    s = str(v or "").strip()
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    return s
+
+
+def incumbent_from_sites_csv(path, client_name=None, mpxns=None, dbl=None):
+    """Build the tender `incumbent` block from RYE's sites.csv.
+
+    The same export that feeds site reference at /extract carries the client's
+    current contract in its rate columns; this reads them into an incumbent block,
+    keyed on MPAN. A row becomes an incumbent line only if it has at least one
+    non-null rate — pure site-reference rows (name/EAC only, no rates) are skipped,
+    so a sites.csv with no incumbent data yields None (an unknown incumbent, which
+    the schema allows).
+
+    Optionally restricts to a client (clientName column) and/or the tender's meter
+    points (`mpxns`). Supplier follows RYE's rule: the single distinct
+    incumbentSupplier if there's exactly one, 'Various' if several, 'Unknown' if
+    lines exist but none name a supplier. Values move through the shared parse_num
+    — code moves numbers, same as everywhere else.
+    """
+    dbl = dbl or {}
+    mpxn_col = dbl.get("mpxn_col", "mpxn")
+    client_col = dbl.get("client_col", "clientName")
+    supplier_col = dbl.get("incumbent_supplier_col", "incumbentSupplier")
+    want = {_norm_mpxn(m) for m in mpxns} if mpxns is not None else None
+
+    lines, suppliers = [], set()
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        fields = reader.fieldnames or []
+        if mpxn_col not in fields:
+            raise SystemExit(f"sites.csv must contain a '{mpxn_col}' column. Found: {fields}")
+        for r in reader:
+            if client_name and client_col in fields:
+                if (r.get(client_col) or "").strip().lower() != client_name.strip().lower():
+                    continue
+            m = _norm_mpxn(r.get(mpxn_col))
+            if not m or (want is not None and m not in want):
+                continue
+            rates = {f: parse_num(r.get(f)) for f in _INCUMBENT_RATE_FIELDS}
+            if not any(v is not None for v in rates.values()):
+                continue  # no incumbent data on this row — a site-reference-only row
+            line = {"mpxn": m}
+            sd = (r.get("supplyStartDate") or "").strip()
+            if sd:
+                line["supplyStartDate"] = sd
+            line.update(rates)
+            lines.append(line)
+            sup = (r.get(supplier_col) or "").strip() if supplier_col in fields else ""
+            if sup:
+                suppliers.add(sup)
+
+    if not lines:
+        return None
+    if len(suppliers) == 1:
+        supplier = next(iter(suppliers))
+    elif len(suppliers) > 1:
+        supplier = "Various"
+    else:
+        supplier = "Unknown"
+    return {"supplier": supplier, "lines": lines}
 
 
 def _now_rfc3339_z():
