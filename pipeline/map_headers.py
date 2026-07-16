@@ -49,13 +49,53 @@ def _cell(v):
     return "" if v is None else str(v).strip()
 
 
-def _score_header_row(cells):
-    """Heuristic score: many non-empty cells + keyword hits => likely header."""
-    non_empty = [c for c in cells if c != ""]
-    if not non_empty:
+_NUMISH = re.compile(r"^[-+]?[\d,]*\.?\d+$")
+
+
+def _value_like(cell):
+    """True if a cell reads as a value (number/date/id) rather than a label.
+
+    A real header cell is a short text label. Data and summary-block cells look
+    like values: pure numbers, or anything with a run of 2+ digits (dates, IDs,
+    long figures). Used to reject 'label: value' summary rows as headers.
+    """
+    c = cell.strip()
+    if not c:
+        return False
+    if _NUMISH.match(c.replace("£", "").replace("%", "").replace(" ", "")):
+        return True
+    return bool(re.search(r"\d{2,}", c))
+
+
+def _score_header_row(grid, idx):
+    """Score row `idx` on how much it looks like a real table header.
+
+    A header (a) is mostly short text labels, not values; (b) often carries
+    energy keywords; and crucially (c) is followed by a wide, consistent block
+    of data that populates its columns. Point (c) is what stops a keyword-rich
+    'Quote summary' block (label/value pairs, little below it) from beating the
+    actual 'Rates breakdown' header several rows further down.
+    """
+    cells = grid[idx]
+    cols = [j for j, c in enumerate(cells) if c.strip()]
+    n = len(cols)
+    if n < 2:
         return 0
-    hits = sum(1 for c in non_empty if any(h in c.lower() for h in HEADER_HINTS))
-    return len(non_empty) + 3 * hits
+    labels = [cells[j].strip() for j in cols]
+    if sum(1 for c in labels if _value_like(c)) / n >= 0.4:
+        return 0  # too many value-like cells => a data/summary row, not a header
+    kw = sum(1 for c in labels if any(h in c.lower() for h in HEADER_HINTS))
+    # Data-below overlap: how well the next few non-empty rows fill these columns.
+    overlaps = []
+    for k in range(idx + 1, min(idx + 7, len(grid))):
+        r = grid[k]
+        if not any(x.strip() for x in r):
+            continue
+        overlaps.append(sum(1 for j in cols if j < len(r) and r[j].strip()) / n)
+        if len(overlaps) >= 4:
+            break
+    overlap = sum(overlaps) / len(overlaps) if overlaps else 0.0
+    return n * (0.5 + overlap) + 3 * kw
 
 
 def _sheet_grid(path, sheet, max_rows):
@@ -74,11 +114,13 @@ def _sheet_grid(path, sheet, max_rows):
         return [[_cell(c) for c in r] for r in list(__import__("csv").reader(f))[:max_rows]]
 
 
-def inspect_file(path, max_rows=15):
+def inspect_file(path, max_rows=40):
     """Sheet names, first ~max_rows rows, and ranked header-row candidates.
 
     This is exactly what the /inspect endpoint returns and is the ONLY view of
-    the file the mapping step gets beyond a handful of sample rows.
+    the file the mapping step gets beyond a handful of sample rows. Scans enough
+    rows to reach a header that sits below a summary block (e.g. Octopus
+    multisite quotes put the rates table ~20 rows down).
     """
     ext = os.path.splitext(path)[1].lower()
     if ext in (".xlsx", ".xlsm"):
@@ -92,7 +134,8 @@ def inspect_file(path, max_rows=15):
     for name in sheet_names:
         grid = _sheet_grid(path, name, max_rows)
         scored = sorted(
-            ((_score_header_row(r), idx + 1) for idx, r in enumerate(grid)),
+            ((_score_header_row(grid, idx), idx + 1) for idx in range(len(grid))),
+            key=lambda t: (t[0], -t[1]),  # ties: prefer the earlier (topmost) row
             reverse=True,
         )
         candidates = [row for score, row in scored[:3] if score > 0]
