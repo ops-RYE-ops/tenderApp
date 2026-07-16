@@ -68,7 +68,8 @@ through, never computed. Completes the headless "quotes in → tender JSON out" 
 - **`/api/inspect`** (on main, live) — upload a quote (.xlsx/.xlsm/.csv) → per-sheet
   ranked header-row candidates, best guess, first ~40 rows. Thin wrapper over
   `map_headers.inspect_file`. Pure, no network. Tested on 11 real supplier files.
-- **`/api/map` + `/api/map/confirm`** (on `feat/api-map`, needs push + PR) — the
+- **`/api/map` + `/api/map/confirm`** (on main, PR #4 merged; verified live on a
+  preview against a real UrbanChain quote) — the
   live Claude call. `/api/map`: inspect → compute layout fingerprint
   (`map_headers.layout_fingerprint`, a sha256 of the normalised header signature,
   values-independent) → cache lookup in `supplier_mappings` by (supplier,
@@ -80,7 +81,24 @@ through, never computed. Completes the headless "quotes in → tender JSON out" 
   next identical layout skips the LLM. Degrades gracefully with no DB (goes to the
   LLM) and returns a clean 503 on cache-miss-with-no-API-key. Covered by
   `tests/test_map.py` (fingerprint stability, cache-vs-LLM, confirm/save — all
-  mocked, no network). **`ANTHROPIC_API_KEY` is now set in Vercel (Prod+Preview).**
+  mocked, no network). **Both `ANTHROPIC_API_KEY` and `RETOOL_DATABASE_URL` must be
+  scoped to Production AND Preview** — preview builds don't inherit Production-only
+  vars, and a wrong scope shows up as the endpoint's own 503s ("… not set"). Sensitive
+  vars can't be added to the Development environment (Vercel blocks it); that's fine,
+  we don't need it. After changing a var's scope you must REDEPLOY the branch for it
+  to take effect.
+  - **Cache hygiene / supplier naming (for the Phase 2 UI):** the cache key is
+    `(supplier, layout_fingerprint)` and the supplier match is EXACT. "UrbanChain",
+    "Urban Chain" and "urbanchain" are three different keys → needless repeat LLM
+    calls and duplicate rows. The new-tender UI should pick supplier from a
+    controlled dropdown (or normalise the string server-side), never free text, so
+    the cache actually pays off. Re-confirming the same supplier+fingerprint upserts
+    (overwrites) the existing mapping row, which is how you correct a cached mapping.
+  - **Live-test gotcha found:** Claude mapped a "KVA Charge (p/kVA/day)" column to
+    `kva` (the capacity QUANTITY) instead of `capacityCharge` (the per-kVA price).
+    Harmless here (values were 0) but would mis-cost a real capacity charge. Fixed by
+    a rule in the `map_headers` SYSTEM_PROMPT distinguishing the two; the confirm
+    screen is the backstop regardless.
 - **Header detection improved** (on `feat/weekend-rate`) — scans 40 rows (not 15),
   rejects value/summary rows, rewards the row a wide consistent data block sits
   under. Correctly finds the header on all 11 sample files incl. the Octopus
