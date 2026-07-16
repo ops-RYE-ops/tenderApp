@@ -76,7 +76,7 @@ from rye_quote_core import TARGET_FIELDS as TARGET_HEADERS, parse_num
 
 # Fields that live on a canonical quote LINE (rates/charges), in schema order.
 LINE_RATE_FIELDS = [
-    "unitRate", "dayRate", "nightRate", "standingCharge",
+    "unitRate", "dayRate", "nightRate", "weekendRate", "standingCharge",
     "capacityCharge", "networkCharge", "meterCharge",
 ]
 
@@ -200,12 +200,11 @@ def process_rows(records, mapping, name_lookup=None, constants=None):
     out_rows = []
     unmatched = []
     for rec in records:
-        # Determine rate mode for this row: split (day/night) vs single.
-        day_spec = cols.get("dayRate")
-        day_val, _ = resolve(day_spec, rec)
-        night_spec = cols.get("nightRate")
-        night_val, _ = resolve(night_spec, rec)
-        is_split = (day_val not in (None, "")) or (night_val not in (None, ""))
+        # Determine rate mode for this row: split (day/night/weekend) vs single.
+        day_val, _ = resolve(cols.get("dayRate"), rec)
+        night_val, _ = resolve(cols.get("nightRate"), rec)
+        weekend_val, _ = resolve(cols.get("weekendRate"), rec)
+        is_split = any(v not in (None, "") for v in (day_val, night_val, weekend_val))
 
         row = {}
         for target in TARGET_HEADERS:

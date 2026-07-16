@@ -18,7 +18,7 @@ import re
 # canonical line fields, and a mapping's column keys all derive from this list.
 TARGET_FIELDS = [
     "siteName", "mpxn", "updatedEac", "supplyStartDate",
-    "unitRate", "dayRate", "nightRate", "standingCharge",
+    "unitRate", "dayRate", "nightRate", "weekendRate", "standingCharge",
     "capacityCharge", "networkCharge", "meterCharge", "kva",
 ]
 
