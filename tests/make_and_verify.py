@@ -32,6 +32,7 @@ import process_quote as pq
 import map_headers as mh
 import build_dashboard as bd
 import rye_quote_core as core
+import assemble_tender as at
 
 WORK = os.path.join(HERE, "_work")
 os.makedirs(WORK, exist_ok=True)
@@ -222,7 +223,12 @@ def extract_clean(extract):
 
 
 def assemble(extract, schema):
-    """Minimal inline /assemble: extractResult + incumbent + meta -> tender."""
+    """The real /assemble step (pipeline/assemble_tender.py), exercised here.
+
+    Promoted out of this test into shared code — the backend imports the same
+    function. We pass the same fixture (one extract + incumbent + meta) it used
+    to build inline; assemble_tender does the stitching and stamping.
+    """
     incumbent = {
         "supplier": "British Gas",
         "term": "current",
@@ -231,29 +237,19 @@ def assemble(extract, schema):
             {"mpxn": MPAN_B, "dayRate": 29.0, "nightRate": 20.0, "standingCharge": 65.0},
         ],
     }
-    return {
-        "id": str(uuid.uuid4()),
+    meta = {
         "client_name": "Testco UK",
         "tender_label": "Electricity tender — July 2026",
-        "utility": "electricity",
-        "status": "draft",
-        "version": 1,
-        "created_at": datetime.datetime.now(datetime.timezone.utc)
-                      .isoformat(timespec="seconds").replace("+00:00", "Z"),
         "created_by": "rory@rye.energy",
         "expires_at": "2026-07-31",
-        "day_split": 0.7,
-        "url_uuid": str(uuid.uuid4()),
-        "slug": "testco-uk",
-        "dashboard_url": None,
-        "recommended": {"supplier": "Testco", "term": "12 months"},
-        "rye_fee": {"list_price_site_month": 90, "discount_pct": 80,
-                    "label": "RYE fee (year 1, 80% discount)"},
-        "sites": extract_clean(extract)["sites"],
-        "incumbent": incumbent,
-        "quotes": extract_clean(extract)["quotes"],
+        "recommended_supplier": "Testco",
+        "recommended_term": "12 months",
+        "fee_list_price_site_month": 90,
+        "fee_discount_pct": 80,
+        "fee_label": "RYE fee (year 1, 80% discount)",
         "notes": ["Synthetic fixture for Phase-0 verification."],
     }
+    return at.assemble(extract, meta, incumbent=incumbent)
 
 
 if __name__ == "__main__":

@@ -46,6 +46,21 @@ separation is what makes the output safe to send to a client.
 - `pipeline/build_dashboard.py` + `assets/dashboard_template.html` — brought into
   the repo from the quote-to-dashboard skill and wired onto the shared core.
 
+**`/assemble` promoted to real code (complete, verified — NOT yet committed).**
+- `pipeline/assemble_tender.py` — merges N `extractResult` docs (dedupe sites on
+  `mpxn` with provenance preference db>manual>quote + null-fill; concat quotes) +
+  incumbent + meta → a valid canonical tender. Importable `assemble()` for the
+  Vercel `/assemble` endpoint, plus a headless CLI. Moves NO values — only
+  arranges the objects the extractor produced, and stamps meta (id/version/
+  status/timestamps/url_uuid/slug). `recommended` is carried through, never
+  computed (that's a cost-engine / human call at the assemble step).
+- `make_and_verify.py` — its old inline `assemble()` now calls the module (parity
+  swap; still 24 checks green).
+- `tests/test_assemble.py` — NEW focused suite (multi-extract merge, dedupe,
+  provenance, slug, versioning/rotation, schema validity, input guards).
+- This completes the headless "quotes in → tender JSON out" pipeline:
+  `process_quote.py` → `assemble_tender.py`, no Vercel dependency.
+
 ## Key design decisions (don't relitigate without reason)
 
 - **EAC and kVA live on `sites[]`, once** — they're meter facts, not per-offer;
@@ -67,21 +82,30 @@ separation is what makes the output safe to send to a client.
 cd ~/dev/tenderApp
 source .venv/bin/activate          # needed for any of this project's Python
 python3 tests/make_and_verify.py   # expect: ALL CHECKS PASSED (24 checks, no network)
+python3 tests/test_assemble.py     # expect: ALL ASSEMBLE CHECKS PASSED (no network)
 ```
 
-The test synthesises a quote, runs extraction, validates against the schema,
-assembles a full tender, renders a dashboard, and asserts no parse_num drift.
+`make_and_verify.py` synthesises a quote, runs extraction, validates against the
+schema, assembles a full tender (via `assemble_tender.py`), renders a dashboard,
+and asserts no parse_num drift. `test_assemble.py` covers the multi-extract merge.
 
 ## Next steps (in priority order)
 
-1. **`assemble_tender.py`** — promote the /assemble step from test-only into real
-   code: merge several extract runs + incumbent + meta → full canonical tender
-   JSON. Completes the headless "quotes in, tender JSON out" pipeline. **No Vercel
-   dependency — do this next.**
+1. **Phase 1 (Vercel backend)** — Rory is starting the Vercel build now rather
+   than waiting on their sales answers (tight deadline; validate assumptions by
+   doing). FastAPI functions that IMPORT the existing scripts, not paraphrase
+   them: `/inspect` + `/map` → `map_headers.py`; `/extract` → `process_quote.run`;
+   `/assemble` → `assemble_tender.assemble`; `/render` → `build_dashboard.main`.
+   Deploy to an EU region. Things to prove first (these are the Vercel unknowns):
+   Python 3.12 runtime + openpyxl within the 500MB bundle / 300s limits; AI
+   Gateway BYOK (or fall back to direct API — `map_headers.py` already switches on
+   `ANTHROPIC_BASE_URL`, no code change); external DB connection to Retool DB.
 2. **Run the Retool DDL** — once the Retool DB region is confirmed UK/EU, run
    `schema/retool_tables.sql` in Retool.
-3. **Phase 1 (Vercel backend)** — FastAPI functions wrapping the scripts
-   (/inspect, /map, /extract, /assemble, /render). **Gated on the Vercel answers.**
+
+The pipeline core is deliberately transport-agnostic: every script is a plain
+importable function, so the Vercel functions are thin wrappers and nothing built
+now has to be redone once the sales answers land.
 
 ## Open checks / blockers
 
