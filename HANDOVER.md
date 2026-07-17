@@ -185,6 +185,14 @@ small read-only endpoint.
   `/api/assemble` AND `/api/cost` (the UI now sends the shared sites.csv to `/api/cost`
   too, so the ranking EAC matches the render). Idempotent with `/extract`. Covered by
   `test_assemble_api.test_site_reference_override`.
+- **Bugfix (same branch): spurious "no kVA figure — excluded" notes on the client
+  dashboard.** A capacity charge of `0` quoted per kVA, on a site with no kVA, was
+  firing the "excluded from that site's total" warning even though excluding £0 is a
+  no-op. Fix: `build_dashboard.annualise` now treats a `0`/None charge as nothing to
+  cost (returns 0, no warning); a genuine NON-ZERO per-kVA charge with no kVA still
+  warns (real undercosting). Covered by `tests/test_capacity.py`. (Open design
+  question for later: whether internal "excluded" warnings should show client-side at
+  all, or only in the team pre-publish review — left as-is for now.)
 
 Git workflow we're using: feature branch → `git push` → Vercel auto-builds a
 **Preview** deployment → open a PR on GitHub → merge → `main` auto-deploys to
