@@ -51,8 +51,8 @@
     <span class="step" data-step="1"><span class="n">1</span> Tender</span>
     <span class="step" data-step="2"><span class="n">2</span> Upload</span>
     <span class="step" data-step="3"><span class="n">3</span> Map</span>
-    <span class="step locked"><span class="n">4</span> Extract</span>
-    <span class="step locked"><span class="n">5</span> Assemble</span>
+    <span class="step" data-step="4"><span class="n">4</span> Extract</span>
+    <span class="step" data-step="5"><span class="n">5</span> Assemble</span>
     <span class="step locked"><span class="n">6</span> Publish</span>
   </div>
 
@@ -106,7 +106,9 @@
     <div class="actions">
       <button class="btn-secondary" id="btn-back-1">Back</button>
       <div class="spacer"></div>
+      <button class="btn-primary" id="btn-to-extract" disabled>Continue to extract &rarr;</button>
     </div>
+    <div id="step2-msg"></div>
   </div>
 
   <!-- step 3: mapping review -->
@@ -132,6 +134,86 @@
       </div>
     </div>
     <div id="map-msg"></div>
+  </div>
+
+  <!-- step 4: extract -->
+  <div id="step-4" class="card hidden">
+    <h2>Extract lines</h2>
+    <p class="sub">Deterministic pass: the confirmed mapping names the columns, Python copies the actual values — no model, no invented numbers. Meter points are matched to RYE's site list; anything unmatched is flagged, never silently accepted.</p>
+
+    <div class="siteref">
+      <div>
+        <span class="label">Site reference / incumbent (sites.csv — optional)</span>
+        <div class="siteref-sub">One file, two jobs: overrides site names + EAC/kVA here, and provides the incumbent contract at the assemble step. Leave empty to use the quote's own figures with no incumbent baseline.</div>
+      </div>
+      <div class="siteref-right">
+        <span id="siteref-name" class="mono siteref-file"></span>
+        <button class="btn-secondary" id="btn-pick-siteref">Choose sites.csv</button>
+        <button class="btn-ghost hidden" id="btn-clear-siteref">Remove</button>
+        <input type="file" id="in-siteref" accept=".csv" class="hidden">
+      </div>
+    </div>
+
+    <div class="filelist" id="extract-list"></div>
+
+    <div class="actions">
+      <button class="btn-secondary" id="btn-back-to-upload">Back to files</button>
+      <button class="btn-secondary" id="btn-extract-all">Extract confirmed files</button>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-to-assemble" disabled>Continue to assemble &rarr;</button>
+    </div>
+    <div id="extract-msg"></div>
+  </div>
+
+  <!-- step 5: assemble -->
+  <div id="step-5" class="card hidden">
+    <h2>Assemble &amp; save tender</h2>
+    <p class="sub">Stitch the extracted offers into one canonical tender and save a version. Review the cost assumptions and any warnings below before this goes near a client — a wrong charge basis silently mis-ranks offers.</p>
+
+    <div class="field">
+      <span class="label">Recommended offer (the dashboard leads with this — never auto-picked on price)</span>
+      <select id="in-recommended"></select>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <span class="label">RYE fee — list price (£/site/month)</span>
+        <input type="number" id="in-fee-list" value="90" step="1" min="0">
+      </div>
+      <div class="field">
+        <span class="label">RYE fee — discount (%)</span>
+        <input type="number" id="in-fee-discount" value="80" step="1" min="0" max="100">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <span class="label">Day split (two-rate meters)</span>
+        <input type="number" id="in-day-split" value="0.7" step="0.05" min="0" max="1">
+      </div>
+      <div class="field">
+        <span class="label">Weekend split (0 = shown, not costed)</span>
+        <input type="number" id="in-weekend-split" value="0" step="0.05" min="0" max="1">
+      </div>
+      <div class="field">
+        <span class="label">Expiry (link validity — optional)</span>
+        <input type="date" id="in-expires">
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="label">Notes (client-facing footnotes — one per line, optional)</span>
+      <textarea id="in-notes" placeholder="e.g. Drax offer valid until 10 Aug 2026"></textarea>
+    </div>
+
+    <div class="actions">
+      <button class="btn-secondary" id="btn-back-to-extract">Back to extract</button>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-assemble">Assemble &amp; save tender</button>
+    </div>
+    <div id="assemble-loading" class="hidden"><span class="spinner"></span> <span>Assembling and validating…</span></div>
+    <div id="assemble-result" class="hidden"></div>
+    <div id="assemble-msg"></div>
   </div>
 </div>
 

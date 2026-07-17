@@ -6,3 +6,8 @@ tests/_work/
 *.env
 .DS_Store
 .venv/
+
+# optional local tooling for tests/dom_smoke.js (run ad hoc: npm i jsdom)
+node_modules/
+package.json
+package-lock.json

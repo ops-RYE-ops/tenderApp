@@ -141,6 +141,17 @@ def main():
                 raise
             check(True, why)
 
+    print("9) day_split / weekend_split passthrough (weekend band costing)")
+    check(tender["day_split"] == 0.7, "day_split defaults to 0.7")
+    check(tender["weekend_split"] == 0,
+          "weekend_split defaults to 0 (rate captured/shown but not separately costed)")
+    t3 = at.assemble([edf], {**meta, "day_split": 0.6, "weekend_split": 0.2})
+    check(t3["day_split"] == 0.6, "explicit day_split carried through")
+    check(t3["weekend_split"] == 0.2,
+          "explicit weekend_split carried through so build_dashboard costs the weekend band")
+    at.validate_tender(t3)
+    check(True, "tender with a weekend_split is schema-valid")
+
     print("\nALL ASSEMBLE CHECKS PASSED")
     return 0
 

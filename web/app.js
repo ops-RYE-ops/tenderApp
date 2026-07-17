@@ -21,9 +21,11 @@ const NEW_SUPPLIER = "__new__";
 const state = {
   key: localStorage.getItem("rye_team_key") || "",
   email: localStorage.getItem("rye_user_email") || "",
-  meta: { client_name: "", tender_label: "", utility: "electricity", supplier: "" },
-  files: [],        // { file, name, status, mapResp, mapping, inspection }
+  meta: { client_name: "", tender_label: "", utility: "electricity", supplier: "", id: null },
+  files: [],        // { file, name, status, mapResp, mapping, inspection, extract, extractResp, extractStatus, extractError }
   activeIdx: null,  // index into files for the map screen
+  sitesCsv: null,   // shared sites.csv File — feeds both /extract (site-ref) and /assemble (incumbent)
+  recCombos: [],    // supplier+term combos found across the extracts (recommended-offer options)
 };
 
 const $ = (id) => document.getElementById(id);
@@ -73,7 +75,7 @@ function showUnlock(msg) {
 }
 
 function showStep(n) {
-  for (const s of [1, 2, 3]) $("step-" + s).classList.toggle("hidden", s !== n);
+  for (const s of [1, 2, 3, 4, 5]) $("step-" + s).classList.toggle("hidden", s !== n);
   document.querySelectorAll("#stepper .step[data-step]").forEach((el) => {
     const s = Number(el.dataset.step);
     el.classList.toggle("active", s === n);
@@ -174,6 +176,10 @@ function renderFiles() {
     b.addEventListener("click", () => openMap(Number(b.dataset.map))));
   el.querySelectorAll("[data-del]").forEach((b) =>
     b.addEventListener("click", () => { state.files.splice(Number(b.dataset.del), 1); renderFiles(); }));
+
+  // Extract needs at least one confirmed mapping.
+  const btn = $("btn-to-extract");
+  if (btn) btn.disabled = !state.files.some((f) => f.status === "confirmed");
 }
 
 // --- step 3: mapping review ------------------------------------------------------
@@ -345,13 +351,221 @@ async function confirmMap() {
     renderFiles();
     notice($("map-msg"),
       "Saved — the next " + state.meta.supplier + " quote with this layout skips Claude entirely. " +
-      "Extract is the next step (coming in the next update); your confirmed mapping is kept on this file.",
+      "Head back to files, then Continue to extract.",
       "success");
   } catch (e) {
     if (e.message !== "unauthorised") notice($("map-msg"), "Save failed: " + e.message, "error");
   } finally {
     btn.disabled = false;
   }
+}
+
+// --- step 4: extract -----------------------------------------------------------
+
+function confirmedFiles() {
+  return state.files.filter((f) => f.status === "confirmed");
+}
+
+function renderSiteref() {
+  const nameEl = $("siteref-name");
+  const clear = $("btn-clear-siteref");
+  nameEl.textContent = state.sitesCsv ? state.sitesCsv.name : "";
+  clear.classList.toggle("hidden", !state.sitesCsv);
+  $("btn-pick-siteref").textContent = state.sitesCsv ? "Replace" : "Choose sites.csv";
+}
+
+function openExtract() {
+  showStep(4);
+  notice($("extract-msg"), "");
+  renderSiteref();
+  renderExtractList();
+}
+
+function extractChip(f) {
+  if (f.extractStatus === "done") return '<span class="chip success">EXTRACTED</span>';
+  if (f.extractStatus === "extracting") return '<span class="chip info"><span class="spinner"></span> EXTRACTING</span>';
+  if (f.extractStatus === "error") return '<span class="chip danger">FAILED</span>';
+  return '<span class="chip">READY</span>';
+}
+
+function renderExtractList() {
+  const el = $("extract-list");
+  el.innerHTML = "";
+  const files = confirmedFiles();
+  if (!files.length) {
+    el.innerHTML = '<div class="notice">No confirmed mappings yet — go back and confirm at least one file\'s columns first.</div>';
+    $("btn-to-assemble").disabled = true;
+    return;
+  }
+  for (const f of files) {
+    const div = document.createElement("div");
+    div.className = "filecard";
+    let detail = "";
+    if (f.extractStatus === "done" && f.extractResp) {
+      const c = f.extractResp.counts || {};
+      const ref = f.extractResp.site_reference_used ? " · site-ref applied" : "";
+      const unmatched = f.extractResp.unmatched_mpxn || [];
+      detail = `<div class="sub2">${c.sites || 0} site(s) · ${c.quotes || 0} offer(s) · ${c.lines || 0} line(s)${ref}</div>`;
+      if (unmatched.length) {
+        detail += `<div class="unmatched-list">⚠ ${unmatched.length} meter point(s) not in the site reference: ${unmatched.map(escapeHtml).join(", ")}</div>`;
+      }
+    } else if (f.extractStatus === "error") {
+      detail = `<div class="unmatched-list">${escapeHtml(f.extractError || "extraction failed")}</div>`;
+    }
+    div.innerHTML = `<div><span class="name">${escapeHtml(f.name)}</span>${detail}</div>
+      <div class="right">${extractChip(f)}</div>`;
+    el.append(div);
+  }
+  $("btn-to-assemble").disabled = !state.files.some((f) => f.extract);
+}
+
+async function runExtractAll() {
+  const files = confirmedFiles();
+  if (!files.length) { notice($("extract-msg"), "Confirm at least one mapping first.", "error"); return; }
+  const btn = $("btn-extract-all");
+  btn.disabled = true;
+  notice($("extract-msg"), "");
+  for (const f of files) {
+    f.extractStatus = "extracting";
+    renderExtractList();
+    try {
+      const fd = new FormData();
+      fd.append("file", f.file);
+      fd.append("mapping", JSON.stringify(f.mapping));
+      fd.append("supplier", state.meta.supplier);
+      if (state.sitesCsv) fd.append("site_reference", state.sitesCsv);
+      const r = await api("/api/extract", { method: "POST", body: fd });
+      f.extract = r.extract_result;
+      f.extractResp = r;
+      f.extractStatus = "done";
+    } catch (e) {
+      f.extractStatus = "error";
+      f.extractError = e.message;
+      f.extract = null;
+      f.extractResp = null;
+    }
+    renderExtractList();
+  }
+  btn.disabled = false;
+  const anyUnmatched = files.some((f) => (f.extractResp?.unmatched_mpxn || []).length);
+  if (files.some((f) => f.extract)) {
+    notice($("extract-msg"),
+      anyUnmatched
+        ? "Extracted — but some meter points aren't in the site reference (flagged above). Resolve them or proceed knowingly."
+        : "Extracted. Continue to assemble when ready.",
+      anyUnmatched ? "warn" : "success");
+  }
+}
+
+// --- step 5: assemble ----------------------------------------------------------
+
+function collectCombos() {
+  // Distinct supplier+term offers across the extracts — the recommended-offer options.
+  const seen = new Set();
+  const combos = [];
+  for (const f of state.files) {
+    for (const q of ((f.extract && f.extract.quotes) || [])) {
+      const key = (q.supplier || "") + " " + (q.term || "");
+      if (q.supplier && !seen.has(key)) {
+        seen.add(key);
+        combos.push({ supplier: q.supplier, term: q.term || "" });
+      }
+    }
+  }
+  return combos;
+}
+
+function openAssemble() {
+  showStep(5);
+  notice($("assemble-msg"), "");
+  state.recCombos = collectCombos();
+  const sel = $("in-recommended");
+  sel.innerHTML = '<option value="">— none / decide later —</option>';
+  state.recCombos.forEach((c, i) =>
+    sel.append(new Option(c.term ? `${c.supplier} — ${c.term}` : c.supplier, String(i))));
+}
+
+function assembleMeta() {
+  const meta = {
+    client_name: state.meta.client_name,
+    tender_label: state.meta.tender_label,
+    utility: state.meta.utility,
+  };
+  if (state.meta.id) meta.id = state.meta.id;              // re-assemble → version bumps
+  if (state.email) meta.created_by = state.email;
+
+  const ds = parseFloat($("in-day-split").value);
+  meta.day_split = isNaN(ds) ? 0.7 : ds;
+  const ws = parseFloat($("in-weekend-split").value);
+  meta.weekend_split = isNaN(ws) ? 0 : ws;
+
+  const feeList = parseFloat($("in-fee-list").value);
+  if (!isNaN(feeList)) meta.fee_list_price_site_month = feeList;
+  const feeDisc = parseFloat($("in-fee-discount").value);
+  if (!isNaN(feeDisc)) meta.fee_discount_pct = feeDisc;
+
+  const exp = $("in-expires").value;
+  if (exp) meta.expires_at = exp;
+
+  const recIdx = $("in-recommended").value;
+  if (recIdx !== "") {
+    const c = state.recCombos[Number(recIdx)];
+    if (c) { meta.recommended_supplier = c.supplier; if (c.term) meta.recommended_term = c.term; }
+  }
+
+  const notes = $("in-notes").value.split("\n").map((s) => s.trim()).filter(Boolean);
+  if (notes.length) meta.notes = notes;
+  return meta;
+}
+
+async function doAssemble() {
+  const extracts = state.files.filter((f) => f.extract).map((f) => f.extract);
+  if (!extracts.length) {
+    notice($("assemble-msg"), "No extracted files yet — go back to the extract step.", "error");
+    return;
+  }
+  const btn = $("btn-assemble");
+  btn.disabled = true;
+  $("assemble-result").classList.add("hidden");
+  $("assemble-loading").classList.remove("hidden");
+  notice($("assemble-msg"), "");
+  try {
+    const fd = new FormData();
+    fd.append("extracts", JSON.stringify(extracts));
+    fd.append("meta", JSON.stringify(assembleMeta()));
+    fd.append("persist", "true");
+    if (state.sitesCsv) fd.append("sites_csv", state.sitesCsv);
+    const r = await api("/api/assemble", { method: "POST", body: fd });
+    state.meta.id = r.id;   // subsequent saves bump the version instead of duplicating
+    renderAssembleResult(r);
+  } catch (e) {
+    if (e.message !== "unauthorised") notice($("assemble-msg"), "Assemble failed: " + e.message, "error");
+  } finally {
+    $("assemble-loading").classList.add("hidden");
+    btn.disabled = false;
+  }
+}
+
+function renderAssembleResult(r) {
+  const c = r.counts || {};
+  const savedChip = r.persisted
+    ? '<span class="chip success">SAVED TO REGISTER</span>'
+    : '<span class="chip info">DRY RUN — NOT SAVED</span>';
+  const warns = (r.warnings || []).map((w) =>
+    `<div class="notice warn">⚠ ${escapeHtml(w)}</div>`).join("");
+  $("assemble-result").innerHTML = `
+    <div class="result-grid">
+      <span class="kv">${savedChip}</span>
+      <span class="kv">version <b>v${escapeHtml(String(r.version))}</b></span>
+      <span class="kv">status <b>${escapeHtml(r.status || "—")}</b></span>
+      <span class="kv">sites <b>${escapeHtml(String(c.sites ?? "—"))}</b></span>
+      <span class="kv">offers <b>${escapeHtml(String(c.quotes ?? "—"))}</b></span>
+      <span class="kv">incumbent <b>${escapeHtml(r.incumbent_supplier || "none")}</b> (${escapeHtml(String(c.incumbent_lines ?? 0))} line(s))</span>
+      <span class="kv">tender id <b class="mono">${escapeHtml(r.id || "—")}</b></span>
+    </div>
+    ${warns || '<div class="notice success">No warnings — cost assumptions look clean. Review before publishing.</div>'}
+    <div class="notice">Saved as a draft version. Publishing to a client link is the next step (coming in a later update). Re-saving from here bumps the version, never overwrites.</div>`;
+  $("assemble-result").classList.remove("hidden");
 }
 
 // --- wiring ------------------------------------------------------------------
@@ -369,6 +583,23 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-to-upload").addEventListener("click", toUpload);
   $("btn-back-1").addEventListener("click", () => showStep(1));
   $("btn-back-2").addEventListener("click", () => { showStep(2); renderFiles(); });
+  $("btn-to-extract").addEventListener("click", openExtract);
+
+  // step 4: extract
+  $("btn-back-to-upload").addEventListener("click", () => { showStep(2); renderFiles(); });
+  $("btn-extract-all").addEventListener("click", runExtractAll);
+  $("btn-to-assemble").addEventListener("click", openAssemble);
+  $("btn-pick-siteref").addEventListener("click", () => $("in-siteref").click());
+  $("in-siteref").addEventListener("change", (e) => {
+    state.sitesCsv = e.target.files[0] || null;
+    e.target.value = "";
+    renderSiteref();
+  });
+  $("btn-clear-siteref").addEventListener("click", () => { state.sitesCsv = null; renderSiteref(); });
+
+  // step 5: assemble
+  $("btn-back-to-extract").addEventListener("click", () => { showStep(4); renderExtractList(); });
+  $("btn-assemble").addEventListener("click", doAssemble);
 
   const dz = $("dropzone");
   dz.addEventListener("click", () => $("in-files").click());
@@ -391,4 +622,8 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // Exposed for the headless DOM smoke test (jsdom) — not used by the UI itself.
-window.__rye_debug = { state, addFiles, openMap, renderFiles };
+window.__rye_debug = {
+  state, addFiles, openMap, renderFiles,
+  openExtract, runExtractAll, renderExtractList,
+  openAssemble, doAssemble, collectCombos, assembleMeta,
+};

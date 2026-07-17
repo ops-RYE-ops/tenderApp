@@ -1,6 +1,7 @@
 // DOM smoke test for the wizard using jsdom: loads index.html + app.js with a
-// stubbed fetch, walks unlock -> step 1 -> step 2 -> map screen, and fails on
-// any uncaught JS error. Not a visual check — that happens on the Vercel preview.
+// stubbed fetch, walks unlock -> tender basics -> upload -> map -> extract ->
+// assemble, and fails on any uncaught JS error. Not a visual check — that
+// happens on the Vercel preview.
 // Run from repo root: npm i jsdom && node tests/dom_smoke.js  (optional; needs Node)
 const fs = require('fs');
 const path = require('path');
@@ -40,12 +41,33 @@ const INSPECT_RESP = {
   }],
 };
 
+const TENDER_ID = '11111111-1111-4111-8111-111111111111';
+const EXTRACT_RESP = {
+  ok: true, file: 'q.csv', supplier: 'UrbanChain',
+  extract_result: {
+    sites: [{ mpxn: '1200098765432', site_name: 'Dalston Lane', eac: 45210, kva: null, eac_source: 'quote' }],
+    quotes: [{ supplier: 'UrbanChain', term: '24 months', category: 'fixed',
+      lines: [{ mpxn: '1200098765432', unitRate: 24.51, standingCharge: 48.0 }] }],
+  },
+  counts: { sites: 1, quotes: 1, lines: 1 },
+  unmatched_mpxn: [],
+  site_reference_used: false,
+};
+const ASSEMBLE_RESP = {
+  ok: true, persisted: true, id: TENDER_ID, version: 1, status: 'draft',
+  slug: 'amorino-uk', url_uuid: '22222222-2222-4222-8222-222222222222', dashboard_url: null,
+  counts: { sites: 1, quotes: 1, incumbent_lines: 0 },
+  incumbent_supplier: null, warnings: [], tender: {},
+};
+
 const routes = {
   '/api/auth-check': { ok: true, gated: false },
   '/api/suppliers': { suppliers: ['Octopus', 'UrbanChain'] },
   '/api/map': MAP_RESP,
   '/api/inspect': INSPECT_RESP,
   '/api/map/confirm': { ok: true, saved: true, supplier: 'UrbanChain' },
+  '/api/extract': EXTRACT_RESP,
+  '/api/assemble': ASSEMBLE_RESP,
 };
 
 const failures = [];
@@ -110,6 +132,38 @@ const check = (name, cond) => {
   await new Promise((r) => setTimeout(r, 50));
   check('confirm marks file confirmed', state.files[0].status === 'confirmed');
   check('success notice shown', $('map-msg').textContent.includes('Saved'));
+  check('continue-to-extract enabled once a file is confirmed', !$('btn-to-extract').disabled);
+
+  // --- step 4: extract ---
+  $('btn-to-extract').click();
+  await new Promise((r) => setTimeout(r, 20));
+  check('extract screen visible', !$('step-4').classList.contains('hidden'));
+  await window.__rye_debug.runExtractAll();
+  await new Promise((r) => setTimeout(r, 50));
+  check('file marked extracted', state.files[0].extractStatus === 'done');
+  check('extract_result stored on the file', !!(state.files[0].extract && state.files[0].extract.quotes.length));
+  check('extract counts rendered in the card', window.document.querySelector('#extract-list .sub2').textContent.includes('offer'));
+  check('continue-to-assemble enabled after a successful extract', !$('btn-to-assemble').disabled);
+
+  // --- step 5: assemble ---
+  window.__rye_debug.openAssemble();
+  await new Promise((r) => setTimeout(r, 20));
+  check('assemble screen visible', !$('step-5').classList.contains('hidden'));
+  check('recommended dropdown lists the extract combo',
+    [...$('in-recommended').options].some((o) => o.textContent.includes('UrbanChain') && o.textContent.includes('24 months')));
+
+  $('in-recommended').value = '0';
+  $('in-weekend-split').value = '0.15';
+  const meta = window.__rye_debug.assembleMeta();
+  check('meta carries weekend_split from the form (backend passthrough)', meta.weekend_split === 0.15);
+  check('meta carries recommended_supplier (never computed)', meta.recommended_supplier === 'UrbanChain');
+  check('meta carries recommended_term', meta.recommended_term === '24 months');
+
+  await window.__rye_debug.doAssemble();
+  await new Promise((r) => setTimeout(r, 50));
+  check('assemble result rendered', !$('assemble-result').classList.contains('hidden'));
+  check('result shows the saved version', $('assemble-result').textContent.includes('v1'));
+  check('tender id stored for re-save versioning', state.meta.id === TENDER_ID);
 
   if (failures.length) { console.log(`\n${failures.length} CHECK(S) FAILED`); process.exit(1); }
   console.log('\nALL DOM SMOKE CHECKS PASSED');
