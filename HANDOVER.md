@@ -50,6 +50,29 @@ EAC/kVA db-override → incumbent from sites.csv → schema-valid tender → HTM
 left is Phase 2 (team UI) and Phase 3 (static delivery + UUID links). Still on a
 Vercel HOBBY account; move to Pro before any real/commercial use (see Open checks).
 
+**Phase 2 UI — PR 1 in the working tree (branch `feat/team-ui` to be pushed).**
+Decision (2026-07-17, discussed with Rory): the team UI is a **vanilla single-page
+app in this repo** — no build step, no npm, served by the same FastAPI app at
+`/app` — NOT a Retool app (permanent hand-maintenance seam outside git) and NOT
+Next.js (framework churn the job doesn't need). Auth is a shared team key:
+**new env var `TEAM_ACCESS_KEY`** (set in Vercel, Production + Preview, like the
+others); when set, every /api route except /api/health requires it in an
+`X-RYE-Key` header (middleware in main.py); unset = open, so local dev + tests
+run unchanged. This PR: `web/` (index.html, app.css, app.js — RYE design system),
+the key-gate middleware, `GET /api/auth-check` (unlock probe), `GET /api/suppliers`
+(distinct cached suppliers → the controlled supplier dropdown, fixing the exact-
+match cache-key hygiene issue below), supplier whitespace-normalisation on /map +
+/map/confirm, `tests/test_ui.py`, and `tests/dom_smoke.js` (optional jsdom
+walk-through of the whole wizard; needs Node + `npm i jsdom`). Wizard steps live:
+unlock → tender basics → upload → map review/confirm (source chip shows
+CACHED vs PROPOSED BY CLAUDE; per-field column dropdowns with sample values
+recomputed client-side from /inspect; raw-JSON escape hatch; confirm saves to the
+cache). Steps 4–6 (extract, assemble, publish) are visible but locked — next PRs.
+The site-reference story for the UI is the spec's sidestep: a scheduled Retool
+workflow syncing company Postgres → a `site_reference` table in Retool DB, read
+by /extract & /assemble (kills the sites.csv upload AND the static-IP question);
+not built yet.
+
 Git workflow we're using: feature branch → `git push` → Vercel auto-builds a
 **Preview** deployment → open a PR on GitHub → merge → `main` auto-deploys to
 production. In the Vercel Deployments tab, switch the env filter from "Production"
@@ -171,8 +194,10 @@ python3 tests/test_map.py          # /api/map: fingerprint, cache-vs-LLM, confir
 python3 tests/test_extract.py      # /api/extract: value pass-through, site-ref join, 400s
 python3 tests/test_assemble_api.py # /api/assemble: incumbent-from-sites.csv + endpoint (DB mocked)
 python3 tests/test_render.py       # /api/render: canonical->HTML adapter + endpoint (DB mocked)
+python3 tests/test_ui.py           # team UI: key gate, static /app, /suppliers, supplier norm
+node tests/dom_smoke.js            # optional: jsdom walk of the whole wizard (npm i jsdom first)
 ```
-All seven should print their "ALL … PASSED" line. No network needed (the LLM and DB
+All eight Python tests should print their "ALL … PASSED" line. No network needed (the LLM and DB
 are mocked in test_map / test_assemble_api / test_render).
 (Claude's Linux sandbox can't use the macOS `.venv`; install deps with
 `pip install --break-system-packages fastapi openpyxl jsonschema psycopg2-binary python-multipart httpx` to run tests there.)
@@ -243,7 +268,15 @@ are mocked in test_map / test_assemble_api / test_render).
 
 Remaining beyond the backend:
 5. **Phase 2 — team UI** (new-tender, upload, mapping review, tender register) calling
-   these endpoints. See the build spec's team-facing flow.
+   these endpoints. See the build spec's team-facing flow. **STARTED** — vanilla SPA
+   in `web/` served at `/app` (see the branch-state note above). UI PR 1 (shell +
+   key gate + upload → map review/confirm) is in the working tree; UI PR 2 is the
+   extract + assemble screens (per-file /extract with unmatched-MPxN flagging, tender
+   meta form — recommended offer, day_split, expiry — then /assemble with version
+   feedback); UI PR 3 is the render preview + tender register (needs a small
+   `GET /api/tenders` register endpoint over the `tenders_latest` view). Remember to
+   set `TEAM_ACCESS_KEY` in Vercel (Prod + Preview) and REDEPLOY before testing a
+   preview, or the UI will sit at the unlock screen telling you the key is wrong.
 6. **Phase 3 — render & deliver**: static hosting on the custom domain, the UUID link
    lifecycle (noindex, expiry, revoke/rotate), and turning on the learned-mappings
    cache in the flow. This is where `/render` graduates from inline HTML to a
