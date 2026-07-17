@@ -86,6 +86,14 @@ def main_test():
     check("empty extracts -> 400", client.post("/api/cost", data={"extracts": "[]"}).status_code == 400)
     check("bad JSON -> 400", client.post("/api/cost", data={"extracts": "not json"}).status_code == 400)
 
+    print("4) a degenerate offer (no priced rows) -> clear 422, not a cryptic engine crash")
+    empty_offer = {"sites": [{"mpxn": MP_A, "site_name": "A", "eac": 100000.0, "eac_source": "quote"}],
+                   "quotes": [{"supplier": "Yu Energy", "term": "to 16 Aug 2027", "lines": []}]}
+    r = client.post("/api/cost", data={"extracts": json.dumps([empty_offer])})
+    check("no-lines offer -> 422", r.status_code == 422)
+    check("message names the offer + points at the mapping",
+          "no priced rows" in r.json()["detail"] and "Yu Energy" in r.json()["detail"])
+
     if FAILURES:
         print(f"\n{len(FAILURES)} CHECK(S) FAILED")
         return 1

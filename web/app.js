@@ -87,6 +87,12 @@ function showStep(n) {
 async function loadSuppliers() {
   const sel = $("in-supplier");
   sel.innerHTML = "";
+  // Placeholder first, selected + disabled: force an explicit choice so a real
+  // supplier is never silently pre-selected (an "engage brain" moment).
+  const placeholder = new Option("Choose supplier…", "");
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  sel.append(placeholder);
   let names = [];
   try {
     const r = await api("/api/suppliers");
@@ -94,7 +100,7 @@ async function loadSuppliers() {
   } catch (e) { /* fall through to free text */ }
   for (const n of names) sel.append(new Option(n, n));
   sel.append(new Option("+ New supplier…", NEW_SUPPLIER));
-  if (!names.length) sel.value = NEW_SUPPLIER;
+  sel.value = "";  // default to the placeholder, not the first supplier
   onSupplierChange();
 }
 

@@ -141,14 +141,62 @@ def inspect_file(path, max_rows=40):
         )
         candidates = [row for score, row in scored[:3] if score > 0]
         best = candidates[0] if candidates else 1
+        extra_headers = stacked_header_rows(grid, best)
         sheets.append({
             "name": name,
             "header_row_candidates": candidates,
             "header_row_best_guess": best,
             "headers": grid[best - 1] if best - 1 < len(grid) else [],
             "first_rows": grid,
+            "extra_header_rows": extra_headers,  # >0 => two tables stacked in one sheet
         })
     return {"path": os.path.basename(path), "sheets": sheets}
+
+
+def stacked_header_rows(grid, header_row):
+    """Rows (1-based) that REPEAT the chosen header's labels — a second table.
+
+    Two rate tables stacked in one sheet (e.g. a single-rate block then a
+    day/night block lower down) is the layout the tool can't represent: one
+    header row can't describe both, so extraction silently mis-reads one of them.
+    A data row is numbers/dates and never reproduces text labels like 'Meter
+    Point' or 'Quote Number', so a strong overlap of identical header tokens on
+    another row is a low-false-positive signal that a second table starts there.
+    Returns the extra header rows (excluding `header_row`); [] for a clean sheet.
+    """
+    if not (1 <= header_row <= len(grid)):
+        return []
+    ref = {t for t in (_norm_header(c) for c in grid[header_row - 1]) if t and not _value_like(t)}
+    if len(ref) < 3:
+        return []
+    extra = []
+    for idx, row in enumerate(grid):
+        if idx + 1 == header_row:
+            continue
+        toks = {t for t in (_norm_header(c) for c in row) if t}
+        shared = len(ref & toks)
+        if shared >= 3 and shared >= 0.5 * len(ref):
+            extra.append(idx + 1)
+    return extra
+
+
+def stacked_tables_in_sheet(path, sheet, max_rows=500):
+    """Extra header rows for a sheet, independent of any chosen mapping header_row.
+
+    Scores the sheet to find its own top header row, then looks for repeats of its
+    labels. Used to REFUSE a multi-table sheet at extract (with guidance to split
+    it) and to flag it in the mapping review. Reads more rows than /inspect since a
+    second block can sit below a long first table.
+    """
+    grid = _sheet_grid(path, sheet, max_rows)
+    if not grid:
+        return []
+    scored = sorted(
+        ((_score_header_row(grid, i), i + 1) for i in range(len(grid))),
+        key=lambda t: (t[0], -t[1]), reverse=True,
+    )
+    best = scored[0][1] if scored and scored[0][0] > 0 else 1
+    return stacked_header_rows(grid, best)
 
 
 # --- layout fingerprint : the learned-mappings cache key -------------------
