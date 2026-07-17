@@ -304,6 +304,16 @@ All endpoints below are on `main` and deployed. `/api/extract` (PR #6) and
   standard/day/night/peak columns, mixed single & two-rate rows, electricity + gas,
   has Site names, charge bases stated in headers.
 - **Salad Kitchen** (Salesforce export) + **Octopus CSV**: header row 1, single-rate.
+- **YU "stacked tables" export** (e.g. Rosslyn Coffee): a sheet holds TWO rate
+  tables under separate header rows (single-rate block, then a day/night block lower
+  down), and layout differs per sheet. **This is REFUSED by design, not parsed.** A
+  single header row can't describe two tables, so `map_headers.stacked_tables_in_sheet`
+  detects the repeated header (a data row never reproduces header text — low false
+  positive) and `process_quote.run` raises a clear message telling the user to split
+  each rate table onto its own sheet and re-upload. Flagged early as a `/api/map` note;
+  `/api/cost` also guards a degenerate (no-priced-rows) offer with a clear 422. Decision
+  (2026-07-17, with Rory): one rate table per sheet is the expected hygiene — crash +
+  guide beats silently mis-reading. Covered by `tests/test_stacked.py`.
 
 ## How to run / verify
 
@@ -316,12 +326,15 @@ python3 tests/test_weekend.py      # weekend band: capture + warn-vs-cost
 python3 tests/test_map.py          # /api/map: fingerprint, cache-vs-LLM, confirm (mocked)
 python3 tests/test_extract.py      # /api/extract: value pass-through, site-ref join, 400s
 python3 tests/test_assemble_api.py # /api/assemble: incumbent-from-sites.csv + endpoint (DB mocked)
-python3 tests/test_render.py       # /api/render: canonical->HTML adapter + endpoint (DB mocked)
-python3 tests/test_ui.py           # team UI: key gate, static /app, /suppliers, supplier norm
-node tests/dom_smoke.js            # optional: jsdom walk of the whole wizard (npm i jsdom first)
+python3 tests/test_render.py       # /api/render: canonical->HTML adapter + featured filter + endpoint
+python3 tests/test_cost.py         # /api/cost: price ranking, cheapest full-coverage, degenerate-offer guard
+python3 tests/test_capacity.py     # annualise(): zero per-kVA charge is silent; real one still warns
+python3 tests/test_stacked.py      # refuse a sheet with two stacked rate tables (guidance, not a crash)
+python3 tests/test_ui.py           # team UI: open access, static /app, /suppliers, /tenders register
+node tests/dom_smoke.js            # optional: jsdom walk of the whole wizard incl. preview + register (npm i jsdom first)
 ```
-All eight Python tests should print their "ALL … PASSED" line. No network needed (the LLM and DB
-are mocked in test_map / test_assemble_api / test_render).
+All Python tests should print their "ALL … PASSED" line. No network needed (the LLM and DB
+are mocked in test_map / test_assemble_api / test_render / test_ui).
 (Claude's Linux sandbox can't use the macOS `.venv`; install deps with
 `pip install --break-system-packages fastapi openpyxl jsonschema psycopg2-binary python-multipart httpx` to run tests there.)
 

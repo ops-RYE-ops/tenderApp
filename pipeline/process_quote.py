@@ -77,6 +77,7 @@ import os
 import re
 import sys
 
+import map_headers as mh
 from rye_quote_core import TARGET_FIELDS as TARGET_HEADERS, parse_num
 
 # Fields that live on a canonical quote LINE (rates/charges), in schema order.
@@ -402,6 +403,20 @@ def run(src, mapping, out_dir, db_csv=None, supplier=None, emit_csv=True,
             sites_by_mpxn[m] = site
 
     for sheet in sheets:
+        # Refuse a sheet that stacks two rate tables (a repeated header block): one
+        # header row can't describe both, so we'd silently mis-read one. Better to
+        # stop and have the user split it than to guess. (Clean data hygiene: one
+        # rate table per sheet.)
+        extra = mh.stacked_tables_in_sheet(src, sheet)
+        if extra:
+            where = f"sheet '{sheet}'" if sheet else "this file"
+            raise SystemExit(
+                f"{where.capitalize()} looks like it contains more than one table — "
+                f"the column headers repeat at row {extra[0]}. RYE's tool needs one "
+                f"rate table per sheet. Please split the blocks onto separate sheets "
+                f"(or files) — e.g. single-rate meters on one, day/night meters on "
+                f"another — and re-upload."
+            )
         records = load_rows(src, sheet, header_row)
         rows, unmatched = process_rows(records, mapping, name_lookup, constants)
         all_unmatched.update(u for u in unmatched if u)

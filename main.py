@@ -381,6 +381,16 @@ async def map_quote(
         inspection["path"] = filename
         fingerprint = mh.layout_fingerprint(inspection)
 
+        # Flag stacked tables early (the review shows notes) — extract will refuse
+        # these, so surface it before the user maps columns.
+        for s in inspection["sheets"]:
+            if s.get("extra_header_rows"):
+                notes.append(
+                    f"Sheet '{s['name']}' looks like it has more than one table "
+                    f"(headers repeat at row {s['extra_header_rows'][0]}). Split it to "
+                    f"one rate table per sheet before extracting."
+                )
+
         mapping = None
         source = None
         if supplier:
@@ -529,7 +539,10 @@ async def extract(
         except HTTPException:
             raise
         except (Exception, SystemExit) as e:
-            raise HTTPException(status_code=422, detail=f"Extraction failed for '{filename}': {type(e).__name__}: {e}")
+            # A SystemExit here is a deliberate, user-facing message (e.g. the
+            # multi-table-sheet guidance) — surface it verbatim, not type-prefixed.
+            msg = str(e) if isinstance(e, SystemExit) else f"{type(e).__name__}: {e}"
+            raise HTTPException(status_code=422, detail=f"Couldn't process '{filename}': {msg}")
 
         extract_result.pop("_json_path", None)  # a temp path — meaningless to the caller
         sites = extract_result.get("sites", [])
@@ -749,6 +762,14 @@ async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File
     work = tempfile.mkdtemp(prefix="rye-cost-")
     try:
         for i, q in enumerate(quotes):
+            if not q.get("lines"):
+                label = " — ".join(x for x in (q.get("supplier"), q.get("term")) if x) or f"offer {i + 1}"
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Offer '{label}' has no priced rows — check the mapping "
+                           f"and header row for that sheet (a sheet with two stacked "
+                           f"tables is the usual cause).",
+                )
             csv_path = os.path.join(work, f"offer-{i}.csv")
             bd._write_offer_csv(csv_path, q.get("lines", []), sites)
             entry = {"_csv_path": csv_path, "_id": f"offer-{i}",
