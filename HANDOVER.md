@@ -36,17 +36,19 @@ and `/inspect`. No feature branch is open. Merge history:
 - PR #5 — map prompt fix (capacityCharge vs kva).
 - PR #6 — `/api/extract` + sites.csv EAC/kVA override (db provenance).
 - PR #7 — `/api/assemble` (incumbent from sites.csv + versioned tender write).
+- PR #8 — `/api/render` (canonical tender → dashboard HTML, inline).
 
 Live endpoints on `main`: `/api/health`, `/api/db-check`, `/api/inspect`,
 `/api/map`, `/api/map/confirm`, `/api/extract`, `/api/assemble`. `/api/map` was
 verified live on a preview (LLM → confirm → cache-hit round-trip). Vercel env vars
 `ANTHROPIC_API_KEY` + `RETOOL_DATABASE_URL` are scoped to **Production + Preview**.
 
-**`/api/render` is built on `feat/api-render` (pending push + PR → main)** — the last
-backend endpoint. Once merged, the headless pipeline is COMPLETE end-to-end
-(map → extract → assemble → render). What's left is Phase 2 (team UI) and Phase 3
-(static delivery + UUID links). Still on a Vercel HOBBY account; move to Pro before
-any real/commercial use (see Open checks).
+**`/api/render` merged (PR #8)** — the last backend endpoint. The headless pipeline
+is now COMPLETE end-to-end (map → extract → assemble → render), verified with a full
+run through the deployed app on the real UrbanChain quote (cache-hit map → sites.csv
+EAC/kVA db-override → incumbent from sites.csv → schema-valid tender → HTML). What's
+left is Phase 2 (team UI) and Phase 3 (static delivery + UUID links). Still on a
+Vercel HOBBY account; move to Pro before any real/commercial use (see Open checks).
 
 Git workflow we're using: feature branch → `git push` → Vercel auto-builds a
 **Preview** deployment → open a PR on GitHub → merge → `main` auto-deploys to
@@ -224,7 +226,7 @@ are mocked in test_map / test_assemble_api / test_render).
    default matches.) **Verify after merge:** POST extracts + meta + sites.csv to the
    preview `/api/assemble` and confirm a versioned row lands in `tenders` (re-POST
    with the same id → version increments).
-4. ~~**`/api/render`**~~ **DONE** (on `feat/api-render`, pending push + PR → main).
+4. ~~**`/api/render`**~~ **DONE & merged** (PR #8).
    First cut returns the dashboard HTML **inline** (static publish + UUID link is
    Phase 3). POST JSON body: EITHER `tender_id` (+ optional `version`; fetched from
    the `tenders` table, latest by default) OR an inline `tender` object — exactly
