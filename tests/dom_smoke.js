@@ -61,7 +61,6 @@ const ASSEMBLE_RESP = {
 };
 
 const routes = {
-  '/api/auth-check': { ok: true, gated: false },
   '/api/suppliers': { suppliers: ['Octopus', 'UrbanChain'] },
   '/api/map': MAP_RESP,
   '/api/inspect': INSPECT_RESP,
@@ -91,7 +90,7 @@ const check = (name, cond) => {
   await new Promise((r) => setTimeout(r, 50));
 
   const $ = (id) => window.document.getElementById(id);
-  check('auto-unlock (no key configured) shows the wizard', !$('screen-wizard').classList.contains('hidden'));
+  check('wizard shown on load (no auth gate)', !$('screen-wizard').classList.contains('hidden'));
   check('step 1 visible', !$('step-1').classList.contains('hidden'));
   check('supplier dropdown populated from /api/suppliers',
     [...$('in-supplier').options].some((o) => o.value === 'UrbanChain'));

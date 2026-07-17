@@ -34,11 +34,12 @@ Endpoints (built incrementally):
                         inline; static publish + UUID link is Phase 3.
 
 Team UI: a vanilla single-page wizard (no build step) served from web/ at /app.
-All /api routes except /api/health require the shared team key when
-TEAM_ACCESS_KEY is set (X-RYE-Key header); unset = open, for local dev + tests.
+No app-level auth — the tool is open. Access control for the internal UI will be
+Vercel deployment protection (SSO / password on the deployment) once on Pro; that
+needs no app code. The client-facing dashboard links (Phase 3) get their own
+unguessable-UUID lifecycle per the build spec.
 
 Config via env vars (set in Vercel project settings, never in code):
-  TEAM_ACCESS_KEY      — shared key gating the team-facing /api routes + UI.
   RETOOL_DATABASE_URL  — Postgres connection string for the Retool DB.
   ANTHROPIC_API_KEY    — (later, for /map) Claude key.
   ANTHROPIC_BASE_URL   — (optional) route Claude via the Vercel AI Gateway.
@@ -46,14 +47,13 @@ Config via env vars (set in Vercel project settings, never in code):
 """
 import json
 import os
-import secrets
 import shutil
 import sys
 import tempfile
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -65,38 +65,6 @@ app = FastAPI(title="RYE Tender Tool API")
 
 # Quote file types the extractor can read.
 ALLOWED_EXT = {".xlsx", ".xlsm", ".csv"}
-
-
-# --- team access gate --------------------------------------------------------
-#
-# Simple shared-key auth for the internal UI: set TEAM_ACCESS_KEY in the Vercel
-# env vars (Production + Preview, like the other secrets) and every /api route
-# except /api/health requires the same value in an X-RYE-Key header. With the
-# var UNSET the gate is open — local dev and the tests keep working unchanged.
-# This protects the team-facing pipeline endpoints; the client-facing dashboard
-# links (Phase 3) get their own unguessable-UUID lifecycle per the build spec.
-
-_OPEN_PATHS = {"/", "/api/health"}
-
-
-@app.middleware("http")
-async def team_key_gate(request: Request, call_next):
-    key = os.environ.get("TEAM_ACCESS_KEY")
-    path = request.url.path
-    if key and path.startswith("/api") and path not in _OPEN_PATHS:
-        supplied = request.headers.get("x-rye-key", "")
-        if not secrets.compare_digest(supplied, key):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Missing or wrong team access key (X-RYE-Key header)."},
-            )
-    return await call_next(request)
-
-
-@app.get("/api/auth-check")
-def auth_check():
-    """Reached only with a valid key (or no key configured) — the UI's unlock probe."""
-    return {"ok": True, "gated": bool(os.environ.get("TEAM_ACCESS_KEY"))}
 
 
 def _norm_supplier(name: Optional[str]) -> Optional[str]:

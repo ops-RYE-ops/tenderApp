@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-test_ui.py — the team UI foundations: access gate, static app, supplier list.
+test_ui.py — the team UI foundations: open access, static app, supplier list.
 
 Headless and network-free (the Retool DB is monkeypatched). Proves:
-  - with TEAM_ACCESS_KEY unset the gate is OPEN (local dev + existing tests);
-  - with it set, /api routes 401 without / with a wrong X-RYE-Key, 200 with the
-    right one, and /api/health + / stay open (diagnostics);
+  - the tool is open — no app-level gate, and /api/auth-check has been removed
+    (access control moves to Vercel deployment protection / SSO on Pro);
   - the static wizard is served at /app/;
   - /api/suppliers lists distinct cached suppliers and degrades without a DB;
   - supplier names are whitespace-normalised on save (cache hygiene).
@@ -37,30 +36,15 @@ def check(name, cond):
         FAILURES.append(name)
 
 
-def test_gate_open_when_unset():
-    print("gate: TEAM_ACCESS_KEY unset -> open")
-    os.environ.pop("TEAM_ACCESS_KEY", None)
-    client = TestClient(main.app)
-    r = client.get("/api/auth-check")
-    check("auth-check reachable with no key configured", r.status_code == 200)
-    check("auth-check reports gated=false", r.json().get("gated") is False)
-
-
-def test_gate_enforced_when_set():
-    print("gate: TEAM_ACCESS_KEY set -> enforced on /api, not on diagnostics")
-    os.environ["TEAM_ACCESS_KEY"] = "test-key-123"
+def test_no_app_gate():
+    print("access: no app-level gate — /api open, auth-check removed")
+    os.environ["TEAM_ACCESS_KEY"] = "leftover-key"  # even if an old env var lingers, it must not gate
     try:
         client = TestClient(main.app)
-        check("no header -> 401", client.get("/api/auth-check").status_code == 401)
-        check("wrong key -> 401",
-              client.get("/api/auth-check", headers={"X-RYE-Key": "nope"}).status_code == 401)
-        r = client.get("/api/auth-check", headers={"X-RYE-Key": "test-key-123"})
-        check("right key -> 200", r.status_code == 200)
-        check("auth-check reports gated=true", r.json().get("gated") is True)
-        check("/api/suppliers gated too",
-              client.get("/api/suppliers").status_code == 401)
-        check("/api/health stays open", client.get("/api/health").status_code == 200)
-        check("/ stays open", client.get("/").status_code == 200)
+        check("/api/suppliers open with no key header", client.get("/api/suppliers").status_code == 200)
+        check("/api/health open", client.get("/api/health").status_code == 200)
+        check("/ open", client.get("/").status_code == 200)
+        check("/api/auth-check endpoint removed (404)", client.get("/api/auth-check").status_code == 404)
     finally:
         os.environ.pop("TEAM_ACCESS_KEY", None)
 
@@ -158,8 +142,7 @@ def test_confirm_normalises_supplier():
 
 
 if __name__ == "__main__":
-    test_gate_open_when_unset()
-    test_gate_enforced_when_set()
+    test_no_app_gate()
     test_static_app_served()
     test_suppliers_endpoint()
     test_confirm_normalises_supplier()

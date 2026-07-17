@@ -250,4 +250,3 @@ details.raw textarea { margin-top: 10px; min-height: 220px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .hidden { display: none !important; }
 .mono { font-family: var(--rye-mono); font-variant-numeric: tabular-nums; }
-.unlock-wrap { max-width: 420px; margin: 12vh auto 0; }

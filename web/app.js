@@ -4,8 +4,9 @@
  * backend; this file only collects inputs, shows results, and lets a human
  * confirm the column mapping before anything is extracted.
  *
- * PR 1 scope: unlock → tender basics → upload → map review/confirm.
- * Extract / assemble / publish are the next PRs.
+ * Flow: tender basics → upload → map review/confirm → extract → assemble.
+ * No app-level auth — access is handled by Vercel deployment protection (Pro).
+ * Publish is the next PR.
  */
 "use strict";
 
@@ -19,8 +20,6 @@ const TARGET_FIELDS = [
 const NEW_SUPPLIER = "__new__";
 
 const state = {
-  key: localStorage.getItem("rye_team_key") || "",
-  email: localStorage.getItem("rye_user_email") || "",
   meta: { client_name: "", tender_label: "", utility: "electricity", supplier: "", id: null },
   files: [],        // { file, name, status, mapResp, mapping, inspection, extract, extractResp, extractStatus, extractError }
   activeIdx: null,  // index into files for the map screen
@@ -33,12 +32,7 @@ const $ = (id) => document.getElementById(id);
 // --- API helper --------------------------------------------------------------
 
 async function api(path, opts = {}) {
-  opts.headers = Object.assign({}, opts.headers, state.key ? { "X-RYE-Key": state.key } : {});
   const res = await fetch(path, opts);
-  if (res.status === 401) {
-    showUnlock("Key rejected — check it and try again.");
-    throw new Error("unauthorised");
-  }
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch (e) { /* non-JSON */ }
@@ -59,21 +53,6 @@ function escapeHtml(s) {
 
 // --- screens -----------------------------------------------------------------
 
-function show(screen) {
-  $("screen-unlock").classList.toggle("hidden", screen !== "unlock");
-  $("screen-wizard").classList.toggle("hidden", screen === "unlock");
-  $("btn-lock").classList.toggle("hidden", screen === "unlock");
-  $("nav-user").classList.toggle("hidden", screen === "unlock" || !state.email);
-  $("nav-user").textContent = state.email;
-}
-
-function showUnlock(msg) {
-  show("unlock");
-  $("in-key").value = state.key;
-  $("in-email").value = state.email;
-  notice($("unlock-msg"), msg || "", msg ? "error" : "");
-}
-
 function showStep(n) {
   for (const s of [1, 2, 3, 4, 5]) $("step-" + s).classList.toggle("hidden", s !== n);
   document.querySelectorAll("#stepper .step[data-step]").forEach((el) => {
@@ -81,25 +60,6 @@ function showStep(n) {
     el.classList.toggle("active", s === n);
     el.classList.toggle("done", s < n);
   });
-}
-
-// --- unlock ------------------------------------------------------------------
-
-async function unlock() {
-  state.key = $("in-key").value.trim();
-  state.email = $("in-email").value.trim();
-  localStorage.setItem("rye_team_key", state.key);
-  localStorage.setItem("rye_user_email", state.email);
-  notice($("unlock-msg"), "");
-  try {
-    await api("/api/auth-check");
-  } catch (e) {
-    if (e.message !== "unauthorised") showUnlock("Could not reach the API: " + e.message);
-    return;
-  }
-  show("wizard");
-  showStep(1);
-  loadSuppliers();
 }
 
 // --- step 1: tender basics -----------------------------------------------------
@@ -344,7 +304,7 @@ async function confirmMap() {
         supplier: state.meta.supplier,
         layout_fingerprint: f.mapResp.layout_fingerprint,
         mapping: f.mapping,
-        confirmed_by: state.email || null,
+        confirmed_by: null,
       }),
     });
     f.status = "confirmed";
@@ -492,7 +452,8 @@ function assembleMeta() {
     utility: state.meta.utility,
   };
   if (state.meta.id) meta.id = state.meta.id;              // re-assemble → version bumps
-  if (state.email) meta.created_by = state.email;
+  // created_by is left unset → the backend stamps a sensible default. (No login;
+  // provenance will come from Vercel deployment protection / SSO once on Pro.)
 
   const ds = parseFloat($("in-day-split").value);
   meta.day_split = isNaN(ds) ? 0.7 : ds;
@@ -571,14 +532,6 @@ function renderAssembleResult(r) {
 // --- wiring ------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
-  $("btn-unlock").addEventListener("click", unlock);
-  $("in-key").addEventListener("keydown", (e) => { if (e.key === "Enter") unlock(); });
-  $("btn-lock").addEventListener("click", () => {
-    state.key = "";
-    localStorage.removeItem("rye_team_key");
-    showUnlock();
-  });
-
   $("in-supplier").addEventListener("change", onSupplierChange);
   $("btn-to-upload").addEventListener("click", toUpload);
   $("btn-back-1").addEventListener("click", () => showStep(1));
@@ -615,10 +568,9 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-apply-json").addEventListener("click", applyJson);
   $("btn-confirm-map").addEventListener("click", confirmMap);
 
-  // Auto-unlock if a stored key still works (or no key is configured).
-  api("/api/auth-check")
-    .then(() => { show("wizard"); showStep(1); loadSuppliers(); })
-    .catch(() => showUnlock());
+  // No auth gate — open the wizard straight away.
+  showStep(1);
+  loadSuppliers();
 });
 
 // Exposed for the headless DOM smoke test (jsdom) — not used by the UI itself.
