@@ -642,6 +642,11 @@ async def assemble_endpoint(
 
         try:
             tender = at.assemble(extracts_obj, meta_obj, incumbent=incumbent)
+            # The shared sites.csv is RYE's authoritative site reference: overlay its
+            # site names + EAC/kVA onto the merged sites here too, so they win even if
+            # the file wasn't present when the quotes were extracted.
+            if csv_path:
+                at.apply_site_reference(tender["sites"], csv_path)
             at.validate_tender(tender)
         except HTTPException:
             raise
@@ -684,7 +689,7 @@ async def assemble_endpoint(
 # --- /cost -----------------------------------------------------------------
 
 @app.post("/api/cost")
-async def cost(extracts: str = Form(...)):
+async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File(None)):
     """Rank the extracted offers by all-in cost, deterministically.
 
     Backs the assemble screen's "which offers to show the client" tick-list: the
@@ -721,6 +726,21 @@ async def cost(extracts: str = Form(...)):
         tender = at.assemble(extracts_obj, {"client_name": "_", "tender_label": "_"})
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Could not read the extracts: {type(e).__name__}: {e}")
+
+    # Overlay the shared sites.csv (authoritative EAC/kVA) so the ranking matches the
+    # costs /render will show — same as /assemble does. Names don't affect cost, but
+    # a db EAC does, so keep the two in step.
+    if sites_csv is not None and sites_csv.filename:
+        ref_path, _ = await _save_upload(sites_csv)
+        try:
+            at.apply_site_reference(tender["sites"], ref_path)
+        except (Exception, SystemExit) as e:
+            raise HTTPException(status_code=422, detail=f"Could not read sites.csv: {type(e).__name__}: {e}")
+        finally:
+            try:
+                os.unlink(ref_path)
+            except OSError:
+                pass
 
     sites = {s.get("mpxn"): s for s in tender.get("sites", [])}
     site_mpxns = {m for m in sites if m}

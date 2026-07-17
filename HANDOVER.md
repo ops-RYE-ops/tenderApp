@@ -175,6 +175,16 @@ small read-only endpoint.
   (`/api/suppliers|tenders|health|db-check`).
 - Tests: `test_ui.py` gains the register test; `dom_smoke.js` walks Step 6 preview
   (iframe loads the rendered HTML; publish gated) + the register list. Full suite green.
+- **Bugfix (same branch): site names showed as MPANs on the dashboard.** Root cause:
+  RYE's site names/EAC were only overlaid at `/extract`, so if the sites.csv wasn't
+  present when a quote was extracted (e.g. added later), the tender kept MPAN-only
+  names. Fix: the sites.csv is now authoritative wherever a tender is built from
+  extracts — a new `assemble_tender.apply_site_reference()` (reuses
+  `process_quote.build_site_lookup`, so column contract + MPAN keying don't drift)
+  overlays site name + authoritative EAC/kVA (provenance `db`), and it's applied at
+  `/api/assemble` AND `/api/cost` (the UI now sends the shared sites.csv to `/api/cost`
+  too, so the ranking EAC matches the render). Idempotent with `/extract`. Covered by
+  `test_assemble_api.test_site_reference_override`.
 
 Git workflow we're using: feature branch → `git push` → Vercel auto-builds a
 **Preview** deployment → open a PR on GitHub → merge → `main` auto-deploys to

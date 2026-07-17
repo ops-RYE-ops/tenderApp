@@ -472,6 +472,7 @@ async function loadOffers() {
   try {
     const fd = new FormData();
     fd.append("extracts", JSON.stringify(extracts));
+    if (state.sitesCsv) fd.append("sites_csv", state.sitesCsv);  // authoritative EAC/kVA for the ranking
     const r = await api("/api/cost", { method: "POST", body: fd });
     state.offers = r.offers || [];
     // Pre-tick the two cheapest (offers arrive full-coverage-first, cheapest-first).
