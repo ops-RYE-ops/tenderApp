@@ -124,12 +124,18 @@ const check = (name, cond) => {
   check('step 1 visible', !$('step-1').classList.contains('hidden'));
   check('supplier dropdown populated from /api/suppliers',
     [...$('in-supplier').options].some((o) => o.value === 'UrbanChain'));
+  check('supplier defaults to the placeholder, not a real supplier', $('in-supplier').value === '');
 
+  // Mandatory supplier: filling everything but the supplier must NOT advance.
   $('in-client').value = 'Amorino UK';
   $('in-label').value = 'Electricity tender — July 2026';
+  $('btn-to-upload').click();
+  check('cannot continue without choosing a supplier', $('step-2').classList.contains('hidden'));
+  check('supplier-required error shown', $('step1-msg').textContent.toLowerCase().includes('supplier'));
+
   $('in-supplier').value = 'UrbanChain';
   $('btn-to-upload').click();
-  check('continue -> step 2', !$('step-2').classList.contains('hidden'));
+  check('continue -> step 2 once a supplier is chosen', !$('step-2').classList.contains('hidden'));
 
   // Inject a file entry directly (jsdom can't do real file inputs) and open the map.
   const state = window.__rye_debug.state;
