@@ -14,7 +14,10 @@
 <nav class="topnav">
   <div class="logo">R</div>
   <div class="brand">RYE <span>/ Tender Tool</span></div>
-  <div class="right"></div>
+  <div class="right">
+    <button id="nav-new" class="btn-ghost">New tender</button>
+    <button id="nav-register" class="btn-ghost">Register</button>
+  </div>
 </nav>
 
 <!-- ===== wizard ===== -->
@@ -28,7 +31,7 @@
     <span class="step" data-step="3"><span class="n">3</span> Map</span>
     <span class="step" data-step="4"><span class="n">4</span> Extract</span>
     <span class="step" data-step="5"><span class="n">5</span> Assemble</span>
-    <span class="step locked"><span class="n">6</span> Publish</span>
+    <span class="step" data-step="6"><span class="n">6</span> Preview</span>
   </div>
 
   <!-- step 1: tender basics -->
@@ -177,6 +180,49 @@
     <div id="assemble-loading" class="hidden"><span class="spinner"></span> <span>Assembling and validating…</span></div>
     <div id="assemble-result" class="hidden"></div>
     <div id="assemble-msg"></div>
+  </div>
+
+  <!-- step 6: preview & publish -->
+  <div id="step-6" class="card hidden">
+    <h2>Preview &amp; publish</h2>
+    <p class="sub">The client-facing dashboard, built from the saved tender. Give it a final review — spot-check a couple of site costs against the source — before it goes out. Publishing to a live per-client link is the last step and needs Vercel Pro.</p>
+    <div class="result-grid" id="publish-meta"></div>
+    <div class="actions">
+      <button class="btn-secondary" id="btn-back-to-assemble">Back to assemble</button>
+      <button class="btn-secondary" id="btn-preview">Preview client dashboard</button>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-publish" disabled title="Publishing needs Vercel Pro (Phase 3)">Publish live link</button>
+    </div>
+    <div class="notice" id="publish-note">Publishing — a live <span class="mono">rye.energy/&lt;client&gt;/&lt;uuid&gt;</span> link with expiry + revoke — is gated on the Vercel Pro move (Phase 3). Everything up to it is ready; for now use <b>Preview</b> to review the exact dashboard the client will see.</div>
+    <div id="preview-msg"></div>
+  </div>
+</div>
+
+<!-- ===== register ===== -->
+<div id="screen-register" class="page hidden">
+  <h1>Tender register</h1>
+  <p class="sub">Every saved tender, latest version first. Preview the client dashboard, or start a new one.</p>
+  <div class="actions" style="margin-top:0">
+    <button class="btn-secondary" id="btn-refresh-register">Refresh</button>
+    <div class="spacer"></div>
+    <button class="btn-primary" id="btn-register-new">New tender</button>
+  </div>
+  <div id="register-loading" class="hidden" style="margin-top:14px"><span class="spinner"></span> <span>Loading the register…</span></div>
+  <div id="register-list"></div>
+  <div id="register-msg"></div>
+</div>
+
+<!-- ===== client dashboard preview overlay ===== -->
+<div id="preview-overlay" class="overlay hidden">
+  <div class="overlay-bar">
+    <span id="preview-title"></span>
+    <span id="preview-url" class="mono"></span>
+    <div class="spacer"></div>
+    <button class="btn-secondary" id="btn-close-preview">Close preview</button>
+  </div>
+  <div id="preview-body">
+    <div id="preview-loading" class="hidden"><span class="spinner"></span> <span>Rendering the dashboard…</span></div>
+    <iframe id="preview-frame" title="Client dashboard preview"></iframe>
   </div>
 </div>
 

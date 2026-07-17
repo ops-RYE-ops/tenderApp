@@ -26,6 +26,7 @@ const state = {
   sitesCsv: null,   // shared sites.csv File — feeds both /extract (site-ref) and /assemble (incumbent)
   offers: [],       // /api/cost ranking rows (one per extracted offer)
   featured: new Set(), // offer indices ticked to show the client (max 2)
+  saved: null,      // last /api/assemble response (id, slug, url_uuid, version) for preview/publish
 };
 
 const MAX_FEATURED = 2;
@@ -44,6 +45,17 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
+async function apiText(path, opts = {}) {
+  // Like api(), but for endpoints that return raw text (e.g. /api/render → HTML).
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch (e) { /* non-JSON */ }
+    throw new Error(detail);
+  }
+  return res.text();
+}
+
 function notice(el, text, tone) {
   el.innerHTML = text ? `<div class="notice ${tone || ""}">${escapeHtml(text)}</div>` : "";
 }
@@ -56,8 +68,13 @@ function escapeHtml(s) {
 
 // --- screens -----------------------------------------------------------------
 
+function showScreen(name) {
+  $("screen-wizard").classList.toggle("hidden", name !== "wizard");
+  $("screen-register").classList.toggle("hidden", name !== "register");
+}
+
 function showStep(n) {
-  for (const s of [1, 2, 3, 4, 5]) $("step-" + s).classList.toggle("hidden", s !== n);
+  for (const s of [1, 2, 3, 4, 5, 6]) $("step-" + s).classList.toggle("hidden", s !== n);
   document.querySelectorAll("#stepper .step[data-step]").forEach((el) => {
     const s = Number(el.dataset.step);
     el.classList.toggle("active", s === n);
@@ -565,6 +582,7 @@ async function doAssemble() {
     if (state.sitesCsv) fd.append("sites_csv", state.sitesCsv);
     const r = await api("/api/assemble", { method: "POST", body: fd });
     state.meta.id = r.id;   // subsequent saves bump the version instead of duplicating
+    state.saved = r;        // slug / url_uuid / version for the preview + publish step
     renderAssembleResult(r);
   } catch (e) {
     if (e.message !== "unauthorised") notice($("assemble-msg"), "Assemble failed: " + e.message, "error");
@@ -592,8 +610,118 @@ function renderAssembleResult(r) {
       <span class="kv">tender id <b class="mono">${escapeHtml(r.id || "—")}</b></span>
     </div>
     ${warns || '<div class="notice success">No warnings — cost assumptions look clean. Review before publishing.</div>'}
-    <div class="notice">Saved as a draft version. Publishing to a client link is the next step (coming in a later update). Re-saving from here bumps the version, never overwrites.</div>`;
+    <div class="notice">Saved as a draft version. Re-saving from here bumps the version, never overwrites.</div>
+    <div class="actions"><div class="spacer"></div><button class="btn-primary" id="btn-to-preview">Continue to preview &rarr;</button></div>`;
   $("assemble-result").classList.remove("hidden");
+  $("btn-to-preview").addEventListener("click", openPublishStep);
+}
+
+// --- step 6: preview & publish -------------------------------------------------
+
+function wouldBeUrl(saved) {
+  const slug = (saved && saved.slug) || "client";
+  const uuid = (saved && saved.url_uuid) || "…";
+  return `rye.energy/${slug}/${uuid}`;
+}
+
+function openPublishStep() {
+  showStep(6);
+  notice($("preview-msg"), "");
+  const s = state.saved || {};
+  $("publish-meta").innerHTML = `
+    <span class="kv">client <b>${escapeHtml(state.meta.client_name || "—")}</b></span>
+    <span class="kv">tender <b>${escapeHtml(state.meta.tender_label || "—")}</b></span>
+    <span class="kv">version <b>v${escapeHtml(String(s.version ?? "—"))}</b></span>
+    <span class="kv">status <b>${escapeHtml(s.status || "draft")}</b></span>
+    <span class="kv">link (when published) <b class="mono">${escapeHtml(wouldBeUrl(s))}</b></span>`;
+}
+
+async function openPreview(opts) {
+  // Render the client dashboard HTML (by tender_id or inline tender) into the
+  // sandboxed iframe overlay. /api/render returns HTML, so use apiText, not api.
+  const overlay = $("preview-overlay");
+  overlay.classList.remove("hidden");
+  $("preview-title").textContent = opts.title || "Client dashboard preview";
+  $("preview-url").textContent = opts.url || "";
+  $("preview-frame").srcdoc = "";
+  $("preview-loading").classList.remove("hidden");
+  try {
+    const body = opts.tender_id ? { tender_id: opts.tender_id } : { tender: opts.tender };
+    const html = await apiText("/api/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    $("preview-frame").srcdoc = html;
+  } catch (e) {
+    $("preview-frame").srcdoc =
+      `<pre style="padding:16px;font-family:monospace;color:#b00;white-space:pre-wrap">Render failed: ${escapeHtml(e.message)}</pre>`;
+  } finally {
+    $("preview-loading").classList.add("hidden");
+  }
+}
+
+function closePreview() {
+  $("preview-overlay").classList.add("hidden");
+  $("preview-frame").srcdoc = "";
+}
+
+// --- register ------------------------------------------------------------------
+
+function fmtDate(s) {
+  if (!s) return "—";
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? String(s) : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+async function showRegister() {
+  showScreen("register");
+  await loadRegister();
+}
+
+async function loadRegister() {
+  const list = $("register-list");
+  list.innerHTML = "";
+  notice($("register-msg"), "");
+  $("register-loading").classList.remove("hidden");
+  try {
+    const r = await api("/api/tenders");
+    renderRegister(r.tenders || [], r.note);
+  } catch (e) {
+    notice($("register-msg"), "Could not load the register: " + e.message, "error");
+  } finally {
+    $("register-loading").classList.add("hidden");
+  }
+}
+
+function renderRegister(rows, note) {
+  const list = $("register-list");
+  list.innerHTML = "";
+  if (!rows.length) {
+    list.innerHTML = `<div class="notice">${escapeHtml(note || "No tenders saved yet — start one from New tender.")}</div>`;
+    return;
+  }
+  for (const t of rows) {
+    const row = document.createElement("div");
+    row.className = "tender-row";
+    const status = (t.status || "draft");
+    const rec = t.recommended_supplier ? " · rec: " + escapeHtml(t.recommended_supplier) : "";
+    row.innerHTML = `
+      <div class="tender-main">
+        <div class="tender-title">${escapeHtml(t.client_name || "—")} — ${escapeHtml(t.tender_label || "")}</div>
+        <div class="tender-sub">v${escapeHtml(String(t.version))} · ${escapeHtml(String(t.quotes ?? 0))} offer(s) · ${escapeHtml(String(t.sites ?? 0))} site(s) · saved ${escapeHtml(fmtDate(t.created_at))}${rec}</div>
+      </div>
+      <div class="right">
+        <span class="chip status-${escapeHtml(status)}">${escapeHtml(status.toUpperCase())}</span>
+        <button class="btn-secondary" data-preview="${escapeHtml(t.id)}" data-title="${escapeHtml(t.client_name || "")}">Preview</button>
+      </div>`;
+    list.append(row);
+  }
+  list.querySelectorAll("[data-preview]").forEach((b) =>
+    b.addEventListener("click", () => openPreview({
+      tender_id: b.dataset.preview,
+      title: (b.dataset.title || "Client") + " — dashboard preview",
+    })));
 }
 
 // --- wiring ------------------------------------------------------------------
@@ -621,6 +749,21 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-back-to-extract").addEventListener("click", () => { showStep(4); renderExtractList(); });
   $("btn-assemble").addEventListener("click", doAssemble);
 
+  // step 6: preview & publish
+  $("btn-back-to-assemble").addEventListener("click", () => showStep(5));
+  $("btn-preview").addEventListener("click", () => openPreview({
+    tender_id: state.meta.id,
+    title: (state.meta.client_name || "Client") + " — dashboard preview",
+    url: wouldBeUrl(state.saved),
+  }));
+  $("btn-close-preview").addEventListener("click", closePreview);
+
+  // nav + register
+  $("nav-new").addEventListener("click", () => showScreen("wizard"));
+  $("nav-register").addEventListener("click", showRegister);
+  $("btn-register-new").addEventListener("click", () => showScreen("wizard"));
+  $("btn-refresh-register").addEventListener("click", loadRegister);
+
   const dz = $("dropzone");
   dz.addEventListener("click", () => $("in-files").click());
   $("in-files").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
@@ -636,6 +779,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-confirm-map").addEventListener("click", confirmMap);
 
   // No auth gate — open the wizard straight away.
+  showScreen("wizard");
   showStep(1);
   loadSuppliers();
 });
@@ -645,4 +789,5 @@ window.__rye_debug = {
   state, addFiles, openMap, renderFiles,
   openExtract, runExtractAll, renderExtractList,
   openAssemble, loadOffers, renderOfferList, flatQuotes, doAssemble, assembleMeta,
+  openPublishStep, openPreview, closePreview, showRegister, loadRegister, renderRegister, showScreen,
 };
