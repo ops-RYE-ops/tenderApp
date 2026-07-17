@@ -37,6 +37,10 @@ and `/inspect`. No feature branch is open. Merge history:
 - PR #6 — `/api/extract` + sites.csv EAC/kVA override (db provenance).
 - PR #7 — `/api/assemble` (incumbent from sites.csv + versioned tender write).
 - PR #8 — `/api/render` (canonical tender → dashboard HTML, inline).
+- PR #9 — Phase 2 UI PR 1: team UI shell at `/app` (key gate, upload, mapping
+  review/confirm). **Verified live on a preview 2026-07-17**: unlock with
+  `TEAM_ACCESS_KEY` worked, the real UrbanChain quote hit the mappings CACHE
+  (LLM skipped), and confirm saved to the fingerprint cache.
 
 Live endpoints on `main`: `/api/health`, `/api/db-check`, `/api/inspect`,
 `/api/map`, `/api/map/confirm`, `/api/extract`, `/api/assemble`. `/api/map` was
@@ -50,7 +54,8 @@ EAC/kVA db-override → incumbent from sites.csv → schema-valid tender → HTM
 left is Phase 2 (team UI) and Phase 3 (static delivery + UUID links). Still on a
 Vercel HOBBY account; move to Pro before any real/commercial use (see Open checks).
 
-**Phase 2 UI — PR 1 in the working tree (branch `feat/team-ui` to be pushed).**
+**Phase 2 UI — PR 1 MERGED (PR #9) and verified live.** `TEAM_ACCESS_KEY` is set
+in Vercel (Prod + Preview). Next up is UI PR 2 — details in Next steps item 5.
 Decision (2026-07-17, discussed with Rory): the team UI is a **vanilla single-page
 app in this repo** — no build step, no npm, served by the same FastAPI app at
 `/app` — NOT a Retool app (permanent hand-maintenance seam outside git) and NOT
@@ -268,15 +273,31 @@ are mocked in test_map / test_assemble_api / test_render).
 
 Remaining beyond the backend:
 5. **Phase 2 — team UI** (new-tender, upload, mapping review, tender register) calling
-   these endpoints. See the build spec's team-facing flow. **STARTED** — vanilla SPA
-   in `web/` served at `/app` (see the branch-state note above). UI PR 1 (shell +
-   key gate + upload → map review/confirm) is in the working tree; UI PR 2 is the
-   extract + assemble screens (per-file /extract with unmatched-MPxN flagging, tender
-   meta form — recommended offer, day_split, expiry — then /assemble with version
-   feedback); UI PR 3 is the render preview + tender register (needs a small
-   `GET /api/tenders` register endpoint over the `tenders_latest` view). Remember to
-   set `TEAM_ACCESS_KEY` in Vercel (Prod + Preview) and REDEPLOY before testing a
-   preview, or the UI will sit at the unlock screen telling you the key is wrong.
+   these endpoints. See the build spec's team-facing flow. **UI PR 1 merged (PR #9)
+   and verified live** — vanilla SPA in `web/` served at `/app`, `TEAM_ACCESS_KEY`
+   already set in Vercel (Prod + Preview; env changes still need a redeploy).
+   **UI PR 2 (next, scoped 2026-07-17)** — the extract + assemble screens, all in
+   `web/` (frontend only; the endpoints exist):
+   - Step 4 Extract: per confirmed file POST `/api/extract` (multipart: `file` +
+     `mapping` as a JSON string form field + optional `site_reference` sites.csv).
+     Show counts and flag `unmatched_mpxn` prominently (never silently accepted).
+     ONE sites.csv upload slot should feed BOTH /extract (site-ref join) and later
+     /assemble (incumbent) — same file, two uses, until the Retool-sync lands.
+   - Step 5 Assemble: collect extract_results in JS state; meta form then POST
+     `/api/assemble` (multipart: `extracts` JSON array string + `meta` JSON string
+     + optional `sites_csv`). Meta shapes learned from assemble_tender.py:
+     recommended offer via `recommended_supplier` + `recommended_term` (flattened
+     keys; offer dropdown should list supplier+term combos found in the extracts;
+     NEVER computed), RYE fee via `fee_list_price_site_month` / `fee_discount_pct`
+     (spec defaults 90 / 80), `day_split` (default 0.7) and `weekend_split`
+     (top-level in schema, read by build_dashboard; assemble() passes day_split
+     only — check whether weekend_split needs adding to assemble()'s tender dict
+     before relying on it), `expires_at` (default = supplier quote validity),
+     `created_by` (the UI's stored email), `notes` (array). Show the response's
+     version + warnings as the pre-publish human gate (charge-basis warnings
+     especially). Extend `tests/dom_smoke.js` to walk the new steps.
+   - UI PR 3 after that: render preview + tender register (needs a small
+     `GET /api/tenders` register endpoint over the `tenders_latest` view).
 6. **Phase 3 — render & deliver**: static hosting on the custom domain, the UUID link
    lifecycle (noindex, expiry, revoke/rotate), and turning on the learned-mappings
    cache in the flow. This is where `/render` graduates from inline HTML to a
