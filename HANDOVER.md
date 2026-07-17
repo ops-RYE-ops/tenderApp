@@ -26,10 +26,10 @@ separation is what makes the output safe to send to a client.
 
 ## Where we are right now (branch state)
 
-`main` (= `origin/main`) is current through **PR #9**. The whole headless pipeline
-(**map → extract → assemble → render**) plus the Phase 2 UI shell are built, merged,
-and deployed. **One feature branch is open and awaiting merge:
-`feat/team-ui-extract-assemble` (UI PR 2 — see below).** Merge history:
+`main` (= `origin/main`) is current through **PR #10**. The whole headless pipeline
+(**map → extract → assemble → render**) plus the Phase 2 team UI through the assemble
+step are built, merged, and deployed. **One feature branch is open and awaiting
+merge: `feat/team-ui-render-register` (UI PR 3 — see below).** Merge history:
 
 - PR #1 — Phase 1 spike: `/api/health`, `/api/db-check`, `/api/inspect`.
 - PR #2/#3 — header-detection improvement + weekendRate band end-to-end.
@@ -39,16 +39,17 @@ and deployed. **One feature branch is open and awaiting merge:
 - PR #7 — `/api/assemble` (incumbent from sites.csv + versioned tender write).
 - PR #8 — `/api/render` (canonical tender → dashboard HTML, inline).
 - PR #9 — Phase 2 UI PR 1: team UI shell at `/app` (key gate, upload, mapping
-  review/confirm). **Verified live on a preview 2026-07-17**: unlock with
-  `TEAM_ACCESS_KEY` worked, the real UrbanChain quote hit the mappings CACHE
-  (LLM skipped), and confirm saved to the fingerprint cache.
+  review/confirm), verified live 2026-07-17.
+- PR #10 — Phase 2 UI PR 2: extract + assemble steps; **app-level auth removed**
+  (`/app` is open — see below); price-ranked `/api/cost` with up-to-2 featured
+  offers + price-based recommendation; hardcoded consumption splits; reworked
+  weekend costing. (Details in the PR-2 note further down.)
 
-**OPEN BRANCH (not yet merged): `feat/team-ui-extract-assemble`** — Phase 2 UI PR 2.
-Commits so far: (1) extract + assemble wizard steps; (2) **removal of the app-level
-team-key gate**; (3) **price-based recommendation + up-to-2 featured offers +
-hardcoded consumption splits + reworked weekend costing** (the founder steer). PR
-open, HELD for final review before merge (Rory's call to ship the full
-founder-correct flow in the first real deploy, not the interim dropdown version).
+**OPEN BRANCH (not yet merged): `feat/team-ui-render-register`** — Phase 2 UI PR 3:
+the render preview + tender register (see the PR-3 note below). Frontend + one small
+read-only endpoint (`GET /api/tenders`); no schema change. Full Python + DOM smoke
+suites green. This is everything up to — but not including — the live per-client URL,
+which is the Pro-gated publish step (Phase 3).
 Once merged this is the new `main`. See the PR-2 note below for the detail.
 
 Live endpoints on `main`: `/api/health`, `/api/db-check`, `/api/inspect`,
@@ -143,7 +144,55 @@ decision below.
   `dom_smoke.js` walks unlock-free load → … → extract → assemble (28 checks). Full
   Python suite + DOM smoke all green. (jsdom is an ad-hoc local dep: `npm i jsdom`;
   `node_modules/`, `package.json`, `package-lock.json` are gitignored.)
-- Still visible-but-locked: Step 6 Publish (Phase 3).
+- Step 6 (Publish) is unlocked as a preview step in PR 3 (below); the actual
+  publish-to-live-URL remains Phase 3 / Pro.
+
+**Phase 2 UI — PR 3 (open branch `feat/team-ui-render-register`, built 2026-07-17).**
+The render preview + tender register — everything up to, but not including, the live
+per-client URL (that's the Pro-gated publish step, Phase 3). Frontend-led plus one
+small read-only endpoint.
+- **`GET /api/tenders` (new)**: the team register. Read-only over the
+  `tenders_latest` view — scalar columns + `jsonb_array_length` site/offer counts +
+  `payload->recommended->>supplier`, newest first. Degrades to `{tenders:[], note}`
+  with no DB (like `/api/suppliers`). This is NOT a layer over the quote-to-dashboard
+  skill — it's just a DB read. Covered by `tests/test_ui.py`.
+- **Register screen** (`#screen-register`, top-nav toggle "New tender" / "Register"):
+  lists every tender (latest per id) with client, label, status chip, version,
+  counts, saved date, recommended supplier, and a **Preview** action per row.
+- **Render preview overlay**: a full-screen sandboxed `<iframe srcdoc>` showing the
+  real client dashboard HTML from `/api/render` (fetched via a new `apiText` helper —
+  render returns HTML, not JSON). Reused by the register (by `tender_id`) and by the
+  wizard's Step 6.
+- **Wizard Step 6 "Preview & publish"** (unlocked): after assemble, shows the tender
+  meta + the **would-be** client URL (`rye.energy/<slug>/<url_uuid>`, from the stamped
+  slug/url_uuid), a **Preview client dashboard** button, and a **disabled Publish
+  button** noting it needs Vercel Pro. No new backend — publish is the only piece held
+  for Phase 3.
+- **Backend surface is now complete** up to publish: the endpoints over the
+  quote-to-dashboard cost engine (`build_dashboard`) are `/api/cost` (ranking numbers)
+  and `/api/render` (dashboard HTML); everything else is extraction/mapping
+  (`/api/inspect|map|extract`), assembly (`/api/assemble`), or plumbing
+  (`/api/suppliers|tenders|health|db-check`).
+- Tests: `test_ui.py` gains the register test; `dom_smoke.js` walks Step 6 preview
+  (iframe loads the rendered HTML; publish gated) + the register list. Full suite green.
+- **Bugfix (same branch): site names showed as MPANs on the dashboard.** Root cause:
+  RYE's site names/EAC were only overlaid at `/extract`, so if the sites.csv wasn't
+  present when a quote was extracted (e.g. added later), the tender kept MPAN-only
+  names. Fix: the sites.csv is now authoritative wherever a tender is built from
+  extracts — a new `assemble_tender.apply_site_reference()` (reuses
+  `process_quote.build_site_lookup`, so column contract + MPAN keying don't drift)
+  overlays site name + authoritative EAC/kVA (provenance `db`), and it's applied at
+  `/api/assemble` AND `/api/cost` (the UI now sends the shared sites.csv to `/api/cost`
+  too, so the ranking EAC matches the render). Idempotent with `/extract`. Covered by
+  `test_assemble_api.test_site_reference_override`.
+- **Bugfix (same branch): spurious "no kVA figure — excluded" notes on the client
+  dashboard.** A capacity charge of `0` quoted per kVA, on a site with no kVA, was
+  firing the "excluded from that site's total" warning even though excluding £0 is a
+  no-op. Fix: `build_dashboard.annualise` now treats a `0`/None charge as nothing to
+  cost (returns 0, no warning); a genuine NON-ZERO per-kVA charge with no kVA still
+  warns (real undercosting). Covered by `tests/test_capacity.py`. (Open design
+  question for later: whether internal "excluded" warnings should show client-side at
+  all, or only in the team pre-publish review — left as-is for now.)
 
 Git workflow we're using: feature branch → `git push` → Vercel auto-builds a
 **Preview** deployment → open a PR on GitHub → merge → `main` auto-deploys to
@@ -354,10 +403,14 @@ Remaining beyond the backend:
    and confirm a versioned draft lands in the Retool `tenders` table (re-save with the
    same tender → version increments). Then `/api/render` the saved id and check only
    the featured offers show, with the cheapest as the recommendation.
-   - **UI PR 3 (next)**: render preview + tender register — needs a small
-     `GET /api/tenders` register endpoint over the `tenders_latest` view, a screen to
-     list tenders (latest per id, status, link), and a preview of `/api/render`'s HTML
-     before publish. This is the last team-facing screen from the spec's flow.
+   ~~**UI PR 3**~~ **DONE (open branch `feat/team-ui-render-register`, awaiting
+     merge)** — `GET /api/tenders` register endpoint over `tenders_latest`, the
+     register screen (nav toggle), the `/api/render` preview overlay (sandboxed
+     iframe), and Step 6 "Preview & publish" with the publish button gated on Pro.
+     Detail in the PR-3 note above. This completes the team-facing flow; the only
+     remaining team-UI work is Phase 3 publish (below). Verify on the preview: open
+     Register, Preview a saved tender (iframe shows the dashboard), and from a fresh
+     assemble check Step 6 shows the would-be URL with Publish disabled.
 6. **Phase 3 — render & deliver**: static hosting on the custom domain, the UUID link
    lifecycle (noindex, expiry, revoke/rotate), and turning on the learned-mappings
    cache in the flow. This is where `/render` graduates from inline HTML to a

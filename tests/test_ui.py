@@ -112,6 +112,35 @@ def test_suppliers_endpoint():
         main._db_connect = orig
 
 
+def test_tenders_register():
+    print("register: /api/tenders lists latest-per-id, degrades without a DB")
+    client = TestClient(main.app)
+    sample = [{
+        "id": "11111111-1111-4111-8111-111111111111", "client_name": "Amorino UK",
+        "tender_label": "Electricity tender", "utility": "electricity", "status": "draft",
+        "version": 2, "created_at": "2026-07-17T10:00:00Z", "created_by": "x@rye.energy",
+        "expires_at": None, "slug": "amorino-uk", "url_uuid": None, "dashboard_url": None,
+        "sites": 3, "quotes": 2, "recommended_supplier": "Octopus",
+    }]
+    orig = main._list_tenders
+    main._list_tenders = lambda: sample
+    try:
+        r = client.get("/api/tenders")
+        check("lists tenders", r.json().get("tenders", [{}])[0].get("client_name") == "Amorino UK")
+        check("counts + recommended surfaced",
+              r.json()["tenders"][0]["quotes"] == 2 and r.json()["tenders"][0]["recommended_supplier"] == "Octopus")
+    finally:
+        main._list_tenders = orig
+
+    main._list_tenders = lambda: None
+    try:
+        r = client.get("/api/tenders")
+        body = r.json()
+        check("no DB -> empty list + note", body.get("tenders") == [] and "note" in body)
+    finally:
+        main._list_tenders = orig
+
+
 def test_confirm_normalises_supplier():
     print("confirm: supplier whitespace is normalised before the cache write")
     client = TestClient(main.app)
@@ -145,6 +174,7 @@ if __name__ == "__main__":
     test_no_app_gate()
     test_static_app_served()
     test_suppliers_endpoint()
+    test_tenders_register()
     test_confirm_normalises_supplier()
     if FAILURES:
         print(f"\n{len(FAILURES)} CHECK(S) FAILED")

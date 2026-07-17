@@ -118,6 +118,31 @@ def _post_assemble(client, extracts, meta, sites_path=None, persist=False):
     return client.post("/api/assemble", data=data, files=files)
 
 
+def test_site_reference_override():
+    print("/api/assemble — sites.csv overrides site names + EAC even if extract lacked it")
+    client = TestClient(main.app)
+    # Simulate an extract that ran WITHOUT the sites.csv: names are the raw MPANs,
+    # EAC from the quote. This is exactly the reported bug's starting state.
+    extract = _example_extract()
+    for s in extract["sites"]:
+        s["site_name"] = s["mpxn"]
+        s["eac_source"] = "quote"
+        s["eac"] = 111.0
+    meta = {"client_name": "Amorino UK", "tender_label": "Elec", "created_by": "rory@rye.energy"}
+    sites = _sites_csv([
+        f"Amorino UK,Head Office,{MPAN_A},50000,2026-08-01,,,,,,,,,,",
+        f"Amorino UK,Warehouse 1,{MPAN_B},120000,2026-08-01,,,,,,,,,,",
+    ])
+    r = _post_assemble(client, extract, meta, sites_path=sites, persist=False)
+    check("returns 200", r.status_code == 200)
+    tsites = {s["mpxn"]: s for s in r.json()["tender"]["sites"]}
+    check("site name overridden from sites.csv (not the MPAN)",
+          tsites[MPAN_A]["site_name"] == "Head Office" and tsites[MPAN_B]["site_name"] == "Warehouse 1")
+    check("EAC overridden from sites.csv + provenance promoted to db",
+          tsites[MPAN_A]["eac"] == 50000.0 and tsites[MPAN_A]["eac_source"] == "db")
+    os.unlink(sites)
+
+
 def test_endpoint():
     print("/api/assemble — assemble + validate + versioned write")
     client = TestClient(main.app)
@@ -175,5 +200,6 @@ def test_endpoint():
 if __name__ == "__main__":
     test_rate_fields_in_sync_with_schema()
     test_incumbent_builder()
+    test_site_reference_override()
     test_endpoint()
     print("ALL ASSEMBLE-API CHECKS PASSED")

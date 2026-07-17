@@ -71,7 +71,11 @@ def load_csv(path):
 
 def annualise(value, basis, eac, kva, warnings, charge_name, site):
     """Convert a quoted charge into £/year according to its declared basis."""
-    if value is None:
+    if not value:
+        # None or 0 → nothing to cost. A zero charge is a no-op, so don't warn (a
+        # p/kVA charge of 0 with no kVA figure must not raise a spurious "excluded"
+        # note on the client dashboard). A genuine non-zero charge that can't be
+        # costed still warns below.
         return 0.0
     if basis in ("p/day", "p/mpan/day"):
         return value * 365 / 100

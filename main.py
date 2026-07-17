@@ -227,6 +227,52 @@ def _get_tender(tender_id: str, version: Optional[int] = None) -> Optional[dict]
         conn.close()
 
 
+def _list_tenders() -> Optional[list]:
+    """Latest version per tender (the `tenders_latest` view), for the team register.
+
+    Returns the denormalised scalar columns plus site/offer counts and the
+    recommended supplier — everything the register lists without opening the full
+    JSONB payload. None when no DB is configured (the caller degrades to an empty
+    register, like /api/suppliers).
+    """
+    conn = _db_connect()
+    if conn is None:
+        return None
+    cols = ["id", "client_name", "tender_label", "utility", "status", "version",
+            "created_at", "created_by", "expires_at", "slug", "url_uuid",
+            "dashboard_url", "sites", "quotes", "recommended_supplier"]
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select id, client_name, tender_label, utility, status, version, "
+                "created_at, created_by, expires_at, slug, url_uuid, dashboard_url, "
+                "coalesce(jsonb_array_length(payload->'sites'), 0), "
+                "coalesce(jsonb_array_length(payload->'quotes'), 0), "
+                "payload->'recommended'->>'supplier' "
+                "from tenders_latest order by created_at desc;"
+            )
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+@app.get("/api/tenders")
+def tenders():
+    """The team register: the latest version of every saved tender.
+
+    Read-only listing over the `tenders_latest` view. Degrades to an empty list
+    with a note when no DB is configured or reachable, so the UI's register screen
+    renders cleanly in local dev. Timestamps/dates are JSON-encoded by FastAPI.
+    """
+    try:
+        rows = _list_tenders()
+    except Exception as e:
+        return {"tenders": [], "note": f"DB unavailable ({type(e).__name__}) — no register."}
+    if rows is None:
+        return {"tenders": [], "note": "RETOOL_DATABASE_URL is not set — no register available."}
+    return {"ok": True, "tenders": rows}
+
+
 @app.get("/api/db-check")
 def db_check():
     """Read-only check that a Vercel function can reach the Retool DB + see the schema."""
@@ -596,6 +642,11 @@ async def assemble_endpoint(
 
         try:
             tender = at.assemble(extracts_obj, meta_obj, incumbent=incumbent)
+            # The shared sites.csv is RYE's authoritative site reference: overlay its
+            # site names + EAC/kVA onto the merged sites here too, so they win even if
+            # the file wasn't present when the quotes were extracted.
+            if csv_path:
+                at.apply_site_reference(tender["sites"], csv_path)
             at.validate_tender(tender)
         except HTTPException:
             raise
@@ -638,7 +689,7 @@ async def assemble_endpoint(
 # --- /cost -----------------------------------------------------------------
 
 @app.post("/api/cost")
-async def cost(extracts: str = Form(...)):
+async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File(None)):
     """Rank the extracted offers by all-in cost, deterministically.
 
     Backs the assemble screen's "which offers to show the client" tick-list: the
@@ -675,6 +726,21 @@ async def cost(extracts: str = Form(...)):
         tender = at.assemble(extracts_obj, {"client_name": "_", "tender_label": "_"})
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Could not read the extracts: {type(e).__name__}: {e}")
+
+    # Overlay the shared sites.csv (authoritative EAC/kVA) so the ranking matches the
+    # costs /render will show — same as /assemble does. Names don't affect cost, but
+    # a db EAC does, so keep the two in step.
+    if sites_csv is not None and sites_csv.filename:
+        ref_path, _ = await _save_upload(sites_csv)
+        try:
+            at.apply_site_reference(tender["sites"], ref_path)
+        except (Exception, SystemExit) as e:
+            raise HTTPException(status_code=422, detail=f"Could not read sites.csv: {type(e).__name__}: {e}")
+        finally:
+            try:
+                os.unlink(ref_path)
+            except OSError:
+                pass
 
     sites = {s.get("mpxn"): s for s in tender.get("sites", [])}
     site_mpxns = {m for m in sites if m}

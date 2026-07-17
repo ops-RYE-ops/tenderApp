@@ -257,6 +257,41 @@ details.raw textarea { margin-top: 10px; min-height: 220px; }
 .offer-cost { color: var(--text-2); font-size: 12px; white-space: nowrap; }
 .offer-hint { color: var(--text-3); font-size: 11px; margin-top: 2px; }
 
+/* --- tender register --- */
+#register-list { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.tender-row {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; transition: border-color 120ms;
+}
+.tender-row:hover { border-color: var(--border-strong); }
+.tender-main { flex: 1; min-width: 0; }
+.tender-title { font-size: 13px; font-weight: 600; }
+.tender-sub { color: var(--text-3); font-size: 11px; margin-top: 2px; }
+.tender-row .right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.status-draft { color: var(--text-2); }
+.status-published { color: var(--rye-green); border-color: rgba(24,109,24,.35); }
+.status-expired { color: var(--rye-red); border-color: rgba(238,0,0,.35); }
+
+/* --- dashboard preview overlay --- */
+.overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,.85); backdrop-filter: blur(2px);
+  display: flex; flex-direction: column;
+}
+.overlay-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg);
+}
+.overlay-bar #preview-title { font-size: 13px; font-weight: 600; }
+.overlay-bar #preview-url { color: var(--text-3); font-size: 11px; }
+#preview-body { flex: 1; position: relative; background: #fff; }
+#preview-frame { width: 100%; height: 100%; border: 0; background: #fff; }
+#preview-loading {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  gap: 8px; color: var(--text-2); background: var(--bg);
+}
+
 /* --- misc --- */
 .spinner {
   display: inline-block; width: 12px; height: 12px;

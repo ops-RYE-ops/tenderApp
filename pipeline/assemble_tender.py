@@ -146,6 +146,39 @@ def incumbent_from_sites_csv(path, client_name=None, mpxns=None, dbl=None):
     return {"supplier": supplier, "lines": lines}
 
 
+def apply_site_reference(sites, csv_path, dbl=None):
+    """Overlay RYE's sites.csv (site name + authoritative EAC/kVA) onto merged sites.
+
+    Makes the site reference authoritative at ASSEMBLE time, not just at /extract:
+    RYE's site name and consumption win even when the sites.csv wasn't supplied when
+    the quote was first extracted (e.g. it was added later, or the extract ran
+    first). Idempotent with /extract's own override — re-applying the same file is a
+    no-op. Same rules as process_quote: the site name always wins; EAC and kVA, where
+    the export provides them, override the quote and stamp `eac_source: "db"`.
+
+    Mutates `sites` in place and returns the number of sites matched. Reuses
+    `process_quote.build_site_lookup` so the column contract + MPAN keying stay
+    identical to the extract path (one definition, no drift).
+    """
+    from process_quote import build_site_lookup, clean_id
+
+    lookup = build_site_lookup(csv_path, dbl or {})
+    matched = 0
+    for s in sites:
+        db = lookup.get(clean_id(s.get("mpxn")))
+        if not db:
+            continue
+        matched += 1
+        if db.get("site_name"):
+            s["site_name"] = db["site_name"]
+        if db.get("eac") is not None:
+            s["eac"] = db["eac"]
+            s["eac_source"] = "db"
+        if db.get("kva") is not None:
+            s["kva"] = db["kva"]
+    return matched
+
+
 def _now_rfc3339_z():
     """Current UTC time as an RFC 3339 'Z' timestamp, matching created_at."""
     return (datetime.datetime.now(datetime.timezone.utc)

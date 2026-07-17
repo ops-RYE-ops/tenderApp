@@ -82,6 +82,17 @@ const routes = {
   '/api/extract': EXTRACT_RESP,
   '/api/cost': COST_RESP,
   '/api/assemble': ASSEMBLE_RESP,
+  '/api/render': '<!doctype html><html><body><h1>RYE dashboard preview MARKER</h1></body></html>',
+  '/api/tenders': {
+    ok: true,
+    tenders: [{
+      id: TENDER_ID, client_name: 'Amorino UK', tender_label: 'Electricity tender — July 2026',
+      utility: 'electricity', status: 'draft', version: 1, created_at: '2026-07-17T10:00:00Z',
+      created_by: 'x@rye.energy', expires_at: null, slug: 'amorino-uk',
+      url_uuid: '22222222-2222-4222-8222-222222222222', dashboard_url: null,
+      sites: 1, quotes: 2, recommended_supplier: 'Octopus',
+    }],
+  },
 };
 
 const failures = [];
@@ -96,7 +107,11 @@ const check = (name, cond) => {
   window.fetch = async (url) => {
     const p = new URL(url, 'http://localhost').pathname;
     if (!(p in routes)) throw new Error('unstubbed fetch: ' + p);
-    return { ok: true, status: 200, json: async () => routes[p] };
+    return {
+      ok: true, status: 200,
+      json: async () => routes[p],
+      text: async () => (typeof routes[p] === 'string' ? routes[p] : JSON.stringify(routes[p])),
+    };
   };
   window.onerror = (msg) => failures.push('uncaught: ' + msg);
 
@@ -192,6 +207,32 @@ const check = (name, cond) => {
   check('featured flag set on the extracted quotes',
     state.files[0].extract.quotes.every((q) => typeof q.featured === 'boolean') &&
     state.files[0].extract.quotes.some((q) => q.featured === true));
+
+  // --- step 6: preview & publish ---
+  window.document.getElementById('btn-to-preview').click();
+  await new Promise((r) => setTimeout(r, 20));
+  check('step 6 (preview) visible', !$('step-6').classList.contains('hidden'));
+  check('would-be client URL shown', $('publish-meta').textContent.includes('rye.energy/amorino-uk/'));
+  check('publish button is gated (disabled)', $('btn-publish').disabled === true);
+
+  $('btn-preview').click();
+  await new Promise((r) => setTimeout(r, 50));
+  check('preview overlay opens', !$('preview-overlay').classList.contains('hidden'));
+  check('rendered HTML loaded into the iframe',
+    ($('preview-frame').getAttribute('srcdoc') || '').includes('MARKER'));
+  $('btn-close-preview').click();
+  check('preview overlay closes', $('preview-overlay').classList.contains('hidden'));
+
+  // --- register ---
+  await window.__rye_debug.showRegister();
+  await new Promise((r) => setTimeout(r, 50));
+  check('register screen visible', !$('screen-register').classList.contains('hidden'));
+  check('wizard hidden while on register', $('screen-wizard').classList.contains('hidden'));
+  check('register lists the saved tender',
+    !!window.document.querySelector('#register-list .tender-row') &&
+    window.document.querySelector('#register-list .tender-title').textContent.includes('Amorino UK'));
+  check('register row has a preview action',
+    !!window.document.querySelector('#register-list [data-preview]'));
 
   if (failures.length) { console.log(`\n${failures.length} CHECK(S) FAILED`); process.exit(1); }
   console.log('\nALL DOM SMOKE CHECKS PASSED');
