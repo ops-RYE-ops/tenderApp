@@ -4,8 +4,9 @@
  * backend; this file only collects inputs, shows results, and lets a human
  * confirm the column mapping before anything is extracted.
  *
- * PR 1 scope: unlock → tender basics → upload → map review/confirm.
- * Extract / assemble / publish are the next PRs.
+ * Flow: tender basics → upload → map review/confirm → extract → assemble.
+ * No app-level auth — access is handled by Vercel deployment protection (Pro).
+ * Publish is the next PR.
  */
 "use strict";
 
@@ -19,24 +20,22 @@ const TARGET_FIELDS = [
 const NEW_SUPPLIER = "__new__";
 
 const state = {
-  key: localStorage.getItem("rye_team_key") || "",
-  email: localStorage.getItem("rye_user_email") || "",
-  meta: { client_name: "", tender_label: "", utility: "electricity", supplier: "" },
-  files: [],        // { file, name, status, mapResp, mapping, inspection }
+  meta: { client_name: "", tender_label: "", utility: "electricity", supplier: "", id: null },
+  files: [],        // { file, name, status, mapResp, mapping, inspection, extract, extractResp, extractStatus, extractError }
   activeIdx: null,  // index into files for the map screen
+  sitesCsv: null,   // shared sites.csv File — feeds both /extract (site-ref) and /assemble (incumbent)
+  offers: [],       // /api/cost ranking rows (one per extracted offer)
+  featured: new Set(), // offer indices ticked to show the client (max 2)
 };
+
+const MAX_FEATURED = 2;
 
 const $ = (id) => document.getElementById(id);
 
 // --- API helper --------------------------------------------------------------
 
 async function api(path, opts = {}) {
-  opts.headers = Object.assign({}, opts.headers, state.key ? { "X-RYE-Key": state.key } : {});
   const res = await fetch(path, opts);
-  if (res.status === 401) {
-    showUnlock("Key rejected — check it and try again.");
-    throw new Error("unauthorised");
-  }
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch (e) { /* non-JSON */ }
@@ -57,47 +56,13 @@ function escapeHtml(s) {
 
 // --- screens -----------------------------------------------------------------
 
-function show(screen) {
-  $("screen-unlock").classList.toggle("hidden", screen !== "unlock");
-  $("screen-wizard").classList.toggle("hidden", screen === "unlock");
-  $("btn-lock").classList.toggle("hidden", screen === "unlock");
-  $("nav-user").classList.toggle("hidden", screen === "unlock" || !state.email);
-  $("nav-user").textContent = state.email;
-}
-
-function showUnlock(msg) {
-  show("unlock");
-  $("in-key").value = state.key;
-  $("in-email").value = state.email;
-  notice($("unlock-msg"), msg || "", msg ? "error" : "");
-}
-
 function showStep(n) {
-  for (const s of [1, 2, 3]) $("step-" + s).classList.toggle("hidden", s !== n);
+  for (const s of [1, 2, 3, 4, 5]) $("step-" + s).classList.toggle("hidden", s !== n);
   document.querySelectorAll("#stepper .step[data-step]").forEach((el) => {
     const s = Number(el.dataset.step);
     el.classList.toggle("active", s === n);
     el.classList.toggle("done", s < n);
   });
-}
-
-// --- unlock ------------------------------------------------------------------
-
-async function unlock() {
-  state.key = $("in-key").value.trim();
-  state.email = $("in-email").value.trim();
-  localStorage.setItem("rye_team_key", state.key);
-  localStorage.setItem("rye_user_email", state.email);
-  notice($("unlock-msg"), "");
-  try {
-    await api("/api/auth-check");
-  } catch (e) {
-    if (e.message !== "unauthorised") showUnlock("Could not reach the API: " + e.message);
-    return;
-  }
-  show("wizard");
-  showStep(1);
-  loadSuppliers();
 }
 
 // --- step 1: tender basics -----------------------------------------------------
@@ -174,6 +139,10 @@ function renderFiles() {
     b.addEventListener("click", () => openMap(Number(b.dataset.map))));
   el.querySelectorAll("[data-del]").forEach((b) =>
     b.addEventListener("click", () => { state.files.splice(Number(b.dataset.del), 1); renderFiles(); }));
+
+  // Extract needs at least one confirmed mapping.
+  const btn = $("btn-to-extract");
+  if (btn) btn.disabled = !state.files.some((f) => f.status === "confirmed");
 }
 
 // --- step 3: mapping review ------------------------------------------------------
@@ -338,14 +307,14 @@ async function confirmMap() {
         supplier: state.meta.supplier,
         layout_fingerprint: f.mapResp.layout_fingerprint,
         mapping: f.mapping,
-        confirmed_by: state.email || null,
+        confirmed_by: null,
       }),
     });
     f.status = "confirmed";
     renderFiles();
     notice($("map-msg"),
       "Saved — the next " + state.meta.supplier + " quote with this layout skips Claude entirely. " +
-      "Extract is the next step (coming in the next update); your confirmed mapping is kept on this file.",
+      "Head back to files, then Continue to extract.",
       "success");
   } catch (e) {
     if (e.message !== "unauthorised") notice($("map-msg"), "Save failed: " + e.message, "error");
@@ -354,21 +323,303 @@ async function confirmMap() {
   }
 }
 
+// --- step 4: extract -----------------------------------------------------------
+
+function confirmedFiles() {
+  return state.files.filter((f) => f.status === "confirmed");
+}
+
+function renderSiteref() {
+  const nameEl = $("siteref-name");
+  const clear = $("btn-clear-siteref");
+  nameEl.textContent = state.sitesCsv ? state.sitesCsv.name : "";
+  clear.classList.toggle("hidden", !state.sitesCsv);
+  $("btn-pick-siteref").textContent = state.sitesCsv ? "Replace" : "Choose sites.csv";
+}
+
+function openExtract() {
+  showStep(4);
+  notice($("extract-msg"), "");
+  renderSiteref();
+  renderExtractList();
+}
+
+function extractChip(f) {
+  if (f.extractStatus === "done") return '<span class="chip success">EXTRACTED</span>';
+  if (f.extractStatus === "extracting") return '<span class="chip info"><span class="spinner"></span> EXTRACTING</span>';
+  if (f.extractStatus === "error") return '<span class="chip danger">FAILED</span>';
+  return '<span class="chip">READY</span>';
+}
+
+function renderExtractList() {
+  const el = $("extract-list");
+  el.innerHTML = "";
+  const files = confirmedFiles();
+  if (!files.length) {
+    el.innerHTML = '<div class="notice">No confirmed mappings yet — go back and confirm at least one file\'s columns first.</div>';
+    $("btn-to-assemble").disabled = true;
+    return;
+  }
+  for (const f of files) {
+    const div = document.createElement("div");
+    div.className = "filecard";
+    let detail = "";
+    if (f.extractStatus === "done" && f.extractResp) {
+      const c = f.extractResp.counts || {};
+      const ref = f.extractResp.site_reference_used ? " · site-ref applied" : "";
+      const unmatched = f.extractResp.unmatched_mpxn || [];
+      detail = `<div class="sub2">${c.sites || 0} site(s) · ${c.quotes || 0} offer(s) · ${c.lines || 0} line(s)${ref}</div>`;
+      if (unmatched.length) {
+        detail += `<div class="unmatched-list">⚠ ${unmatched.length} meter point(s) not in the site reference: ${unmatched.map(escapeHtml).join(", ")}</div>`;
+      }
+    } else if (f.extractStatus === "error") {
+      detail = `<div class="unmatched-list">${escapeHtml(f.extractError || "extraction failed")}</div>`;
+    }
+    div.innerHTML = `<div><span class="name">${escapeHtml(f.name)}</span>${detail}</div>
+      <div class="right">${extractChip(f)}</div>`;
+    el.append(div);
+  }
+  $("btn-to-assemble").disabled = !state.files.some((f) => f.extract);
+}
+
+async function runExtractAll() {
+  const files = confirmedFiles();
+  if (!files.length) { notice($("extract-msg"), "Confirm at least one mapping first.", "error"); return; }
+  const btn = $("btn-extract-all");
+  btn.disabled = true;
+  notice($("extract-msg"), "");
+  for (const f of files) {
+    f.extractStatus = "extracting";
+    renderExtractList();
+    try {
+      const fd = new FormData();
+      fd.append("file", f.file);
+      fd.append("mapping", JSON.stringify(f.mapping));
+      fd.append("supplier", state.meta.supplier);
+      if (state.sitesCsv) fd.append("site_reference", state.sitesCsv);
+      const r = await api("/api/extract", { method: "POST", body: fd });
+      f.extract = r.extract_result;
+      f.extractResp = r;
+      f.extractStatus = "done";
+    } catch (e) {
+      f.extractStatus = "error";
+      f.extractError = e.message;
+      f.extract = null;
+      f.extractResp = null;
+    }
+    renderExtractList();
+  }
+  btn.disabled = false;
+  const anyUnmatched = files.some((f) => (f.extractResp?.unmatched_mpxn || []).length);
+  if (files.some((f) => f.extract)) {
+    notice($("extract-msg"),
+      anyUnmatched
+        ? "Extracted — but some meter points aren't in the site reference (flagged above). Resolve them or proceed knowingly."
+        : "Extracted. Continue to assemble when ready.",
+      anyUnmatched ? "warn" : "success");
+  }
+}
+
+// --- step 5: assemble ----------------------------------------------------------
+
+function flatQuotes() {
+  // Every extracted offer, in the SAME order the backend concatenates them (files
+  // with an extract, in order; quotes within each). offer.index lines up with this
+  // array, so ticking offer i features flatQuotes()[i].
+  const out = [];
+  for (const f of state.files) {
+    if (!f.extract) continue;
+    for (const q of (f.extract.quotes || [])) out.push(q);
+  }
+  return out;
+}
+
+async function openAssemble() {
+  showStep(5);
+  notice($("assemble-msg"), "");
+  $("assemble-result").classList.add("hidden");
+  await loadOffers();
+}
+
+async function loadOffers() {
+  const extracts = state.files.filter((f) => f.extract).map((f) => f.extract);
+  const list = $("offer-list");
+  list.innerHTML = "";
+  state.offers = [];
+  state.featured = new Set();
+  if (!extracts.length) {
+    list.innerHTML = '<div class="notice">No extracted offers - go back to the extract step.</div>';
+    return;
+  }
+  $("offer-loading").classList.remove("hidden");
+  try {
+    const fd = new FormData();
+    fd.append("extracts", JSON.stringify(extracts));
+    const r = await api("/api/cost", { method: "POST", body: fd });
+    state.offers = r.offers || [];
+    // Pre-tick the two cheapest (offers arrive full-coverage-first, cheapest-first).
+    state.featured = new Set(state.offers.slice(0, MAX_FEATURED).map((o) => o.index));
+    renderOfferList();
+  } catch (e) {
+    list.innerHTML = "";
+    notice($("assemble-msg"), "Could not cost the offers: " + e.message, "error");
+  } finally {
+    $("offer-loading").classList.add("hidden");
+  }
+}
+
+function money(n) {
+  return n == null ? "—" : "£" + Number(n).toLocaleString("en-GB", { maximumFractionDigits: 0 });
+}
+
+function renderOfferList() {
+  const list = $("offer-list");
+  list.innerHTML = "";
+  for (const o of state.offers) {
+    const ticked = state.featured.has(o.index);
+    const disabled = !ticked && state.featured.size >= MAX_FEATURED;
+    const eff = o.effective_pkwh != null ? `${o.effective_pkwh.toFixed(2)}p/kWh` : "—";
+    const badges = (o.cheapest ? '<span class="chip success">CHEAPEST</span>' : "")
+      + (o.covers_all_sites ? "" : '<span class="chip danger">PARTIAL COVER</span>');
+    const row = document.createElement("label");
+    row.className = "offer" + (ticked ? " on" : "") + (disabled ? " off" : "");
+    row.innerHTML = `
+      <input type="checkbox" data-idx="${o.index}" ${ticked ? "checked" : ""} ${disabled ? "disabled" : ""}>
+      <div class="offer-main">
+        <div class="offer-name">${escapeHtml(o.supplier || "—")}${o.term ? " · " + escapeHtml(o.term) : ""} ${badges}</div>
+        <div class="offer-cost mono">${money(o.annual_cost)}/yr · ${eff}</div>
+      </div>`;
+    list.append(row);
+  }
+  list.querySelectorAll("input[type=checkbox]").forEach((cb) =>
+    cb.addEventListener("change", () => {
+      const idx = Number(cb.dataset.idx);
+      if (cb.checked) { if (state.featured.size < MAX_FEATURED) state.featured.add(idx); }
+      else state.featured.delete(idx);
+      renderOfferList();
+    }));
+  const hint = document.createElement("div");
+  hint.className = "offer-hint";
+  hint.textContent = `Showing ${state.featured.size} of max ${MAX_FEATURED}. Costs use RYE's `
+    + "standard splits - day/night 70/30; weekend 2/7 where a weekend rate is quoted.";
+  list.append(hint);
+}
+
+function assembleMeta() {
+  const meta = {
+    client_name: state.meta.client_name,
+    tender_label: state.meta.tender_label,
+    utility: state.meta.utility,
+  };
+  if (state.meta.id) meta.id = state.meta.id;              // re-assemble -> version bumps
+  // created_by is left unset -> the backend stamps a sensible default. day_split /
+  // weekend_split are NOT sent -> the backend applies the standing hardcoded splits
+  // (day/night 70/30, weekend 2/7 where a weekend rate is quoted).
+  const feeList = parseFloat($("in-fee-list").value);
+  if (!isNaN(feeList)) meta.fee_list_price_site_month = feeList;
+  const feeDisc = parseFloat($("in-fee-discount").value);
+  if (!isNaN(feeDisc)) meta.fee_discount_pct = feeDisc;
+
+  const exp = $("in-expires").value;
+  if (exp) meta.expires_at = exp;
+
+  // Recommended = the cheapest of the TICKED offers (price-based; costs come from
+  // the backend ranking, never computed here).
+  const ticked = state.offers.filter((o) => state.featured.has(o.index) && o.annual_cost != null);
+  if (ticked.length) {
+    const rec = ticked.reduce((x, y) => (y.annual_cost < x.annual_cost ? y : x));
+    meta.recommended_supplier = rec.supplier;
+    if (rec.term) meta.recommended_term = rec.term;
+  }
+
+  const notes = $("in-notes").value.split("\n").map((s) => s.trim()).filter(Boolean);
+  if (notes.length) meta.notes = notes;
+  return meta;
+}
+
+async function doAssemble() {
+  const flat = flatQuotes();
+  if (!flat.length) {
+    notice($("assemble-msg"), "No extracted offers yet - go back to the extract step.", "error");
+    return;
+  }
+  if (!state.featured.size) {
+    notice($("assemble-msg"), "Tick at least one offer to show the client.", "error");
+    return;
+  }
+  // Flag the featured offers on the quote objects - this rides through /assemble
+  // into the tender, and /render shows only the featured ones.
+  flat.forEach((q, i) => { q.featured = state.featured.has(i); });
+
+  const extracts = state.files.filter((f) => f.extract).map((f) => f.extract);
+  const btn = $("btn-assemble");
+  btn.disabled = true;
+  $("assemble-result").classList.add("hidden");
+  $("assemble-loading").classList.remove("hidden");
+  notice($("assemble-msg"), "");
+  try {
+    const fd = new FormData();
+    fd.append("extracts", JSON.stringify(extracts));
+    fd.append("meta", JSON.stringify(assembleMeta()));
+    fd.append("persist", "true");
+    if (state.sitesCsv) fd.append("sites_csv", state.sitesCsv);
+    const r = await api("/api/assemble", { method: "POST", body: fd });
+    state.meta.id = r.id;   // subsequent saves bump the version instead of duplicating
+    renderAssembleResult(r);
+  } catch (e) {
+    if (e.message !== "unauthorised") notice($("assemble-msg"), "Assemble failed: " + e.message, "error");
+  } finally {
+    $("assemble-loading").classList.add("hidden");
+    btn.disabled = false;
+  }
+}
+
+function renderAssembleResult(r) {
+  const c = r.counts || {};
+  const savedChip = r.persisted
+    ? '<span class="chip success">SAVED TO REGISTER</span>'
+    : '<span class="chip info">DRY RUN — NOT SAVED</span>';
+  const warns = (r.warnings || []).map((w) =>
+    `<div class="notice warn">⚠ ${escapeHtml(w)}</div>`).join("");
+  $("assemble-result").innerHTML = `
+    <div class="result-grid">
+      <span class="kv">${savedChip}</span>
+      <span class="kv">version <b>v${escapeHtml(String(r.version))}</b></span>
+      <span class="kv">status <b>${escapeHtml(r.status || "—")}</b></span>
+      <span class="kv">sites <b>${escapeHtml(String(c.sites ?? "—"))}</b></span>
+      <span class="kv">offers <b>${escapeHtml(String(c.quotes ?? "—"))}</b></span>
+      <span class="kv">incumbent <b>${escapeHtml(r.incumbent_supplier || "none")}</b> (${escapeHtml(String(c.incumbent_lines ?? 0))} line(s))</span>
+      <span class="kv">tender id <b class="mono">${escapeHtml(r.id || "—")}</b></span>
+    </div>
+    ${warns || '<div class="notice success">No warnings — cost assumptions look clean. Review before publishing.</div>'}
+    <div class="notice">Saved as a draft version. Publishing to a client link is the next step (coming in a later update). Re-saving from here bumps the version, never overwrites.</div>`;
+  $("assemble-result").classList.remove("hidden");
+}
+
 // --- wiring ------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
-  $("btn-unlock").addEventListener("click", unlock);
-  $("in-key").addEventListener("keydown", (e) => { if (e.key === "Enter") unlock(); });
-  $("btn-lock").addEventListener("click", () => {
-    state.key = "";
-    localStorage.removeItem("rye_team_key");
-    showUnlock();
-  });
-
   $("in-supplier").addEventListener("change", onSupplierChange);
   $("btn-to-upload").addEventListener("click", toUpload);
   $("btn-back-1").addEventListener("click", () => showStep(1));
   $("btn-back-2").addEventListener("click", () => { showStep(2); renderFiles(); });
+  $("btn-to-extract").addEventListener("click", openExtract);
+
+  // step 4: extract
+  $("btn-back-to-upload").addEventListener("click", () => { showStep(2); renderFiles(); });
+  $("btn-extract-all").addEventListener("click", runExtractAll);
+  $("btn-to-assemble").addEventListener("click", openAssemble);
+  $("btn-pick-siteref").addEventListener("click", () => $("in-siteref").click());
+  $("in-siteref").addEventListener("change", (e) => {
+    state.sitesCsv = e.target.files[0] || null;
+    e.target.value = "";
+    renderSiteref();
+  });
+  $("btn-clear-siteref").addEventListener("click", () => { state.sitesCsv = null; renderSiteref(); });
+
+  // step 5: assemble
+  $("btn-back-to-extract").addEventListener("click", () => { showStep(4); renderExtractList(); });
+  $("btn-assemble").addEventListener("click", doAssemble);
 
   const dz = $("dropzone");
   dz.addEventListener("click", () => $("in-files").click());
@@ -384,11 +635,14 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-apply-json").addEventListener("click", applyJson);
   $("btn-confirm-map").addEventListener("click", confirmMap);
 
-  // Auto-unlock if a stored key still works (or no key is configured).
-  api("/api/auth-check")
-    .then(() => { show("wizard"); showStep(1); loadSuppliers(); })
-    .catch(() => showUnlock());
+  // No auth gate — open the wizard straight away.
+  showStep(1);
+  loadSuppliers();
 });
 
 // Exposed for the headless DOM smoke test (jsdom) — not used by the UI itself.
-window.__rye_debug = { state, addFiles, openMap, renderFiles };
+window.__rye_debug = {
+  state, addFiles, openMap, renderFiles,
+  openExtract, runExtractAll, renderExtractList,
+  openAssemble, loadOffers, renderOfferList, flatQuotes, doAssemble, assembleMeta,
+};

@@ -65,7 +65,7 @@ import re
 import sys
 import uuid
 
-from rye_quote_core import parse_num
+from rye_quote_core import DAY_SPLIT_DEFAULT, WEEKEND_SPLIT_DEFAULT, parse_num
 
 # Provenance ranking for site facts: prefer RYE reference data, then an operator
 # figure, then whatever the supplier stated. Higher wins on conflict.
@@ -251,7 +251,8 @@ def assemble(extracts, meta, incumbent=None):
     extracts : list of extractResult dicts (or a single dict).
     meta      : dict of tender/meta fields. Required: client_name, tender_label.
                 Optional (with sensible defaults): id, version, status, utility,
-                created_at, created_by, expires_at, day_split, url_uuid, slug,
+                created_at, created_by, expires_at, day_split, weekend_split,
+                url_uuid, slug,
                 dashboard_url, charge_basis, notes, recommended / rye_fee (and
                 their flattened *_ variants), etc.
     incumbent : #/$defs/incumbent dict, or None when unknown.
@@ -286,7 +287,8 @@ def assemble(extracts, meta, incumbent=None):
         "created_at": meta.get("created_at") or _now_rfc3339_z(),
         "created_by": meta.get("created_by", "unknown@rye.energy"),
         "expires_at": meta.get("expires_at"),
-        "day_split": meta.get("day_split", 0.7),
+        "day_split": meta.get("day_split", DAY_SPLIT_DEFAULT),
+        "weekend_split": meta.get("weekend_split", WEEKEND_SPLIT_DEFAULT),
         "url_uuid": meta.get("url_uuid") or str(uuid.uuid4()),
         "slug": slug,
         "dashboard_url": meta.get("dashboard_url"),
@@ -348,7 +350,8 @@ def parse_args(argv):
     p.add_argument("--url-uuid", dest="url_uuid")
     p.add_argument("--slug")
     p.add_argument("--expires-at", dest="expires_at")
-    p.add_argument("--day-split", dest="day_split", type=float, default=0.7)
+    p.add_argument("--day-split", dest="day_split", type=float, default=DAY_SPLIT_DEFAULT)
+    p.add_argument("--weekend-split", dest="weekend_split", type=float, default=WEEKEND_SPLIT_DEFAULT)
     p.add_argument("--created-by", dest="created_by", default="unknown@rye.energy")
     p.add_argument("--recommended-supplier", dest="recommended_supplier")
     p.add_argument("--recommended-term", dest="recommended_term")
@@ -375,6 +378,7 @@ def main(argv):
         "slug": args.slug,
         "expires_at": args.expires_at,
         "day_split": args.day_split,
+        "weekend_split": args.weekend_split,
         "created_by": args.created_by,
         "recommended_supplier": args.recommended_supplier,
         "recommended_term": args.recommended_term,

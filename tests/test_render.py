@@ -14,6 +14,7 @@ Prints 'ALL RENDER CHECKS PASSED' and exits 0 when green.
 """
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -51,6 +52,32 @@ def test_adapter():
     check("renders even with empty sites[]", "__TENDER_DATA__" not in bd.render_tender(t2))
 
 
+def _rendered_offers(html):
+    """Pull the injected TENDER.offers out of the rendered HTML (non-incumbent)."""
+    m = re.search(r"const TENDER = (\{.*\});", html)
+    data = json.loads(m.group(1))
+    return [o for o in data.get("offers", []) if not o.get("isIncumbent")]
+
+
+def test_featured_filter():
+    print("render_tender — only FEATURED offers reach the client dashboard")
+    tender = _example_tender()
+    check("example has 2 offers to start", len(tender["quotes"]) == 2)
+
+    # No featured flags → fall back to showing all (backward compatible).
+    check("no flags → all offers shown", len(_rendered_offers(bd.render_tender(tender))) == 2)
+
+    # Feature only the 24-month offer; recommended must be a featured offer
+    # (the real flow sets recommended = cheapest featured, so this always holds).
+    t2 = json.loads(json.dumps(tender))
+    for q in t2["quotes"]:
+        q["featured"] = (q.get("term") == "24 months")
+    t2["recommended"] = {"supplier": "Testco", "term": "24 months"}
+    shown = _rendered_offers(bd.render_tender(t2))
+    check("only the featured offer is rendered", len(shown) == 1)
+    check("it is the 24-month offer", shown[0].get("term") == "24 months")
+
+
 def test_endpoint():
     print("/api/render — inline JSON, fetch-by-id, error paths")
     client = TestClient(main.app)
@@ -82,5 +109,6 @@ def test_endpoint():
 
 if __name__ == "__main__":
     test_adapter()
+    test_featured_filter()
     test_endpoint()
     print("ALL RENDER CHECKS PASSED")

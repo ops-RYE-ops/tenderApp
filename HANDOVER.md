@@ -26,9 +26,10 @@ separation is what makes the output safe to send to a client.
 
 ## Where we are right now (branch state)
 
-`main` (= `origin/main`) is current through **PR #7**. The whole headless pipeline
-is built, merged, and deployed: **map → extract → assemble**, plus the diagnostics
-and `/inspect`. No feature branch is open. Merge history:
+`main` (= `origin/main`) is current through **PR #9**. The whole headless pipeline
+(**map → extract → assemble → render**) plus the Phase 2 UI shell are built, merged,
+and deployed. **One feature branch is open and awaiting merge:
+`feat/team-ui-extract-assemble` (UI PR 2 — see below).** Merge history:
 
 - PR #1 — Phase 1 spike: `/api/health`, `/api/db-check`, `/api/inspect`.
 - PR #2/#3 — header-detection improvement + weekendRate band end-to-end.
@@ -41,6 +42,14 @@ and `/inspect`. No feature branch is open. Merge history:
   review/confirm). **Verified live on a preview 2026-07-17**: unlock with
   `TEAM_ACCESS_KEY` worked, the real UrbanChain quote hit the mappings CACHE
   (LLM skipped), and confirm saved to the fingerprint cache.
+
+**OPEN BRANCH (not yet merged): `feat/team-ui-extract-assemble`** — Phase 2 UI PR 2.
+Commits so far: (1) extract + assemble wizard steps; (2) **removal of the app-level
+team-key gate**; (3) **price-based recommendation + up-to-2 featured offers +
+hardcoded consumption splits + reworked weekend costing** (the founder steer). PR
+open, HELD for final review before merge (Rory's call to ship the full
+founder-correct flow in the first real deploy, not the interim dropdown version).
+Once merged this is the new `main`. See the PR-2 note below for the detail.
 
 Live endpoints on `main`: `/api/health`, `/api/db-check`, `/api/inspect`,
 `/api/map`, `/api/map/confirm`, `/api/extract`, `/api/assemble`. `/api/map` was
@@ -78,6 +87,64 @@ workflow syncing company Postgres → a `site_reference` table in Retool DB, rea
 by /extract & /assemble (kills the sites.csv upload AND the static-IP question);
 not built yet.
 
+**Phase 2 UI — PR 2 (open branch `feat/team-ui-extract-assemble`, built 2026-07-17).**
+Frontend-first extension of the wizard, plus one small backend change and the auth
+decision below.
+- **Step 4 Extract**: one shared `sites.csv` slot feeds BOTH `/extract` (site-ref
+  join) and `/assemble` (incumbent). "Extract confirmed files" POSTs each confirmed
+  file (`file` + `mapping` JSON string + optional `site_reference`); per-file counts
+  shown and `unmatched_mpxn` flagged in red (never silently accepted).
+- **Step 5 Assemble** (REVISED per the founder steer): NOT a recommended-offer
+  dropdown. Instead a price-ranked **include tick-list** — on entering the step the
+  UI POSTs the extracts to `/api/cost` (below), which returns each offer's
+  standardised all-in annual cost + effective p/kWh + `covers_all_sites`, sorted
+  cheapest-first with the cheapest FULL-COVERAGE offer badged. The team ticks up to 2
+  offers to show the client (two cheapest pre-ticked, max 2 enforced); the cheapest
+  ticked becomes the recommendation (price-based, never hand-picked on a whim). RYE
+  fee (90/80), expiry and notes remain; the day/weekend split inputs were REMOVED
+  (splits are hardcoded now — see below). On save the UI flags `featured` on the
+  chosen quote objects and POSTs `/api/assemble` (`extracts` + `meta` + shared
+  `sites_csv`, `persist=true`); returned version + warnings are the pre-publish gate;
+  the tender `id` is stored so a re-save bumps the version.
+- **`/api/cost` (new deterministic endpoint)**: assembles a throwaway tender from the
+  extracts and runs the EXISTING `build_dashboard.compute_offer` per offer (NEVER a JS
+  cost calc — one source of truth), returning `{offers:[{index, supplier, term,
+  annual_cost, effective_pkwh, covers_all_sites, cheapest, warnings}], site_count,
+  eac_total, day_split, weekend_split}`. Cheapest = min annual_cost among
+  full-coverage offers (a partial-cover offer is shown but never badged/ranked
+  cheapest). Covered by `tests/test_cost.py`.
+- **Featured offers**: the quote schema gains an optional per-quote `featured` bool.
+  ALL extracted offers are stored on the tender (full audit record);
+  `build_dashboard.render_tender` shows ONLY the featured ones (falls back to all if
+  none are flagged), so the client never sees more than the chosen ≤2. `assemble()`
+  carries `featured` through untouched. NB: `recommended` must point at a featured
+  offer or `build_dashboard` raises — the UI guarantees this (recommended = cheapest
+  featured).
+- **Splits are now HARDCODED, not per-tender inputs** (founder steer: zero friction).
+  `DAY_SPLIT_DEFAULT = 0.7` (Economy-7 17:7 day:night) and `WEEKEND_SPLIT_DEFAULT =
+  2/7` live in `rye_quote_core`; `assemble()` and the cost engine default to them and
+  the UI no longer collects them. **Weekend costing was reworked** in
+  `build_dashboard.compute_offer`: the weekend share now applies ONLY to offers that
+  actually quote a weekend rate, split multiplicatively so the fractions always sum to
+  1 — a 2-band day/night offer stays 0.7/0.3; a 3-band offer becomes ≈0.50/0.21/0.29
+  day/night/weekend — and it's footnoted as a flat-week assumption. (Previously
+  `weekend_split` was subtracted tender-wide from `night_frac`, so a nonzero default
+  would have zeroed out night for plain day/night offers — that's why this had to be a
+  cost-engine change, not just a default. `tests/test_weekend.py` updated to the new
+  numbers.)
+- **AUTH REMOVED — the tool is now OPEN.** The PR-1 shared-key gate (`TEAM_ACCESS_KEY`
+  middleware, `X-RYE-Key` header, `/api/auth-check`, the unlock screen + email field)
+  was deleted this session (decision with Rory, 2026-07-17): overkill for a 1–3 person
+  team and it wanted zero setup. `/app` opens straight into the wizard. `created_by`
+  is left unset → backend stamps its default. **Replacement is Vercel deployment
+  protection (SSO/password) once on Pro — no app code; see Next steps step 7.** A
+  lingering `TEAM_ACCESS_KEY` env var is now ignored and can be deleted.
+- Tests: `test_ui.py` now asserts open access + `/api/auth-check` is 404;
+  `dom_smoke.js` walks unlock-free load → … → extract → assemble (28 checks). Full
+  Python suite + DOM smoke all green. (jsdom is an ad-hoc local dep: `npm i jsdom`;
+  `node_modules/`, `package.json`, `package-lock.json` are gitignored.)
+- Still visible-but-locked: Step 6 Publish (Phase 3).
+
 Git workflow we're using: feature branch → `git push` → Vercel auto-builds a
 **Preview** deployment → open a PR on GitHub → merge → `main` auto-deploys to
 production. In the Vercel Deployments tab, switch the env filter from "Production"
@@ -104,7 +171,9 @@ Merges N `extractResult` docs (dedupe sites on `mpxn` with provenance preference
 db>manual>quote + null-fill; concat quotes) + incumbent + meta → a valid canonical
 tender. Importable `assemble()` for the endpoint, plus a CLI. Moves NO values;
 stamps meta (id/version/status/timestamps/url_uuid/slug). `recommended` carried
-through, never computed. Completes the headless "quotes in → tender JSON out" pipeline.
+through, never computed *by assemble* — the price ranking is done by `/api/cost`
+(the cost engine) and the UI passes the cheapest featured offer as `recommended`
+(see PR-2). Completes the headless "quotes in → tender JSON out" pipeline.
 
 **Vercel backend — Phase 1 (backend COMPLETE; only /render remains).**
 All endpoints below are on `main` and deployed. `/api/extract` (PR #6) and
@@ -272,39 +341,34 @@ are mocked in test_map / test_assemble_api / test_render).
    render.**
 
 Remaining beyond the backend:
-5. **Phase 2 — team UI** (new-tender, upload, mapping review, tender register) calling
-   these endpoints. See the build spec's team-facing flow. **UI PR 1 merged (PR #9)
-   and verified live** — vanilla SPA in `web/` served at `/app`, `TEAM_ACCESS_KEY`
-   already set in Vercel (Prod + Preview; env changes still need a redeploy).
-   **UI PR 2 (next, scoped 2026-07-17)** — the extract + assemble screens, all in
-   `web/` (frontend only; the endpoints exist):
-   - Step 4 Extract: per confirmed file POST `/api/extract` (multipart: `file` +
-     `mapping` as a JSON string form field + optional `site_reference` sites.csv).
-     Show counts and flag `unmatched_mpxn` prominently (never silently accepted).
-     ONE sites.csv upload slot should feed BOTH /extract (site-ref join) and later
-     /assemble (incumbent) — same file, two uses, until the Retool-sync lands.
-   - Step 5 Assemble: collect extract_results in JS state; meta form then POST
-     `/api/assemble` (multipart: `extracts` JSON array string + `meta` JSON string
-     + optional `sites_csv`). Meta shapes learned from assemble_tender.py:
-     recommended offer via `recommended_supplier` + `recommended_term` (flattened
-     keys; offer dropdown should list supplier+term combos found in the extracts;
-     NEVER computed), RYE fee via `fee_list_price_site_month` / `fee_discount_pct`
-     (spec defaults 90 / 80), `day_split` (default 0.7) and `weekend_split`
-     (top-level in schema, read by build_dashboard; assemble() passes day_split
-     only — check whether weekend_split needs adding to assemble()'s tender dict
-     before relying on it), `expires_at` (default = supplier quote validity),
-     `created_by` (the UI's stored email), `notes` (array). Show the response's
-     version + warnings as the pre-publish human gate (charge-basis warnings
-     especially). Extend `tests/dom_smoke.js` to walk the new steps.
-   - UI PR 3 after that: render preview + tender register (needs a small
-     `GET /api/tenders` register endpoint over the `tenders_latest` view).
+5. **Phase 2 — team UI** (new-tender, upload, mapping review, tender register).
+   **UI PR 1 merged (PR #9)** — vanilla SPA in `web/` served at `/app`.
+   ~~**UI PR 2**~~ **DONE (open branch `feat/team-ui-extract-assemble`, awaiting
+   merge)** — extract + assemble screens; app-level auth removed; price-ranked
+   include tick-list (via new `/api/cost`) with up-to-2 featured offers and a
+   price-based recommendation; hardcoded consumption splits + reworked weekend
+   costing. Full detail in the branch-state section above. Verify on the preview:
+   run a real quote through map/confirm → Continue to extract (upload the client's
+   sites.csv), check counts + the unmatched flag → Continue to assemble, confirm the
+   offers are costed + ranked cheapest-first (cheapest badged), tick up to 2, save,
+   and confirm a versioned draft lands in the Retool `tenders` table (re-save with the
+   same tender → version increments). Then `/api/render` the saved id and check only
+   the featured offers show, with the cheapest as the recommendation.
+   - **UI PR 3 (next)**: render preview + tender register — needs a small
+     `GET /api/tenders` register endpoint over the `tenders_latest` view, a screen to
+     list tenders (latest per id, status, link), and a preview of `/api/render`'s HTML
+     before publish. This is the last team-facing screen from the spec's flow.
 6. **Phase 3 — render & deliver**: static hosting on the custom domain, the UUID link
    lifecycle (noindex, expiry, revoke/rotate), and turning on the learned-mappings
    cache in the flow. This is where `/render` graduates from inline HTML to a
    published per-client URL.
 7. **Upgrade to Vercel Pro** before going live / real client data: commercial use
    (Hobby is non-commercial only), team seats, spend controls, EU-region pinning,
-   static-IP add-on if needed.
+   static-IP add-on if needed. **Turn on Vercel Deployment Protection** (Settings →
+   Deployment Protection → Vercel Authentication/SSO, or a shared password) — this is
+   the replacement for the app-level key gate removed in UI PR 2, and it needs zero
+   app code. Do this as part of the Pro cutover, before the tool holds real client
+   data, since on Hobby `/app` is currently open to anyone with the URL.
 
 The pipeline core is transport-agnostic: every script is a plain importable
 function, so the endpoints stay thin wrappers.

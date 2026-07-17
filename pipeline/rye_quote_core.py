@@ -22,6 +22,19 @@ TARGET_FIELDS = [
     "capacityCharge", "networkCharge", "meterCharge", "kva",
 ]
 
+# Standing consumption-split defaults. These are HARDCODED, not per-tender inputs
+# — a team member never sets them per quote (too much friction, and getting them
+# wrong silently mis-ranks offers). Change here, once, if the standing basis ever
+# moves.
+#   DAY_SPLIT_DEFAULT      day fraction for two-rate (day/night) meters, on the
+#                          Economy-7 basis (≈17h day : 7h night). Night = 1 - day.
+#   WEEKEND_SPLIT_DEFAULT  flat-week weekend share (Sat+Sun = 2/7 of the week),
+#                          applied ONLY to offers that actually quote a weekend
+#                          rate band; the weekday remainder is then split day/night
+#                          by DAY_SPLIT_DEFAULT (see build_dashboard.compute_offer).
+DAY_SPLIT_DEFAULT = 0.7
+WEEKEND_SPLIT_DEFAULT = 2 / 7
+
 # Cell contents that mean "blank / not quoted", ignoring surrounding decoration.
 _BLANKS = {"", "n/a", "na", "-", "—", "tbc", "none", "null"}
 
