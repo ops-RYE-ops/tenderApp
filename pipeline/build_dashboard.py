@@ -21,8 +21,11 @@ Tender config format: see examples/tender-example.json and SKILL.md.
 
 import csv
 import json
+import os
 import re
+import shutil
 import sys
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -210,6 +213,89 @@ def compute_offer(entry, tender, incumbent=False):
         "warnings": sorted(warnings),
         "chargeBasis": basis,
     }
+
+
+def _write_offer_csv(path, lines, sites):
+    """Write one offer's lines to a target-schema CSV, joining meter facts on MPAN.
+
+    The canonical tender keeps rates on `quotes[].lines` and the meter facts
+    (site name / EAC / kVA) once on `sites[]`; the engine reads them together from
+    a per-offer CSV. This performs that line→site join on MPAN and writes exactly
+    the columns build_dashboard expects. Values pass through verbatim; None → blank
+    (which parse_num reads back as "not quoted").
+    """
+    rate_fields = ("unitRate", "dayRate", "nightRate", "weekendRate",
+                   "standingCharge", "capacityCharge", "networkCharge", "meterCharge")
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=TARGET_FIELDS)
+        w.writeheader()
+        for ln in lines:
+            m = ln.get("mpxn") or ""
+            site = sites.get(m, {})
+            row = {
+                "siteName": (site.get("site_name") or m or ""),
+                "mpxn": m,
+                "updatedEac": "" if site.get("eac") is None else site.get("eac"),
+                "supplyStartDate": ln.get("supplyStartDate") or "",
+                "kva": "" if site.get("kva") is None else site.get("kva"),
+            }
+            for fld in rate_fields:
+                v = ln.get(fld)
+                row[fld] = "" if v is None else v
+            w.writerow(row)
+
+
+def render_tender(tender, template_path=None):
+    """Render a canonical tender (schema/tender.schema.json) to dashboard HTML.
+
+    The /render entry point. Bridges the canonical shape to build_dashboard's
+    CSV-per-offer config — writes a CSV per quote (and the incumbent) via the
+    line→site join above, builds the legacy config, and calls the existing
+    renderer UNCHANGED (the cost logic lives in one place). Returns the HTML
+    string. No files persist: everything is written to a temp dir and removed.
+    """
+    sites = {s.get("mpxn"): s for s in tender.get("sites", [])}
+    work = tempfile.mkdtemp(prefix="rye-render-")
+    try:
+        cfg = {k: tender[k] for k in (
+            "client_name", "tender_label", "utility", "day_split", "weekend_split",
+            "charge_basis", "rye_fee", "recommended", "notes", "expires_at",
+        ) if k in tender}
+
+        cfg_quotes = []
+        for i, q in enumerate(tender.get("quotes", [])):
+            csv_path = os.path.join(work, f"quote-{i}.csv")
+            _write_offer_csv(csv_path, q.get("lines", []), sites)
+            entry = {"supplier": q.get("supplier"), "term": q.get("term", ""), "csv": csv_path}
+            if q.get("category"):
+                entry["category"] = q["category"]
+            if q.get("charge_basis"):
+                entry["charge_basis"] = q["charge_basis"]
+            cfg_quotes.append(entry)
+        cfg["quotes"] = cfg_quotes
+
+        inc = tender.get("incumbent")
+        if inc and inc.get("lines"):
+            inc_csv = os.path.join(work, "incumbent.csv")
+            _write_offer_csv(inc_csv, inc.get("lines", []), sites)
+            inc_entry = {"supplier": inc.get("supplier", "Current contract"),
+                         "term": inc.get("term", "current"), "csv": inc_csv}
+            if inc.get("charge_basis"):
+                inc_entry["charge_basis"] = inc["charge_basis"]
+            cfg["incumbent"] = inc_entry
+
+        cfg_path = os.path.join(work, "tender.json")
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+        out_html = os.path.join(work, "dashboard.html")
+        argv = [cfg_path, out_html]
+        if template_path:
+            argv += ["--template", str(template_path)]
+        main(argv)
+        with open(out_html, encoding="utf-8") as f:
+            return f.read()
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def main(argv):

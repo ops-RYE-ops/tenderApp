@@ -26,18 +26,33 @@ separation is what makes the output safe to send to a client.
 
 ## Where we are right now (branch state)
 
-- `main` (= `origin/main`, PR #1 merged): Phase 0 + `assemble_tender.py` +
-  the Vercel backend with `/api/health`, `/api/db-check`, **`/api/inspect`** live
-  in production.
-- `feat/weekend-rate` (active branch): the header-detection improvement +
-  the **weekendRate band end-to-end**. Committed on the branch; **still needs
-  `git push` + a PR → `main`.** (If a session starts and these aren't on main,
-  that PR hasn't been merged yet.)
+`main` (= `origin/main`) is current through **PR #7**. The whole headless pipeline
+is built, merged, and deployed: **map → extract → assemble**, plus the diagnostics
+and `/inspect`. No feature branch is open. Merge history:
+
+- PR #1 — Phase 1 spike: `/api/health`, `/api/db-check`, `/api/inspect`.
+- PR #2/#3 — header-detection improvement + weekendRate band end-to-end.
+- PR #4 — `/api/map` + `/api/map/confirm` (cached/LLM header mapping).
+- PR #5 — map prompt fix (capacityCharge vs kva).
+- PR #6 — `/api/extract` + sites.csv EAC/kVA override (db provenance).
+- PR #7 — `/api/assemble` (incumbent from sites.csv + versioned tender write).
+
+Live endpoints on `main`: `/api/health`, `/api/db-check`, `/api/inspect`,
+`/api/map`, `/api/map/confirm`, `/api/extract`, `/api/assemble`. `/api/map` was
+verified live on a preview (LLM → confirm → cache-hit round-trip). Vercel env vars
+`ANTHROPIC_API_KEY` + `RETOOL_DATABASE_URL` are scoped to **Production + Preview**.
+
+**`/api/render` is built on `feat/api-render` (pending push + PR → main)** — the last
+backend endpoint. Once merged, the headless pipeline is COMPLETE end-to-end
+(map → extract → assemble → render). What's left is Phase 2 (team UI) and Phase 3
+(static delivery + UUID links). Still on a Vercel HOBBY account; move to Pro before
+any real/commercial use (see Open checks).
 
 Git workflow we're using: feature branch → `git push` → Vercel auto-builds a
 **Preview** deployment → open a PR on GitHub → merge → `main` auto-deploys to
 production. In the Vercel Deployments tab, switch the env filter from "Production"
-to **All** to see branch previews.
+to **All** to see branch previews. (Claude's sandbox can't push or write to `.git`;
+it edits the working tree + runs the tests, then hands over paste-safe git commands.)
 
 ## Done so far
 
@@ -61,7 +76,9 @@ tender. Importable `assemble()` for the endpoint, plus a CLI. Moves NO values;
 stamps meta (id/version/status/timestamps/url_uuid/slug). `recommended` carried
 through, never computed. Completes the headless "quotes in → tender JSON out" pipeline.
 
-**Vercel backend — Phase 1 (in progress).**
+**Vercel backend — Phase 1 (backend COMPLETE; only /render remains).**
+All endpoints below are on `main` and deployed. `/api/extract` (PR #6) and
+`/api/assemble` (PR #7) are detailed in Next steps; the earlier ones:
 - `main.py` — the real FastAPI app (Vercel auto-detects `app` at root entrypoint).
 - `/api/health` + `/api/db-check` — diagnostics; both green live. DB reached over
   SSL; connection string in Vercel env var `RETOOL_DATABASE_URL` (never in code).
@@ -151,9 +168,10 @@ python3 tests/test_weekend.py      # weekend band: capture + warn-vs-cost
 python3 tests/test_map.py          # /api/map: fingerprint, cache-vs-LLM, confirm (mocked)
 python3 tests/test_extract.py      # /api/extract: value pass-through, site-ref join, 400s
 python3 tests/test_assemble_api.py # /api/assemble: incumbent-from-sites.csv + endpoint (DB mocked)
+python3 tests/test_render.py       # /api/render: canonical->HTML adapter + endpoint (DB mocked)
 ```
-All six should print their "ALL … PASSED" line. No network needed (the LLM and DB
-are mocked in test_map / test_assemble_api).
+All seven should print their "ALL … PASSED" line. No network needed (the LLM and DB
+are mocked in test_map / test_assemble_api / test_render).
 (Claude's Linux sandbox can't use the macOS `.venv`; install deps with
 `pip install --break-system-packages fastapi openpyxl jsonschema psycopg2-binary python-multipart httpx` to run tests there.)
 
@@ -167,7 +185,7 @@ are mocked in test_map / test_assemble_api).
    Optional `ANTHROPIC_BASE_URL` routes via the AI Gateway (no code change).
    Verified live on a preview against a real UrbanChain quote (LLM → confirm →
    cache-hit round-trip all green).
-2. ~~**`/api/extract`**~~ **DONE** (on `feat/api-extract`, pending push + PR → main).
+2. ~~**`/api/extract`**~~ **DONE & merged** (PR #6).
    Thin wrapper over `process_quote.run`: multipart upload + confirmed `mapping`
    (JSON form field) + optional `site_reference` CSV → canonical `extractResult`
    ({sites, quotes}). No LLM. Returns counts + `unmatched_mpxn` (meter points with
@@ -186,7 +204,7 @@ are mocked in test_map / test_assemble_api).
    sites.csv are NOT read at /extract — they feed the tender `incumbent` block at
    /assemble. Wiring sites.csv to the read-only company Postgres (instead of an
    upload) is still open (see blockers).
-3. ~~**`/api/assemble`**~~ **DONE** (on `feat/api-assemble`, pending push + PR → main).
+3. ~~**`/api/assemble`**~~ **DONE & merged** (PR #7).
    Multipart: `extracts` (JSON array
    of extractResults) + `meta` (JSON; client_name + tender_label required) + optional
    `sites_csv` → `assemble_tender.assemble` → `validate_tender` → versioned row in the
@@ -206,11 +224,29 @@ are mocked in test_map / test_assemble_api).
    default matches.) **Verify after merge:** POST extracts + meta + sites.csv to the
    preview `/api/assemble` and confirm a versioned row lands in `tenders` (re-POST
    with the same id → version increments).
-4. **`/api/render`** → wrap `build_dashboard`; static publish + UUID link is really
-   Phase 3, so first cut can return HTML inline. The canonical tender is now
-   available end-to-end (map → extract → assemble), so /render can read a stored
-   tender's `payload` and produce the dashboard.
-5. **Upgrade to Vercel Pro** before going live / real client data: commercial use
+4. ~~**`/api/render`**~~ **DONE** (on `feat/api-render`, pending push + PR → main).
+   First cut returns the dashboard HTML **inline** (static publish + UUID link is
+   Phase 3). POST JSON body: EITHER `tender_id` (+ optional `version`; fetched from
+   the `tenders` table, latest by default) OR an inline `tender` object — exactly
+   one. `build_dashboard.render_tender(tender)` bridges the canonical shape to the
+   engine's CSV-per-offer config: a new `_write_offer_csv` joins each line to its
+   site on MPAN and writes the per-quote (and incumbent) CSVs, then calls
+   `build_dashboard.main` UNCHANGED (cost logic stays in one place). No files
+   persist (temp dir, removed). Covered by `tests/test_render.py` (adapter + endpoint
+   inline/by-id/404/400, DB mocked). **Verify after merge:** POST a stored
+   `tender_id` to the preview `/api/render` and eyeball the HTML; spot-check ≥2 site
+   costs against the source before any client sees it (the engine prints this
+   reminder too). **This completes the headless pipeline: map → extract → assemble →
+   render.**
+
+Remaining beyond the backend:
+5. **Phase 2 — team UI** (new-tender, upload, mapping review, tender register) calling
+   these endpoints. See the build spec's team-facing flow.
+6. **Phase 3 — render & deliver**: static hosting on the custom domain, the UUID link
+   lifecycle (noindex, expiry, revoke/rotate), and turning on the learned-mappings
+   cache in the flow. This is where `/render` graduates from inline HTML to a
+   published per-client URL.
+7. **Upgrade to Vercel Pro** before going live / real client data: commercial use
    (Hobby is non-commercial only), team seats, spend controls, EU-region pinning,
    static-IP add-on if needed.
 
