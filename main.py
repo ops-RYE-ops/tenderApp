@@ -635,6 +635,101 @@ async def assemble_endpoint(
                 pass
 
 
+# --- /cost -----------------------------------------------------------------
+
+@app.post("/api/cost")
+async def cost(extracts: str = Form(...)):
+    """Rank the extracted offers by all-in cost, deterministically.
+
+    Backs the assemble screen's "which offers to show the client" tick-list: the
+    team needs to see each offer's standardised annual cost and which is cheapest
+    BEFORE choosing the (up to 2) featured offers. Costs are computed by the
+    EXISTING cost engine (`build_dashboard.compute_offer`) — never re-implemented
+    in the browser — so the ranking can't drift from what /render will show.
+
+    Input: `extracts` — a JSON array of extractResult objects (the /extract
+    outputs), same shape /assemble takes. No LLM, no DB, no persistence.
+
+    For each offer returns the standardised annual cost (energy + all standing/
+    capacity/network/meter charges, on one consumption basis) and effective p/kWh,
+    plus `covers_all_sites` (an offer missing meters for some sites isn't a like-
+    for-like comparison). The cheapest FULL-COVERAGE offer is flagged `cheapest`
+    (that's the price-based recommendation); offers are returned sorted
+    full-coverage-first, then cheapest-first. Uses the standing day/weekend splits.
+    """
+    import assemble_tender as at
+    import build_dashboard as bd
+
+    try:
+        extracts_obj = json.loads(extracts)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"`extracts` is not valid JSON: {e}")
+    if isinstance(extracts_obj, dict):
+        extracts_obj = [extracts_obj]
+    if not isinstance(extracts_obj, list) or not extracts_obj:
+        raise HTTPException(status_code=400, detail="`extracts` must be a non-empty array of extractResult objects.")
+
+    # Assemble a throwaway tender (never persisted) so the offers, site facts and
+    # the standing splits are exactly what /assemble + /render would use.
+    try:
+        tender = at.assemble(extracts_obj, {"client_name": "_", "tender_label": "_"})
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Could not read the extracts: {type(e).__name__}: {e}")
+
+    sites = {s.get("mpxn"): s for s in tender.get("sites", [])}
+    site_mpxns = {m for m in sites if m}
+    quotes = tender.get("quotes", [])
+    offers = []
+    work = tempfile.mkdtemp(prefix="rye-cost-")
+    try:
+        for i, q in enumerate(quotes):
+            csv_path = os.path.join(work, f"offer-{i}.csv")
+            bd._write_offer_csv(csv_path, q.get("lines", []), sites)
+            entry = {"_csv_path": csv_path, "_id": f"offer-{i}",
+                     "supplier": q.get("supplier"), "term": q.get("term", "")}
+            if q.get("category"):
+                entry["category"] = q["category"]
+            if q.get("charge_basis"):
+                entry["charge_basis"] = q["charge_basis"]
+            try:
+                computed = bd.compute_offer(entry, tender)
+            except (Exception, SystemExit) as e:
+                raise HTTPException(status_code=422,
+                                    detail=f"Costing '{q.get('supplier')}' failed: {type(e).__name__}: {e}")
+            line_mpxns = {ln.get("mpxn") for ln in q.get("lines", []) if ln.get("mpxn")}
+            offers.append({
+                "index": i,
+                "supplier": q.get("supplier"),
+                "term": q.get("term", ""),
+                "category": computed.get("category"),
+                "annual_cost": computed.get("total"),
+                "effective_pkwh": (computed.get("perKwh") or {}).get("effective"),
+                "covers_all_sites": site_mpxns.issubset(line_mpxns),
+                "warnings": computed.get("warnings", []),
+                "cheapest": False,
+            })
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    # Cheapest among full-coverage offers (fall back to all if none cover every site).
+    pool = [o for o in offers if o["covers_all_sites"]] or offers
+    pool = [o for o in pool if o["annual_cost"] is not None]
+    if pool:
+        cheapest = min(pool, key=lambda o: o["annual_cost"])
+        cheapest["cheapest"] = True
+    offers.sort(key=lambda o: (not o["covers_all_sites"],
+                               o["annual_cost"] if o["annual_cost"] is not None else float("inf")))
+
+    return {
+        "ok": True,
+        "site_count": len(site_mpxns),
+        "eac_total": round(sum((s.get("eac") or 0) for s in sites.values()), 2),
+        "day_split": tender.get("day_split"),
+        "weekend_split": tender.get("weekend_split"),
+        "offers": offers,
+    }
+
+
 # --- /render ---------------------------------------------------------------
 
 class RenderBody(BaseModel):

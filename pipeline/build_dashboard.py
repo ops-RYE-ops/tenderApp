@@ -30,7 +30,9 @@ from datetime import date
 from pathlib import Path
 
 # Shared with the extractor so the two never diverge on schema or parsing.
-from rye_quote_core import TARGET_FIELDS, parse_num
+from rye_quote_core import (
+    DAY_SPLIT_DEFAULT, WEEKEND_SPLIT_DEFAULT, TARGET_FIELDS, parse_num,
+)
 
 # Default annualisation basis for each charge. Override per tender (or per
 # quote) via "charge_basis" in the config when the supplier quotes in
@@ -119,8 +121,11 @@ def offer_category(entry):
 def compute_offer(entry, tender, incumbent=False):
     csv_path = entry["_csv_path"]
     rows = load_csv(csv_path)
-    day_split = float(tender.get("day_split", 0.7))
-    weekend_split = float(tender.get("weekend_split", 0) or 0)
+    day_split = float(tender.get("day_split", DAY_SPLIT_DEFAULT))
+    # weekend_split defaults to the standing flat-week share, but an explicit 0 is
+    # respected (weekend rate then shown but not separately costed).
+    _ws = tender.get("weekend_split", WEEKEND_SPLIT_DEFAULT)
+    weekend_split = float(_ws if _ws is not None else WEEKEND_SPLIT_DEFAULT)
     basis = {**DEFAULT_BASIS, **tender.get("charge_basis", {}), **entry.get("charge_basis", {})}
     for b in basis.values():
         if b not in VALID_BASIS:
@@ -149,18 +154,28 @@ def compute_offer(entry, tender, incumbent=False):
             fallback = day if day is not None else (night if night is not None else weekend)
             d = day if day is not None else fallback
             n = night if night is not None else fallback
-            # Night takes the residual after the day and (optional) weekend shares.
-            night_frac = max(0.0, 1 - day_split - weekend_split)
-            energy = (d * day_split + n * night_frac) * eac / 100
-            if weekend is not None:
-                if weekend_split > 0:
-                    energy += weekend * weekend_split * eac / 100
-                else:
-                    # Capture it, show it, but never silently mis-cost it.
+            if weekend is not None and weekend_split > 0:
+                # 3-band offer: carve the weekend out of the week on the flat-week
+                # share, then split the WEEKDAY remainder day/night. The three
+                # fractions always sum to 1, so a 2-band offer (below) is unaffected
+                # by the weekend share and a 3-band offer never double-counts day.
+                wk = weekend_split
+                energy = (d * day_split * (1 - wk)
+                          + n * (1 - day_split) * (1 - wk)
+                          + weekend * wk) * eac / 100
+                warnings.add(
+                    f"Weekend rates costed on a flat-week basis: {round(wk * 100)}% "
+                    f"of consumption at the weekend rate, the weekday remainder split "
+                    f"{round(day_split * 100)}/{round((1 - day_split) * 100)} day/night."
+                )
+            else:
+                # 2-band day/night — the weekend share does not apply to this offer.
+                energy = (d * day_split + n * (1 - day_split)) * eac / 100
+                if weekend is not None:
+                    # Weekend rate present but the split is 0: show it, don't cost it.
                     warnings.add(
-                        f"'{name}' has a weekend rate but no weekend consumption split "
-                        "is set — weekend rate shown but NOT costed. Set weekend_split "
-                        "if weekend usage is material."
+                        f"'{name}' has a weekend rate but the weekend split is 0 — "
+                        "weekend rate shown but NOT costed."
                     )
             split_used = True
         else:
@@ -262,8 +277,14 @@ def render_tender(tender, template_path=None):
             "charge_basis", "rye_fee", "recommended", "notes", "expires_at",
         ) if k in tender}
 
+        # The client dashboard shows only the FEATURED offers (up to 2, chosen at
+        # assemble). All offers are kept on the tender for the record; if none are
+        # flagged (older tenders), fall back to showing them all.
+        all_quotes = tender.get("quotes", [])
+        shown_quotes = [q for q in all_quotes if q.get("featured")] or all_quotes
+
         cfg_quotes = []
-        for i, q in enumerate(tender.get("quotes", [])):
+        for i, q in enumerate(shown_quotes):
             csv_path = os.path.join(work, f"quote-{i}.csv")
             _write_offer_csv(csv_path, q.get("lines", []), sites)
             entry = {"supplier": q.get("supplier"), "term": q.get("term", ""), "csv": csv_path}

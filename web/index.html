@@ -143,12 +143,11 @@
   <!-- step 5: assemble -->
   <div id="step-5" class="card hidden">
     <h2>Assemble &amp; save tender</h2>
-    <p class="sub">Stitch the extracted offers into one canonical tender and save a version. Review the cost assumptions and any warnings below before this goes near a client — a wrong charge basis silently mis-ranks offers.</p>
+    <p class="sub">Pick the offers to put in front of the client — costed and ranked below, cheapest first. Keep it tight (up to 2); every offer is still saved to the record, the client only sees the ones you tick. The cheapest you tick becomes the recommendation. Review any warnings before saving.</p>
 
-    <div class="field">
-      <span class="label">Recommended offer (the dashboard leads with this — never auto-picked on price)</span>
-      <select id="in-recommended"></select>
-    </div>
+    <span class="label">Offers to show the client — ranked by all-in cost (tick up to 2)</span>
+    <div id="offer-loading" class="hidden"><span class="spinner"></span> <span>Costing offers…</span></div>
+    <div id="offer-list"></div>
 
     <div class="row">
       <div class="field">
@@ -158,17 +157,6 @@
       <div class="field">
         <span class="label">RYE fee — discount (%)</span>
         <input type="number" id="in-fee-discount" value="80" step="1" min="0" max="100">
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="field">
-        <span class="label">Day split (two-rate meters)</span>
-        <input type="number" id="in-day-split" value="0.7" step="0.05" min="0" max="1">
-      </div>
-      <div class="field">
-        <span class="label">Weekend split (0 = shown, not costed)</span>
-        <input type="number" id="in-weekend-split" value="0" step="0.05" min="0" max="1">
       </div>
       <div class="field">
         <span class="label">Expiry (link validity — optional)</span>

@@ -74,23 +74,48 @@ def main():
     sub_validator(schema, "#/$defs/extractResult").validate(clean)
     check(True, "extractResult validates")
 
-    print("3) cost engine: weekend NOT costed (and warned) unless a split is set")
+    print("3) cost engine: weekend split is conditional + renormalised (flat-week)")
     csv_path = written[0][0]
     entry = {"_csv_path": csv_path, "_id": "testco-12m", "supplier": "Testco", "term": "12 months"}
 
-    off0 = bd.compute_offer(dict(entry), {"day_split": 0.7})  # no weekend_split
+    # Explicit weekend_split=0 → weekend rate shown but NOT costed (day/night only).
+    off0 = bd.compute_offer(dict(entry), {"day_split": 0.7, "weekend_split": 0})
     energy0 = off0["sites"][0]["costs"]["energy"]
-    # day/night only: (20*0.7 + 10*0.3) * 100000/100 = 17000
-    check(abs(energy0 - 17000.0) < 0.01, "without weekend_split, energy = day/night only (£17,000)")
-    check(any("weekend rate" in w.lower() for w in off0["warnings"]),
+    # (20*0.7 + 10*0.3) * 100000/100 = 17000
+    check(abs(energy0 - 17000.0) < 0.01, "weekend_split=0 → energy = day/night only (£17,000)")
+    check(any("not costed" in w.lower() for w in off0["warnings"]),
           "a warning is raised that the weekend rate is not costed")
 
+    # Explicit weekend_split=0.2, renormalised: weekend carved out, weekday split day/night.
     off1 = bd.compute_offer(dict(entry), {"day_split": 0.7, "weekend_split": 0.2})
     energy1 = off1["sites"][0]["costs"]["energy"]
-    # (20*0.7 + 10*0.1)*1000 + 5*0.2*1000 = 15000 + 1000 = 16000
-    check(abs(energy1 - 16000.0) < 0.01, "with weekend_split=0.2, weekend is costed (£16,000)")
-    check(not any("weekend rate" in w.lower() for w in off1["warnings"]),
-          "no weekend warning once a split is provided")
+    # (20*0.7*0.8 + 10*0.3*0.8 + 5*0.2) * 1000 = (11.2 + 2.4 + 1.0)*1000 = 14600
+    check(abs(energy1 - 14600.0) < 0.01, "weekend_split=0.2 (renormalised) → £14,600")
+    check(not any("not costed" in w.lower() for w in off1["warnings"]),
+          "no 'not costed' warning once a split is provided")
+    check(any("flat-week" in w.lower() for w in off1["warnings"]),
+          "the flat-week weekend assumption is footnoted")
+
+    # Standing default (no weekend_split key) → flat-week 2/7, weekend IS costed.
+    off2 = bd.compute_offer(dict(entry), {"day_split": 0.7})
+    energy2 = off2["sites"][0]["costs"]["energy"]
+    wk = 2 / 7
+    expect2 = (20 * 0.7 * (1 - wk) + 10 * 0.3 * (1 - wk) + 5 * wk) * 100000 / 100
+    check(abs(energy2 - expect2) < 0.01,
+          f"default weekend_split=2/7 → weekend costed on flat-week (£{expect2:,.2f})")
+
+    print("4) a plain day/night offer (no weekend rate) is unaffected by the default")
+    two_band = os.path.join(WORK, "two-band.csv")
+    with open(two_band, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=core.TARGET_FIELDS)
+        w.writeheader()
+        w.writerow({"siteName": "S1", "mpxn": MPAN, "updatedEac": 100000,
+                    "dayRate": 20.0, "nightRate": 10.0, "standingCharge": 40.0})
+    off3 = bd.compute_offer(
+        {"_csv_path": two_band, "_id": "tb", "supplier": "Testco", "term": "12 months"},
+        {"day_split": 0.7})  # default weekend_split, but no weekend rate present
+    energy3 = off3["sites"][0]["costs"]["energy"]
+    check(abs(energy3 - 17000.0) < 0.01, "no weekend rate → day/night only (£17,000), split ignored")
 
     print("\nALL WEEKEND CHECKS PASSED")
     return 0

@@ -24,8 +24,11 @@ const state = {
   files: [],        // { file, name, status, mapResp, mapping, inspection, extract, extractResp, extractStatus, extractError }
   activeIdx: null,  // index into files for the map screen
   sitesCsv: null,   // shared sites.csv File — feeds both /extract (site-ref) and /assemble (incumbent)
-  recCombos: [],    // supplier+term combos found across the extracts (recommended-offer options)
+  offers: [],       // /api/cost ranking rows (one per extracted offer)
+  featured: new Set(), // offer indices ticked to show the client (max 2)
 };
+
+const MAX_FEATURED = 2;
 
 const $ = (id) => document.getElementById(id);
 
@@ -419,30 +422,87 @@ async function runExtractAll() {
 
 // --- step 5: assemble ----------------------------------------------------------
 
-function collectCombos() {
-  // Distinct supplier+term offers across the extracts — the recommended-offer options.
-  const seen = new Set();
-  const combos = [];
+function flatQuotes() {
+  // Every extracted offer, in the SAME order the backend concatenates them (files
+  // with an extract, in order; quotes within each). offer.index lines up with this
+  // array, so ticking offer i features flatQuotes()[i].
+  const out = [];
   for (const f of state.files) {
-    for (const q of ((f.extract && f.extract.quotes) || [])) {
-      const key = (q.supplier || "") + " " + (q.term || "");
-      if (q.supplier && !seen.has(key)) {
-        seen.add(key);
-        combos.push({ supplier: q.supplier, term: q.term || "" });
-      }
-    }
+    if (!f.extract) continue;
+    for (const q of (f.extract.quotes || [])) out.push(q);
   }
-  return combos;
+  return out;
 }
 
-function openAssemble() {
+async function openAssemble() {
   showStep(5);
   notice($("assemble-msg"), "");
-  state.recCombos = collectCombos();
-  const sel = $("in-recommended");
-  sel.innerHTML = '<option value="">— none / decide later —</option>';
-  state.recCombos.forEach((c, i) =>
-    sel.append(new Option(c.term ? `${c.supplier} — ${c.term}` : c.supplier, String(i))));
+  $("assemble-result").classList.add("hidden");
+  await loadOffers();
+}
+
+async function loadOffers() {
+  const extracts = state.files.filter((f) => f.extract).map((f) => f.extract);
+  const list = $("offer-list");
+  list.innerHTML = "";
+  state.offers = [];
+  state.featured = new Set();
+  if (!extracts.length) {
+    list.innerHTML = '<div class="notice">No extracted offers - go back to the extract step.</div>';
+    return;
+  }
+  $("offer-loading").classList.remove("hidden");
+  try {
+    const fd = new FormData();
+    fd.append("extracts", JSON.stringify(extracts));
+    const r = await api("/api/cost", { method: "POST", body: fd });
+    state.offers = r.offers || [];
+    // Pre-tick the two cheapest (offers arrive full-coverage-first, cheapest-first).
+    state.featured = new Set(state.offers.slice(0, MAX_FEATURED).map((o) => o.index));
+    renderOfferList();
+  } catch (e) {
+    list.innerHTML = "";
+    notice($("assemble-msg"), "Could not cost the offers: " + e.message, "error");
+  } finally {
+    $("offer-loading").classList.add("hidden");
+  }
+}
+
+function money(n) {
+  return n == null ? "—" : "£" + Number(n).toLocaleString("en-GB", { maximumFractionDigits: 0 });
+}
+
+function renderOfferList() {
+  const list = $("offer-list");
+  list.innerHTML = "";
+  for (const o of state.offers) {
+    const ticked = state.featured.has(o.index);
+    const disabled = !ticked && state.featured.size >= MAX_FEATURED;
+    const eff = o.effective_pkwh != null ? `${o.effective_pkwh.toFixed(2)}p/kWh` : "—";
+    const badges = (o.cheapest ? '<span class="chip success">CHEAPEST</span>' : "")
+      + (o.covers_all_sites ? "" : '<span class="chip danger">PARTIAL COVER</span>');
+    const row = document.createElement("label");
+    row.className = "offer" + (ticked ? " on" : "") + (disabled ? " off" : "");
+    row.innerHTML = `
+      <input type="checkbox" data-idx="${o.index}" ${ticked ? "checked" : ""} ${disabled ? "disabled" : ""}>
+      <div class="offer-main">
+        <div class="offer-name">${escapeHtml(o.supplier || "—")}${o.term ? " · " + escapeHtml(o.term) : ""} ${badges}</div>
+        <div class="offer-cost mono">${money(o.annual_cost)}/yr · ${eff}</div>
+      </div>`;
+    list.append(row);
+  }
+  list.querySelectorAll("input[type=checkbox]").forEach((cb) =>
+    cb.addEventListener("change", () => {
+      const idx = Number(cb.dataset.idx);
+      if (cb.checked) { if (state.featured.size < MAX_FEATURED) state.featured.add(idx); }
+      else state.featured.delete(idx);
+      renderOfferList();
+    }));
+  const hint = document.createElement("div");
+  hint.className = "offer-hint";
+  hint.textContent = `Showing ${state.featured.size} of max ${MAX_FEATURED}. Costs use RYE's `
+    + "standard splits - day/night 70/30; weekend 2/7 where a weekend rate is quoted.";
+  list.append(hint);
 }
 
 function assembleMeta() {
@@ -451,15 +511,10 @@ function assembleMeta() {
     tender_label: state.meta.tender_label,
     utility: state.meta.utility,
   };
-  if (state.meta.id) meta.id = state.meta.id;              // re-assemble → version bumps
-  // created_by is left unset → the backend stamps a sensible default. (No login;
-  // provenance will come from Vercel deployment protection / SSO once on Pro.)
-
-  const ds = parseFloat($("in-day-split").value);
-  meta.day_split = isNaN(ds) ? 0.7 : ds;
-  const ws = parseFloat($("in-weekend-split").value);
-  meta.weekend_split = isNaN(ws) ? 0 : ws;
-
+  if (state.meta.id) meta.id = state.meta.id;              // re-assemble -> version bumps
+  // created_by is left unset -> the backend stamps a sensible default. day_split /
+  // weekend_split are NOT sent -> the backend applies the standing hardcoded splits
+  // (day/night 70/30, weekend 2/7 where a weekend rate is quoted).
   const feeList = parseFloat($("in-fee-list").value);
   if (!isNaN(feeList)) meta.fee_list_price_site_month = feeList;
   const feeDisc = parseFloat($("in-fee-discount").value);
@@ -468,10 +523,13 @@ function assembleMeta() {
   const exp = $("in-expires").value;
   if (exp) meta.expires_at = exp;
 
-  const recIdx = $("in-recommended").value;
-  if (recIdx !== "") {
-    const c = state.recCombos[Number(recIdx)];
-    if (c) { meta.recommended_supplier = c.supplier; if (c.term) meta.recommended_term = c.term; }
+  // Recommended = the cheapest of the TICKED offers (price-based; costs come from
+  // the backend ranking, never computed here).
+  const ticked = state.offers.filter((o) => state.featured.has(o.index) && o.annual_cost != null);
+  if (ticked.length) {
+    const rec = ticked.reduce((x, y) => (y.annual_cost < x.annual_cost ? y : x));
+    meta.recommended_supplier = rec.supplier;
+    if (rec.term) meta.recommended_term = rec.term;
   }
 
   const notes = $("in-notes").value.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -480,11 +538,20 @@ function assembleMeta() {
 }
 
 async function doAssemble() {
-  const extracts = state.files.filter((f) => f.extract).map((f) => f.extract);
-  if (!extracts.length) {
-    notice($("assemble-msg"), "No extracted files yet — go back to the extract step.", "error");
+  const flat = flatQuotes();
+  if (!flat.length) {
+    notice($("assemble-msg"), "No extracted offers yet - go back to the extract step.", "error");
     return;
   }
+  if (!state.featured.size) {
+    notice($("assemble-msg"), "Tick at least one offer to show the client.", "error");
+    return;
+  }
+  // Flag the featured offers on the quote objects - this rides through /assemble
+  // into the tender, and /render shows only the featured ones.
+  flat.forEach((q, i) => { q.featured = state.featured.has(i); });
+
+  const extracts = state.files.filter((f) => f.extract).map((f) => f.extract);
   const btn = $("btn-assemble");
   btn.disabled = true;
   $("assemble-result").classList.add("hidden");
@@ -577,5 +644,5 @@ document.addEventListener("DOMContentLoaded", () => {
 window.__rye_debug = {
   state, addFiles, openMap, renderFiles,
   openExtract, runExtractAll, renderExtractList,
-  openAssemble, doAssemble, collectCombos, assembleMeta,
+  openAssemble, loadOffers, renderOfferList, flatQuotes, doAssemble, assembleMeta,
 };

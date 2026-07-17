@@ -213,6 +213,10 @@
           "type": "string",
           "description": "Drives the offer-type filter. 'fixed' or 'coterminous', or any custom label. Inferred from the term text when omitted."
         },
+        "featured": {
+          "type": "boolean",
+          "description": "True if this offer is shown on the client dashboard. Every extracted offer is stored on the tender for the record; the dashboard renders only featured ones (up to 2, to avoid overloading the client). Set at the assemble step from the price ranking; the cheapest featured full-coverage offer is the recommendation. When NO offer is flagged (older tenders) the dashboard falls back to showing all."
+        },
         "charge_basis": { "$ref": "#/$defs/charge_basis" },
         "lines": {
           "type": "array",

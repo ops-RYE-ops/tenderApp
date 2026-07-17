@@ -141,16 +141,22 @@ def main():
                 raise
             check(True, why)
 
-    print("9) day_split / weekend_split passthrough (weekend band costing)")
-    check(tender["day_split"] == 0.7, "day_split defaults to 0.7")
-    check(tender["weekend_split"] == 0,
-          "weekend_split defaults to 0 (rate captured/shown but not separately costed)")
+    print("9) standing split defaults + explicit override")
+    check(tender["day_split"] == 0.7, "day_split defaults to 0.7 (Economy-7 basis)")
+    check(abs(tender["weekend_split"] - 2 / 7) < 1e-9,
+          "weekend_split defaults to the standing flat-week share (2/7)")
     t3 = at.assemble([edf], {**meta, "day_split": 0.6, "weekend_split": 0.2})
-    check(t3["day_split"] == 0.6, "explicit day_split carried through")
-    check(t3["weekend_split"] == 0.2,
-          "explicit weekend_split carried through so build_dashboard costs the weekend band")
+    check(t3["day_split"] == 0.6 and t3["weekend_split"] == 0.2,
+          "explicit splits carried through when provided")
     at.validate_tender(t3)
-    check(True, "tender with a weekend_split is schema-valid")
+
+    print("10) per-quote featured flag rides through untouched")
+    edf_f = json.loads(json.dumps(edf))
+    edf_f["quotes"][0]["featured"] = True
+    tf = at.assemble([edf_f], meta)
+    check(tf["quotes"][0].get("featured") is True, "featured flag carried into the tender quote")
+    at.validate_tender(tf)
+    check(True, "featured tender is schema-valid")
 
     print("\nALL ASSEMBLE CHECKS PASSED")
     return 0

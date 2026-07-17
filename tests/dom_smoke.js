@@ -46,12 +46,26 @@ const EXTRACT_RESP = {
   ok: true, file: 'q.csv', supplier: 'UrbanChain',
   extract_result: {
     sites: [{ mpxn: '1200098765432', site_name: 'Dalston Lane', eac: 45210, kva: null, eac_source: 'quote' }],
-    quotes: [{ supplier: 'UrbanChain', term: '24 months', category: 'fixed',
-      lines: [{ mpxn: '1200098765432', unitRate: 24.51, standingCharge: 48.0 }] }],
+    quotes: [
+      { supplier: 'UrbanChain', term: '24 months', category: 'fixed',
+        lines: [{ mpxn: '1200098765432', unitRate: 24.51, standingCharge: 48.0 }] },
+      { supplier: 'Octopus', term: '12 months', category: 'fixed',
+        lines: [{ mpxn: '1200098765432', unitRate: 22.0, standingCharge: 45.0 }] },
+    ],
   },
-  counts: { sites: 1, quotes: 1, lines: 1 },
+  counts: { sites: 1, quotes: 2, lines: 2 },
   unmatched_mpxn: [],
   site_reference_used: false,
+};
+// Ranking: Octopus (index 1) is cheapest; offers arrive cheapest-first.
+const COST_RESP = {
+  ok: true, site_count: 1, eac_total: 45210, day_split: 0.7, weekend_split: 2 / 7,
+  offers: [
+    { index: 1, supplier: 'Octopus', term: '12 months', category: 'fixed',
+      annual_cost: 10000, effective_pkwh: 22.1, covers_all_sites: true, warnings: [], cheapest: true },
+    { index: 0, supplier: 'UrbanChain', term: '24 months', category: 'fixed',
+      annual_cost: 11000, effective_pkwh: 24.5, covers_all_sites: true, warnings: [], cheapest: false },
+  ],
 };
 const ASSEMBLE_RESP = {
   ok: true, persisted: true, id: TENDER_ID, version: 1, status: 'draft',
@@ -66,6 +80,7 @@ const routes = {
   '/api/inspect': INSPECT_RESP,
   '/api/map/confirm': { ok: true, saved: true, supplier: 'UrbanChain' },
   '/api/extract': EXTRACT_RESP,
+  '/api/cost': COST_RESP,
   '/api/assemble': ASSEMBLE_RESP,
 };
 
@@ -145,24 +160,38 @@ const check = (name, cond) => {
   check('continue-to-assemble enabled after a successful extract', !$('btn-to-assemble').disabled);
 
   // --- step 5: assemble ---
-  window.__rye_debug.openAssemble();
-  await new Promise((r) => setTimeout(r, 20));
+  await window.__rye_debug.openAssemble();
+  await new Promise((r) => setTimeout(r, 50));
   check('assemble screen visible', !$('step-5').classList.contains('hidden'));
-  check('recommended dropdown lists the extract combo',
-    [...$('in-recommended').options].some((o) => o.textContent.includes('UrbanChain') && o.textContent.includes('24 months')));
+  check('offer tick-list rendered (both offers)',
+    window.document.querySelectorAll('#offer-list .offer').length === 2);
+  check('cheapest offer is badged', $('offer-list').textContent.includes('CHEAPEST'));
+  check('two cheapest pre-ticked', state.featured.size === 2);
 
-  $('in-recommended').value = '0';
-  $('in-weekend-split').value = '0.15';
   const meta = window.__rye_debug.assembleMeta();
-  check('meta carries weekend_split from the form (backend passthrough)', meta.weekend_split === 0.15);
-  check('meta carries recommended_supplier (never computed)', meta.recommended_supplier === 'UrbanChain');
-  check('meta carries recommended_term', meta.recommended_term === '24 months');
+  check('no split fields sent (backend applies standing defaults)',
+    meta.day_split === undefined && meta.weekend_split === undefined);
+  check('recommended = cheapest ticked offer (price-based)', meta.recommended_supplier === 'Octopus');
+  check('recommended term carried', meta.recommended_term === '12 months');
+
+  // Untick the cheapest → recommendation should fall to the next ticked offer.
+  const cb = window.document.querySelector('#offer-list input[data-idx="1"]');
+  cb.checked = false; cb.dispatchEvent(new window.Event('change'));
+  await new Promise((r) => setTimeout(r, 20));
+  check('unticking drops it from featured', !state.featured.has(1));
+  check('recommendation follows the ticked set', window.__rye_debug.assembleMeta().recommended_supplier === 'UrbanChain');
+  // Re-tick for the save.
+  cb.checked = true; cb.dispatchEvent(new window.Event('change'));
+  await new Promise((r) => setTimeout(r, 20));
 
   await window.__rye_debug.doAssemble();
   await new Promise((r) => setTimeout(r, 50));
   check('assemble result rendered', !$('assemble-result').classList.contains('hidden'));
   check('result shows the saved version', $('assemble-result').textContent.includes('v1'));
   check('tender id stored for re-save versioning', state.meta.id === TENDER_ID);
+  check('featured flag set on the extracted quotes',
+    state.files[0].extract.quotes.every((q) => typeof q.featured === 'boolean') &&
+    state.files[0].extract.quotes.some((q) => q.featured === true));
 
   if (failures.length) { console.log(`\n${failures.length} CHECK(S) FAILED`); process.exit(1); }
   console.log('\nALL DOM SMOKE CHECKS PASSED');
