@@ -33,7 +33,12 @@ Endpoints (built incrementally):
                         (+ optional version) OR an inline tender JSON. Returns HTML
                         inline; static publish + UUID link is Phase 3.
 
+Team UI: a vanilla single-page wizard (no build step) served from web/ at /app.
+All /api routes except /api/health require the shared team key when
+TEAM_ACCESS_KEY is set (X-RYE-Key header); unset = open, for local dev + tests.
+
 Config via env vars (set in Vercel project settings, never in code):
+  TEAM_ACCESS_KEY      — shared key gating the team-facing /api routes + UI.
   RETOOL_DATABASE_URL  — Postgres connection string for the Retool DB.
   ANTHROPIC_API_KEY    — (later, for /map) Claude key.
   ANTHROPIC_BASE_URL   — (optional) route Claude via the Vercel AI Gateway.
@@ -41,17 +46,20 @@ Config via env vars (set in Vercel project settings, never in code):
 """
 import json
 import os
+import secrets
 import shutil
 import sys
 import tempfile
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Make the deterministic pipeline importable (same trick as tests/ and the CLI).
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline"))
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_BASE_DIR, "pipeline"))
 
 app = FastAPI(title="RYE Tender Tool API")
 
@@ -59,11 +67,56 @@ app = FastAPI(title="RYE Tender Tool API")
 ALLOWED_EXT = {".xlsx", ".xlsm", ".csv"}
 
 
+# --- team access gate --------------------------------------------------------
+#
+# Simple shared-key auth for the internal UI: set TEAM_ACCESS_KEY in the Vercel
+# env vars (Production + Preview, like the other secrets) and every /api route
+# except /api/health requires the same value in an X-RYE-Key header. With the
+# var UNSET the gate is open — local dev and the tests keep working unchanged.
+# This protects the team-facing pipeline endpoints; the client-facing dashboard
+# links (Phase 3) get their own unguessable-UUID lifecycle per the build spec.
+
+_OPEN_PATHS = {"/", "/api/health"}
+
+
+@app.middleware("http")
+async def team_key_gate(request: Request, call_next):
+    key = os.environ.get("TEAM_ACCESS_KEY")
+    path = request.url.path
+    if key and path.startswith("/api") and path not in _OPEN_PATHS:
+        supplied = request.headers.get("x-rye-key", "")
+        if not secrets.compare_digest(supplied, key):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Missing or wrong team access key (X-RYE-Key header)."},
+            )
+    return await call_next(request)
+
+
+@app.get("/api/auth-check")
+def auth_check():
+    """Reached only with a valid key (or no key configured) — the UI's unlock probe."""
+    return {"ok": True, "gated": bool(os.environ.get("TEAM_ACCESS_KEY"))}
+
+
+def _norm_supplier(name: Optional[str]) -> Optional[str]:
+    """Trim + collapse whitespace so 'Urban  Chain ' and 'Urban Chain' share a cache key.
+
+    Cache hygiene (see HANDOVER): the supplier_mappings key match is EXACT, so
+    stray spaces mean needless repeat LLM calls. Case is preserved — these are
+    display names — and the UI's controlled dropdown is the real fix; this just
+    stops whitespace variants slipping through.
+    """
+    if not name:
+        return None
+    return " ".join(name.split()) or None
+
+
 # --- diagnostics -----------------------------------------------------------
 
 @app.get("/")
 def root():
-    return {"ok": True, "service": "rye-tender-tool", "see": "/docs"}
+    return {"ok": True, "service": "rye-tender-tool", "app": "/app", "see": "/docs"}
 
 
 @app.get("/api/health")
@@ -306,6 +359,7 @@ async def map_quote(
     """
     import map_headers as mh
 
+    supplier = _norm_supplier(supplier)
     tmp_path, filename = await _save_upload(file)
     notes: list[str] = []
     try:
@@ -381,13 +435,39 @@ def confirm_mapping(body: ConfirmMappingBody):
     """
     if not body.mapping.get("columns"):
         raise HTTPException(status_code=400, detail="mapping.columns is required to save a usable mapping.")
-    _cache_put(body.supplier, body.layout_fingerprint, body.mapping, body.confirmed_by)
+    supplier = _norm_supplier(body.supplier)
+    if not supplier:
+        raise HTTPException(status_code=400, detail="supplier is required to save a mapping.")
+    _cache_put(supplier, body.layout_fingerprint, body.mapping, body.confirmed_by)
     return {
         "ok": True,
         "saved": True,
-        "supplier": body.supplier,
+        "supplier": supplier,
         "layout_fingerprint": body.layout_fingerprint,
     }
+
+
+@app.get("/api/suppliers")
+def suppliers():
+    """Distinct supplier names from the learned-mappings cache.
+
+    Powers the UI's controlled supplier dropdown — the cache key match is exact,
+    so picking from this list (rather than free-typing) is what makes repeat
+    layouts actually hit the cache. Degrades to an empty list with a note when
+    no DB is configured or reachable.
+    """
+    try:
+        conn = _db_connect()
+    except Exception as e:
+        return {"suppliers": [], "note": f"DB unavailable ({type(e).__name__}) — type the supplier name instead."}
+    if conn is None:
+        return {"suppliers": [], "note": "RETOOL_DATABASE_URL is not set — type the supplier name instead."}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("select distinct supplier from supplier_mappings order by supplier;")
+            return {"suppliers": [r[0] for r in cur.fetchall()]}
+    finally:
+        conn.close()
 
 
 # --- /extract --------------------------------------------------------------
@@ -626,3 +706,14 @@ def render_endpoint(body: RenderBody):
     except (Exception, SystemExit) as e:
         raise HTTPException(status_code=422, detail=f"Render failed: {type(e).__name__}: {e}")
     return HTMLResponse(content=html)
+
+
+# --- team UI (static, no build step) ----------------------------------------
+# Vanilla single-page wizard served by this same app — one repo, one deploy.
+# Mounted last so it can never shadow an /api route. html=True serves index.html
+# at /app/. (Same pattern as assets/dashboard_template.html: repo files are
+# bundled into the Vercel function and readable at runtime.)
+
+_WEB_DIR = os.path.join(_BASE_DIR, "web")
+if os.path.isdir(_WEB_DIR):
+    app.mount("/app", StaticFiles(directory=_WEB_DIR, html=True), name="app")

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>RYE Tender Tool</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="logo">R</div>
+  <div class="brand">RYE <span>/ Tender Tool</span></div>
+  <div class="right">
+    <span id="nav-user" class="chip hidden"></span>
+    <button id="btn-lock" class="btn-ghost hidden">Lock</button>
+  </div>
+</nav>
+
+<!-- ===== unlock ===== -->
+<div id="screen-unlock" class="page hidden">
+  <div class="unlock-wrap">
+    <div class="card">
+      <h2>Team access</h2>
+      <p class="sub">Enter the shared team key to use the tender tool.</p>
+      <div class="field">
+        <span class="label">Team key</span>
+        <input type="password" id="in-key" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <span class="label">Your email (for the audit trail, optional)</span>
+        <input type="email" id="in-email" placeholder="you@rye.energy">
+      </div>
+      <div class="actions">
+        <button class="btn-primary" id="btn-unlock">Unlock</button>
+      </div>
+      <div id="unlock-msg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== wizard ===== -->
+<div id="screen-wizard" class="page hidden">
+  <h1>New tender</h1>
+  <p class="sub">Supplier quotes in, client-ready comparison out. AI maps, code moves numbers.</p>
+
+  <div class="stepper" id="stepper">
+    <span class="step" data-step="1"><span class="n">1</span> Tender</span>
+    <span class="step" data-step="2"><span class="n">2</span> Upload</span>
+    <span class="step" data-step="3"><span class="n">3</span> Map</span>
+    <span class="step locked"><span class="n">4</span> Extract</span>
+    <span class="step locked"><span class="n">5</span> Assemble</span>
+    <span class="step locked"><span class="n">6</span> Publish</span>
+  </div>
+
+  <!-- step 1: tender basics -->
+  <div id="step-1" class="card hidden">
+    <h2>Tender basics</h2>
+    <p class="sub">Who this is for, and which supplier's quote you're processing.</p>
+    <div class="row">
+      <div class="field">
+        <span class="label">Client name</span>
+        <input type="text" id="in-client" placeholder="e.g. Amorino UK">
+      </div>
+      <div class="field">
+        <span class="label">Tender label</span>
+        <input type="text" id="in-label" placeholder="e.g. Electricity tender — July 2026">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <span class="label">Utility</span>
+        <select id="in-utility">
+          <option value="electricity">Electricity</option>
+          <option value="gas">Gas</option>
+        </select>
+      </div>
+      <div class="field">
+        <span class="label">Supplier (of the quote files)</span>
+        <select id="in-supplier"></select>
+      </div>
+      <div class="field hidden" id="field-new-supplier">
+        <span class="label">New supplier name</span>
+        <input type="text" id="in-new-supplier" placeholder="Exact display name, e.g. UrbanChain">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-primary" id="btn-to-upload">Continue</button>
+    </div>
+    <div id="step1-msg"></div>
+  </div>
+
+  <!-- step 2: upload -->
+  <div id="step-2" class="card hidden">
+    <h2>Upload quote files</h2>
+    <p class="sub">Drop the supplier quote files (.xlsx, .xlsm or .csv). Each file gets its columns mapped, then extracted.</p>
+    <div class="dropzone" id="dropzone">
+      <div class="big">Drop files here or click to browse</div>
+      <div>.xlsx · .xlsm · .csv</div>
+      <input type="file" id="in-files" accept=".xlsx,.xlsm,.csv" multiple class="hidden">
+    </div>
+    <div class="filelist" id="filelist"></div>
+    <div class="actions">
+      <button class="btn-secondary" id="btn-back-1">Back</button>
+      <div class="spacer"></div>
+    </div>
+  </div>
+
+  <!-- step 3: mapping review -->
+  <div id="step-3" class="card hidden">
+    <h2>Column mapping <span id="map-file" class="mono" style="color:var(--text-3); font-size:12px;"></span></h2>
+    <p class="sub">Claude proposed which column feeds each field — the values shown were read directly from the file and never went to the model. Check the samples look right, fix anything wrong, then confirm.</p>
+    <div id="map-loading" class="hidden"><span class="spinner"></span> <span id="map-loading-text">Mapping…</span></div>
+    <div id="map-result" class="hidden">
+      <div class="meta-grid" id="map-meta"></div>
+      <table class="map">
+        <thead><tr><th>Field</th><th>Source column</th><th>Sample values (from file)</th></tr></thead>
+        <tbody id="map-rows"></tbody>
+      </table>
+      <details class="raw">
+        <summary>Raw mapping JSON (advanced)</summary>
+        <textarea id="map-json" spellcheck="false"></textarea>
+        <div class="actions"><button class="btn-secondary" id="btn-apply-json">Apply JSON to table</button></div>
+      </details>
+      <div class="actions">
+        <button class="btn-secondary" id="btn-back-2">Back to files</button>
+        <div class="spacer"></div>
+        <button class="btn-primary" id="btn-confirm-map">Confirm mapping &amp; save to cache</button>
+      </div>
+    </div>
+    <div id="map-msg"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
