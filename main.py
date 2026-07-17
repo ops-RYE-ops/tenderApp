@@ -28,6 +28,10 @@ Endpoints (built incrementally):
   POST /api/assemble  — merge extractResults + incumbent (from sites.csv) + meta into
                         a canonical tender (assemble_tender.assemble), validate it,
                         and write a versioned row to the Retool `tenders` table.
+  POST /api/render    — render a canonical tender to dashboard HTML
+                        (build_dashboard.render_tender). Takes a stored tender by id
+                        (+ optional version) OR an inline tender JSON. Returns HTML
+                        inline; static publish + UUID link is Phase 3.
 
 Config via env vars (set in Vercel project settings, never in code):
   RETOOL_DATABASE_URL  — Postgres connection string for the Retool DB.
@@ -43,6 +47,7 @@ import tempfile
 from typing import Any, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 # Make the deterministic pipeline importable (same trick as tests/ and the CLI).
@@ -180,6 +185,23 @@ def _write_tender(tender: dict) -> None:
                 ),
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_tender(tender_id: str, version: Optional[int] = None) -> Optional[dict]:
+    """Fetch a stored tender's payload by id — latest version, or a specific one."""
+    conn = _db_connect()
+    if conn is None:
+        raise HTTPException(status_code=503, detail="RETOOL_DATABASE_URL is not set — cannot fetch a tender by id.")
+    try:
+        with conn.cursor() as cur:
+            if version is not None:
+                cur.execute("select payload from tenders where id = %s and version = %s;", (tender_id, version))
+            else:
+                cur.execute("select payload from tenders where id = %s order by version desc limit 1;", (tender_id,))
+            row = cur.fetchone()
+            return row[0] if row else None  # jsonb -> dict
     finally:
         conn.close()
 
@@ -563,3 +585,44 @@ async def assemble_endpoint(
                 os.unlink(csv_path)
             except OSError:
                 pass
+
+
+# --- /render ---------------------------------------------------------------
+
+class RenderBody(BaseModel):
+    tender_id: Optional[str] = None
+    version: Optional[int] = None
+    tender: Optional[dict[str, Any]] = None
+
+
+@app.post("/api/render")
+def render_endpoint(body: RenderBody):
+    """Render a canonical tender to the client dashboard HTML.
+
+    Supply EITHER `tender_id` (fetched from the Retool `tenders` table — latest
+    version, or `version` if given) OR an inline `tender` object. Returns the
+    dashboard HTML inline (text/html); the cost engine is build_dashboard, reused
+    unchanged via `render_tender`. Static publishing to the per-client UUID URL is
+    Phase 3 — this first cut returns the HTML so the pipeline is complete and
+    testable end-to-end.
+    """
+    import build_dashboard as bd
+
+    if bool(body.tender_id) == bool(body.tender):
+        raise HTTPException(status_code=400, detail="Provide exactly one of `tender_id` or `tender`.")
+
+    tender = body.tender
+    if body.tender_id:
+        tender = _get_tender(body.tender_id, body.version)
+        if tender is None:
+            raise HTTPException(status_code=404, detail=f"No tender found for id={body.tender_id}"
+                                + (f" version={body.version}" if body.version is not None else ""))
+
+    if not isinstance(tender, dict) or not tender.get("quotes"):
+        raise HTTPException(status_code=400, detail="Tender has no quotes to render.")
+
+    try:
+        html = bd.render_tender(tender)
+    except (Exception, SystemExit) as e:
+        raise HTTPException(status_code=422, detail=f"Render failed: {type(e).__name__}: {e}")
+    return HTMLResponse(content=html)
