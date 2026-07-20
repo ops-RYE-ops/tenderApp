@@ -32,7 +32,15 @@ team UI (wizard + register) and the public client link were **verified end-to-en
 the RYE Pro deployment 2026-07-20**, including sharing a live client dashboard link.
 Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
-"Deployment & ops status" below for the live config. Merge history:
+"Deployment & ops status" below for the live config.
+
+**Latest session (2026-07-20, merged):** the client dashboard was restructured into
+three tabs — **Savings / Portfolio / Market context** (a new static market snapshot
+feeds the Market tab), and a **mapping-cache fix** stopped re-dated re-tenders of the
+same supplier template from crashing at extract. Both are detailed in their own
+sections below.
+
+Merge history:
 
 - PR #1 — Phase 1 spike: `/api/health`, `/api/db-check`, `/api/inspect`.
 - PR #2/#3 — header-detection improvement + weekendRate band end-to-end.
@@ -390,7 +398,7 @@ source .venv/bin/activate          # macOS venv; needed for this project's Pytho
 python3 tests/make_and_verify.py   # extraction→schema→assemble→dashboard, no drift
 python3 tests/test_assemble.py     # multi-extract merge / dedupe / versioning
 python3 tests/test_weekend.py      # weekend band: capture + warn-vs-cost
-python3 tests/test_map.py          # /api/map: fingerprint, cache-vs-LLM, confirm (mocked)
+python3 tests/test_map.py          # /api/map: fingerprint, cache-vs-LLM, confirm, resync_sheets (mocked)
 python3 tests/test_extract.py      # /api/extract: value pass-through, site-ref join, 400s
 python3 tests/test_assemble_api.py # /api/assemble: incumbent-from-sites.csv + endpoint (DB mocked)
 python3 tests/test_render.py       # /api/render: canonical->HTML adapter + featured filter + endpoint
@@ -494,19 +502,90 @@ publish/link/gate above). The build is functionally complete and live on Vercel 
    cost warnings into team-only (not client-facing) notes. **Visual design polish is
    the next session** — see below.
 
-## For the next (visual-design) session
+## Client dashboard — tabs + Market context (done 2026-07-20)
 
-The founder sent visual changes. Everything visual lives in a few places:
-- **Team app UI:** `web/index.html`, `web/app.css` (RYE design tokens — colours,
-  fonts, spacing all defined at the top of app.css), `web/app.js` (behaviour). No
-  build step — edit and redeploy.
-- **Client-facing dashboard:** `assets/dashboard_template.html` (the published page's
-  own HTML/CSS; the cost data is injected as `__TENDER_DATA__`). This is what clients
-  see at `/d/<slug>/<uuid>`.
-- **Brand tokens / patterns:** the `rye-design-system` skill is the source of truth —
-  use it when making visual changes so everything stays on-brand.
-- After any UI edit, run `node tests/dom_smoke.js` (jsdom walk) to catch breakages,
-  and eyeball on a preview deploy.
+The client-facing dashboard (`assets/dashboard_template.html`, served at
+`/d/<slug>/<uuid>`) is now a **three-tab** layout, built client-side from the
+injected `__TENDER_DATA__`:
+- **Savings** — headline KPIs (portfolio spend, saving vs incumbent, blended unit
+  rate, saving %), the recommendation-vs-incumbent panel, and the offer comparison
+  bars. Shown and defaulted to **only when the tender has an `incumbent`**.
+- **Portfolio** — the per-site detail, unchanged (offer breakdown, site-by-site
+  matrix, rate books). Default tab when there's no incumbent (two-tab fallback).
+- **Market context** — chart-led (power spot + 1y series, 5-year range, gas curve
+  + cards, written takeaway). Hidden when there's no market data.
+
+**Market data = a static snapshot, `assets/market_snapshot.json`.** `build_dashboard`
+loads it (next to the template) and injects it into the render payload as `market`;
+absent/invalid → `null` → the Market tab hides itself. Refresh by hand-editing the
+JSON and redeploying; the file's `_note` explains the shape. Current contents are a
+real snapshot taken 2026-07-20 from ICE/Tradingeconomics screenshots (power spot +
+gas curve read from source; the 1y/5y power *series* are shape-traced, not
+tick-exact). Kept deliberately on the **live dashboard's older palette**
+(emerald/amber) so the new tabs match the existing page — NOT the design-system
+skill's newer green/blue. A full palette migration is a separate, deliberate pass.
+
+**Market data — the open decision (deferred).** Live-at-render was rejected (paid
+ICE/Tradingeconomics APIs cost thousands; free-feed wiring wasn't worth it this
+session). RYE *does* have a weekly-updated market API, but it lives in the separate
+private **`rye-energy/api`** repo (business logic; `app.rye.energy` is the Next.js
+front end) and we didn't have the endpoint/shape to hand. To wire it later: grab one
+real JSON response from that repo's market route, write a thin adapter (their fields →
+the `market_snapshot.json` shape), and either stamp it at publish or fetch
+server-side at render with a daily cache. (Claude's sandbox can't push, so a
+repo-file refresh always comes back as paste-safe git commands, not a silent write.)
+
+**Still open from the founder's visual feedback:** only the tab restructure + Market
+context were specced and built this session. Any other visual tweaks the founder
+raised are still to come — ask for the specifics.
+
+## Mapping-cache stale-sheet fix (done 2026-07-20)
+
+Symptom: a re-tender of the same supplier template failed at extract with
+`KeyError: 'Worksheet <old date> does not exist'`. Cause: the layout fingerprint
+deliberately ignores sheet names (they carry dates), so a re-dated file hits the
+**cached** mapping — but that mapping still carried the *previous* file's sheet
+names, and `process_quote.load_rows` opens sheets by exact name. Fix:
+`map_headers.resync_sheets(mapping, inspection)` re-points the cached `sheets`
+positionally onto the uploaded file's actual sheet names (safe because an identical
+fingerprint guarantees the same sheet count + order) and re-keys `term_labels`; a
+count mismatch (a mapping that excluded sheets) is left untouched and flagged, never
+guessed. Called on every cache hit in `/api/map`, which also adds a review-screen
+note if any referenced sheet still isn't in the file. Covered by
+`tests/test_map.py::test_resync_sheets`. Matters because re-tendering the same client
+repeatedly is common.
+
+## sites.csv / Retool export (clarified 2026-07-20)
+
+The `sites.csv` uploaded at extract/assemble is produced by a Retool export
+transformer (not in this repo). Clarifications locked this session:
+- **Incumbent rate columns come from the *prospect* contract** — the `Contract` row
+  whose id sits in `Site.prospectContractId` (their DB confusingly calls the incumbent
+  the "prospect" contract; `Site.currentContractId` is the RYE-brokered deal). The
+  export query self-joins `Contract` twice; incumbent = the `ProspectContract`/`old*`
+  alias.
+- **Units: the export converts £ → p** (×100) so incumbent rates match the supplier
+  quotes' p/kWh and p/day — the app does NOT convert units, so a mismatch throws the
+  saving off by 100×.
+- `supplyStartDate` = the incumbent contract's end date **+ 1 day**
+  (`preRyeContractEndDate`).
+- `capacityCharge` / `networkCharge` / `meterCharge` aren't stored in `Contract` —
+  they're **hand-appended** to the CSV (in pence) when held.
+- `clientName` must equal the wizard's client name so the incumbent rows match.
+
+## Where the visual/UI code lives (for future edits)
+
+- **Team app UI:** `web/index.html`, `web/app.css` (RYE design tokens at the top of
+  app.css), `web/app.js` (behaviour). No build step — edit and redeploy.
+- **Client dashboard:** `assets/dashboard_template.html` + `assets/market_snapshot.json`
+  (cost data injected as `__TENDER_DATA__`, market data as `payload.market`).
+- **Brand tokens:** the `rye-design-system` skill is the source of truth. NB the live
+  dashboard still runs the older emerald/amber palette; the skill specifies the newer
+  green (`#186d18`)/blue (`#416ff8`) and drops amber — reconcile deliberately, don't
+  half-migrate.
+- After any UI edit, run `node tests/dom_smoke.js` and render a sample dashboard to
+  eyeball (`build_dashboard.render_tender` on `schema/examples/tender.example.json`),
+  plus a preview deploy.
 
 The pipeline core is transport-agnostic: every script is a plain importable
 function, so the endpoints stay thin wrappers.
