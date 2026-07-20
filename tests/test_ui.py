@@ -3,8 +3,8 @@
 test_ui.py — the team UI foundations: open access, static app, supplier list.
 
 Headless and network-free (the Retool DB is monkeypatched). Proves:
-  - the tool is open — no app-level gate, and /api/auth-check has been removed
-    (access control moves to Vercel deployment protection / SSO on Pro);
+  - the team gate: when TEAM_ACCESS_KEY is set, /api + /app need HTTP Basic auth,
+    while the public client route (/d/*) and /api/health stay open; unset = open;
   - the static wizard is served at /app/;
   - /api/suppliers lists distinct cached suppliers and degrades without a DB;
   - supplier names are whitespace-normalised on save (cache hygiene).
@@ -36,17 +36,28 @@ def check(name, cond):
         FAILURES.append(name)
 
 
-def test_no_app_gate():
-    print("access: no app-level gate — /api open, auth-check removed")
-    os.environ["TEAM_ACCESS_KEY"] = "leftover-key"  # even if an old env var lingers, it must not gate
+def test_team_gate():
+    print("access: Basic-auth gate on /api + /app; public client route + health exempt")
+    import base64
+    os.environ["TEAM_ACCESS_KEY"] = "s3cret"
+    good = {"Authorization": "Basic " + base64.b64encode(b"rye:s3cret").decode()}
+    bad = {"Authorization": "Basic " + base64.b64encode(b"rye:nope").decode()}
     try:
         client = TestClient(main.app)
-        check("/api/suppliers open with no key header", client.get("/api/suppliers").status_code == 200)
-        check("/api/health open", client.get("/api/health").status_code == 200)
-        check("/ open", client.get("/").status_code == 200)
-        check("/api/auth-check endpoint removed (404)", client.get("/api/auth-check").status_code == 404)
+        check("no auth -> 401", client.get("/api/suppliers").status_code == 401)
+        check("401 sends a Basic challenge",
+              "basic" in client.get("/api/suppliers").headers.get("www-authenticate", "").lower())
+        check("wrong password -> 401", client.get("/api/suppliers", headers=bad).status_code == 401)
+        check("correct password -> 200", client.get("/api/suppliers", headers=good).status_code == 200)
+        check("/api/health exempt", client.get("/api/health").status_code == 200)
+        check("/ exempt", client.get("/").status_code == 200)
+        check("public /d/* not gated (no 401)", client.get("/d/foo/bar").status_code != 401)
     finally:
         os.environ.pop("TEAM_ACCESS_KEY", None)
+
+    # Unset key => open (local dev + the rest of the suite run ungated).
+    client = TestClient(main.app)
+    check("no key configured -> /api open", client.get("/api/suppliers").status_code == 200)
 
 
 def test_static_app_served():
@@ -171,7 +182,7 @@ def test_confirm_normalises_supplier():
 
 
 if __name__ == "__main__":
-    test_no_app_gate()
+    test_team_gate()
     test_static_app_served()
     test_suppliers_endpoint()
     test_tenders_register()

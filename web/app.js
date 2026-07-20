@@ -634,13 +634,57 @@ function wouldBeUrl(saved) {
 function openPublishStep() {
   showStep(6);
   notice($("preview-msg"), "");
+  $("publish-result").classList.add("hidden");
   const s = state.saved || {};
   $("publish-meta").innerHTML = `
     <span class="kv">client <b>${escapeHtml(state.meta.client_name || "—")}</b></span>
     <span class="kv">tender <b>${escapeHtml(state.meta.tender_label || "—")}</b></span>
     <span class="kv">version <b>v${escapeHtml(String(s.version ?? "—"))}</b></span>
-    <span class="kv">status <b>${escapeHtml(s.status || "draft")}</b></span>
-    <span class="kv">link (when published) <b class="mono">${escapeHtml(wouldBeUrl(s))}</b></span>`;
+    <span class="kv">status <b>${escapeHtml(s.status || "draft")}</b></span>`;
+}
+
+async function doPublish() {
+  if (!state.meta.id) { notice($("preview-msg"), "Save the tender first (assemble step).", "error"); return; }
+  const btn = $("btn-publish");
+  btn.disabled = true;
+  $("publish-result").classList.add("hidden");
+  $("publish-loading").classList.remove("hidden");
+  notice($("preview-msg"), "");
+  try {
+    const r = await api("/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tender_id: state.meta.id }),
+    });
+    if (state.saved) { state.saved.status = "published"; state.saved.version = r.version; state.saved.url_uuid = r.url_uuid; }
+    renderPublishResult(r);
+  } catch (e) {
+    notice($("preview-msg"), "Publish failed: " + e.message, "error");
+  } finally {
+    $("publish-loading").classList.add("hidden");
+    btn.disabled = false;
+  }
+}
+
+function copyToClipboard(text, btn) {
+  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = t; }, 1500); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => {});
+}
+
+function renderPublishResult(r) {
+  const url = r.url || "";
+  const exp = r.expires_at ? ` · expires ${escapeHtml(fmtDate(r.expires_at))}` : "";
+  const el = $("publish-result");
+  el.innerHTML = `
+    <div class="notice success">Published — v${escapeHtml(String(r.version))}${exp}. Paste this client link into Front / WhatsApp:</div>
+    <div class="linkbar">
+      <input type="text" id="publish-url" class="mono" readonly value="${escapeHtml(url)}">
+      <button class="btn-secondary" id="btn-copy-url">Copy</button>
+      <a class="btn-secondary" id="btn-open-url" href="${escapeHtml(url)}" target="_blank" rel="noopener">Open</a>
+    </div>
+    <div class="notice">Anyone with this link can view the dashboard (no login). Revoke it any time from the Register — that rotates the link and takes it offline.</div>`;
+  el.classList.remove("hidden");
+  $("btn-copy-url").addEventListener("click", () => copyToClipboard(url, $("btn-copy-url")));
 }
 
 async function openPreview(opts) {
@@ -721,6 +765,10 @@ function renderRegister(rows, note) {
       <div class="right">
         <span class="chip status-${escapeHtml(status)}">${escapeHtml(status.toUpperCase())}</span>
         <button class="btn-secondary" data-preview="${escapeHtml(t.id)}" data-title="${escapeHtml(t.client_name || "")}">Preview</button>
+        ${status === "published" && t.dashboard_url
+          ? `<a class="btn-secondary" href="${escapeHtml(t.dashboard_url)}" target="_blank" rel="noopener">Open link</a>
+             <button class="btn-ghost" data-revoke="${escapeHtml(t.id)}">Revoke</button>`
+          : ""}
       </div>`;
     list.append(row);
   }
@@ -729,6 +777,24 @@ function renderRegister(rows, note) {
       tender_id: b.dataset.preview,
       title: (b.dataset.title || "Client") + " — dashboard preview",
     })));
+  list.querySelectorAll("[data-revoke]").forEach((b) =>
+    b.addEventListener("click", () => revokeTender(b.dataset.revoke)));
+}
+
+async function revokeTender(tenderId) {
+  if (typeof confirm === "function" && !confirm("Revoke this client link? The current link stops working immediately.")) return;
+  notice($("register-msg"), "");
+  try {
+    await api("/api/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tender_id: tenderId }),
+    });
+    notice($("register-msg"), "Link revoked — the tender is back to draft. Re-publish to mint a fresh link.", "success");
+    await loadRegister();
+  } catch (e) {
+    notice($("register-msg"), "Revoke failed: " + e.message, "error");
+  }
 }
 
 // --- wiring ------------------------------------------------------------------
@@ -758,6 +824,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // step 6: preview & publish
   $("btn-back-to-assemble").addEventListener("click", () => showStep(5));
+  $("btn-publish").addEventListener("click", doPublish);
   $("btn-preview").addEventListener("click", () => openPreview({
     tender_id: state.meta.id,
     title: (state.meta.client_name || "Client") + " — dashboard preview",

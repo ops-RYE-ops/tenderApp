@@ -257,6 +257,11 @@ details.raw textarea { margin-top: 10px; min-height: 220px; }
 .offer-cost { color: var(--text-2); font-size: 12px; white-space: nowrap; }
 .offer-hint { color: var(--text-3); font-size: 11px; margin-top: 2px; }
 
+/* --- published link bar --- */
+.linkbar { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+.linkbar input { flex: 1; color: var(--rye-blue); }
+.linkbar a.btn-secondary { display: inline-flex; align-items: center; text-decoration: none; }
+
 /* --- tender register --- */
 #register-list { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
 .tender-row {
