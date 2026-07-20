@@ -501,6 +501,16 @@ publish/link/gate above). The build is functionally complete and live on Vercel 
    if per-person auth is wanted; a light audit/version-history view; turning "excluded"
    cost warnings into team-only (not client-facing) notes. **Visual design polish is
    the next session** — see below.
+5. **Register cleanup — remove expired/test tenders** (requested 2026-07-20, not
+   urgent). The register (`GET /api/tenders` over the `tenders_latest` view) is
+   read-only; there's no way to remove clutter. Add a delete/archive action. Prefer a
+   **soft delete** (bump a new version with `status = 'archived'`, filtered out of the
+   register) over a hard row delete, to keep the versioned audit trail — and it reuses
+   the existing versioning + the `_get_tender_by_uuid` "latest version wins" logic, so
+   archiving also kills any live client link (like revoke). A hard purge of test rows
+   is a separate admin/SQL job. New surface: a small `POST /api/tenders/archive`
+   `{tender_id}` + a per-row action in `web/app.js`; cover with a test like
+   `test_publish.py`.
 
 ## Client dashboard — tabs + Market context (done 2026-07-20)
 
