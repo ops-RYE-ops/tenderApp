@@ -73,6 +73,7 @@ h1 { font-family: var(--rye-display); font-size: 44px; font-weight: 500;
 .card.accent-green { border-left: 2px solid var(--rye-green); }
 .card.accent-amber { border-left: 2px solid var(--rye-amber); }
 .card.accent-blue { border-left: 2px solid var(--rye-blue); }
+.card.accent-purple { border-left: 2px solid var(--rye-purple); }
 .kpi-label { font-family: var(--rye-mono); font-size: 10px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.05em; color: var(--t3); }
 .kpi-value { font-size: 30px; font-weight: 600; letter-spacing: -0.035em; line-height: 1;
@@ -173,6 +174,31 @@ footer { margin-top: 40px; border-top: 1px solid var(--border); padding-top: 20p
 .offer-filter button:hover { color: var(--t1); }
 .offer-filter button.on { background: var(--surface-raised); border: 1px solid var(--border); color: var(--t1); }
 @media print { .offer-filter { display: none !important; } }
+
+/* ---- Main tab bar ---- */
+.tabbar { display: inline-flex; height: 32px; padding: 2px; background: #000;
+  border: 1px solid var(--border); border-radius: 6px; gap: 2px; margin: 24px 0 4px; }
+.tab { display: inline-flex; align-items: center; padding: 0 15px; font-family: var(--rye-mono);
+  font-size: 11.5px; font-weight: 500; letter-spacing: -0.005em; color: var(--t3);
+  border: 1px solid transparent; border-radius: 4px; cursor: pointer; transition: all 80ms; user-select: none; }
+.tab:hover { color: var(--t1); }
+.tab.active { background: var(--surface-raised); border-color: var(--border); color: var(--t1); }
+.tabpane[hidden] { display: none; }
+@media print { .tabbar { display: none; } .tabpane[hidden] { display: block !important; } }
+
+/* ---- Market context ---- */
+.chartcard { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+.split2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 820px) { .split2 { grid-template-columns: 1fr; } }
+.mchart { width: 100%; height: auto; display: block; }
+.axlabel { font-family: var(--rye-mono); font-size: 10px; fill: var(--t3); }
+.gridln { stroke: var(--border); stroke-dasharray: 2 3; }
+.mk { font-family: var(--rye-mono); font-size: 11px; font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+.lg { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--t2); }
+.sw { width: 11px; height: 11px; border-radius: 2px; flex: none; }
+.gcard { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
+.takeaway-card { border-left: 2px solid var(--rye-green); }
 </style>
 </head>
 <body>
@@ -205,55 +231,57 @@ document.title = `${TENDER.client} — ${TENDER.label} — RYE`;
 document.getElementById("nav-meta").textContent =
   `${TENDER.client} · prepared ${TENDER.generated}`;
 
-let html = "";
+const CHART = { red: "#ee0000", amber: "#f5a623", green: "#0cce6b", blue: "#0070f3", purple: "#7928ca", t1: "#ededed" };
 
-/* ---- Hero ---- */
-html += `<header>
-  <div class="section-label">${esc(TENDER.utility || "energy")} tender · ${TENDER.offers.length} offers · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
-  <h1>${esc(TENDER.label)}</h1>
-  <div class="subtitle">Prepared for ${esc(TENDER.client)} by RYE.
-    <span class="mono">Standardised annual costs — like-for-like across all offers.</span></div>
-</header>`;
+/* ================= section builders ================= */
 
-/* ---- Global warnings ---- */
-if (TENDER.globalWarnings.length) {
-  html += `<section>` + TENDER.globalWarnings.map(w =>
+function buildHero() {
+  return `<header>
+    <div class="section-label">${esc(TENDER.utility || "energy")} tender · ${TENDER.offers.length} offers · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
+    <h1>${esc(TENDER.label)}</h1>
+    <div class="subtitle">Prepared for ${esc(TENDER.client)} by RYE.
+      <span class="mono">Standardised annual costs — like-for-like across all offers.</span></div>
+  </header>`;
+}
+
+function buildWarnings() {
+  if (!TENDER.globalWarnings.length) return "";
+  return `<section>` + TENDER.globalWarnings.map(w =>
     `<div class="notice"><span class="chip warning">note</span>${esc(w)}</div>`).join("") + `</section>`;
 }
 
-/* ---- KPI row ---- */
-html += `<section><div class="kpi-row">
-  <div class="card accent-blue">
-    <div class="kpi-label">Portfolio</div>
-    <div class="kpi-value">${TENDER.sites.length}</div>
-    <div class="kpi-sub">site${TENDER.sites.length === 1 ? "" : "s"} · ${num(totalEac)} kWh/yr</div>
-  </div>
-  <div class="card accent-green">
-    <div class="kpi-label">Recommended offer</div>
-    <div class="kpi-value">${gbp(rec.total)}</div>
-    <div class="kpi-sub">${esc(rec.supplier)} · ${esc(rec.term)}</div>
-  </div>`;
-if (inc) {
-  html += `<div class="card accent-amber">
-    <div class="kpi-label">Current contract</div>
-    <div class="kpi-value">${gbp(inc.total)}</div>
-    <div class="kpi-sub">${esc(inc.supplier)}</div>
-  </div>
-  <div class="card ${savings >= 0 ? "accent-green" : "accent-amber"}">
-    <div class="kpi-label">Est. annual ${savings >= 0 ? "saving" : "increase"}</div>
-    <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}">${gbp(Math.abs(savings))}</div>
-    <div class="kpi-sub">${fee && fee.netSaving != null
-      ? `<span id="kpi-net">${gbp(fee.netSaving)}</span> net after ${esc(fee.label)}`
-      : `${(Math.abs(savings) / inc.total * 100).toFixed(1)}% vs current contract`}</div>
-  </div>`;
+/* ---- Savings: headline KPIs ---- */
+function buildSavingsKpis() {
+  const pct = (Math.abs(savings) / inc.total * 100).toFixed(1);
+  return `<section><div class="kpi-row">
+    <div class="card accent-green">
+      <div class="kpi-label">Estimated annual spend</div>
+      <div class="kpi-value">${gbp(rec.total)}</div>
+      <div class="kpi-sub">${esc(rec.supplier)} · ${esc(rec.term)}</div>
+    </div>
+    <div class="card ${savings >= 0 ? "accent-green" : "accent-amber"}">
+      <div class="kpi-label">Est. annual ${savings >= 0 ? "saving" : "increase"} vs current</div>
+      <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}">${gbp(Math.abs(savings))}</div>
+      <div class="kpi-sub">vs ${esc(inc.supplier)}</div>
+    </div>
+    <div class="card accent-blue">
+      <div class="kpi-label">Blended unit rate</div>
+      <div class="kpi-value">${rec.perKwh.effective == null ? "—" : rec.perKwh.effective.toFixed(2)}</div>
+      <div class="kpi-sub">p/kWh all-in · recommended</div>
+    </div>
+    <div class="card ${savings >= 0 ? "accent-green" : "accent-amber"}">
+      <div class="kpi-label">${savings >= 0 ? "Saving" : "Increase"} vs current</div>
+      <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}">${pct}%</div>
+      <div class="kpi-sub">${savings >= 0 ? "lower than" : "higher than"} current contract</div>
+    </div>
+  </div></section>`;
 }
-html += `</div></section>`;
 
-/* ---- Recommendation vs incumbent (the takeaway) ---- */
-if (inc) {
+/* ---- Savings: recommendation vs incumbent ---- */
+function buildRecVsInc() {
   const pk = (v, cls) => `<td class="${cls || ""}">${v == null ? "—" : Number(v).toFixed(2)}</td>`;
   const perSite = TENDER.sites.length || 1;
-  html += `<section>
+  return `<section>
     <div class="section-label">Our recommendation — ${esc(rec.supplier)} · ${esc(rec.term)}</div>
     <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:14px" class="rec-grid">
       <div class="card accent-green">
@@ -294,9 +322,9 @@ if (inc) {
 }
 
 /* ---- Standalone RYE fee (shown when there is no incumbent baseline) ---- */
-if (fee && !inc) {
+function buildFeeStandalone() {
   const sites = TENDER.sites.length || 1;
-  html += `<section>
+  return `<section>
     <div class="section-label">RYE fee</div>
     <div class="card accent-green" style="max-width:440px">
       <div class="kpi-label">${esc(fee.label)}</div>
@@ -314,55 +342,81 @@ if (fee && !inc) {
   </section>`;
 }
 
+/* ---- Portfolio: context KPIs ---- */
+function buildPortfolioKpis() {
+  return `<section><div class="kpi-row">
+    <div class="card accent-blue">
+      <div class="kpi-label">Portfolio</div>
+      <div class="kpi-value">${TENDER.sites.length}</div>
+      <div class="kpi-sub">site${TENDER.sites.length === 1 ? "" : "s"} · ${num(totalEac)} kWh/yr</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label">Offers tendered</div>
+      <div class="kpi-value">${TENDER.offers.length}</div>
+      <div class="kpi-sub">compared like-for-like</div>
+    </div>
+    <div class="card accent-green">
+      <div class="kpi-label">Recommended offer</div>
+      <div class="kpi-value">${gbp(rec.total)}</div>
+      <div class="kpi-sub">${esc(rec.supplier)} · ${esc(rec.term)}</div>
+    </div>
+  </div></section>`;
+}
+
 /* ---- Cost comparison bars ---- */
-const maxTotal = Math.max(...allOffers.map(o => o.total));
-const CAT_LABELS = { coterminous: "Coterminous", fixed: "Fixed length" };
-const catLabel = c => CAT_LABELS[c] || (c.charAt(0).toUpperCase() + c.slice(1));
-const offerCats = [...new Set(allOffers.filter(o => !o.isIncumbent && o.category).map(o => o.category))];
-const showOfferFilter = offerCats.length >= 2;
-html += `<section>
-  <div class="offer-filter-row">
-    <div class="section-label">All offers tendered — estimated annual cost</div>
-    ${showOfferFilter ? `<div class="offer-filter" id="offer-filter"><button data-f="all" class="on">All</button>${offerCats.map(c => `<button data-f="${esc(c)}">${esc(catLabel(c))}</button>`).join("")}</div>` : ""}
-  </div>
-  <div class="card"><div class="bars">` +
-  allOffers.slice().sort((a, b) => a.total - b.total).map((o, i) => {
-    const fill = o.isIncumbent ? "var(--rye-amber-fill)"
-      : o.id === rec.id ? "var(--rye-green-fill)" : "rgba(237,237,237,0.7)";
-    const chip = o.isIncumbent ? `<span class="chip warning">current</span>`
-      : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
-    return `<div class="bar-row" data-cat="${esc(o.category || 'other')}">
-      <div class="bar-name">${esc(o.supplier)}<span class="term">${esc(o.term)}</span></div>
-      <div class="bar-track"><div class="bar-fill" style="width:${(o.total / maxTotal * 100).toFixed(1)}%;background:${fill};animation-delay:${i * 60}ms"></div></div>
-      <div class="bar-val">${gbp(o.total)} ${chip}</div>
-    </div>`;
-  }).join("") + `</div></div></section>`;
+function buildBars() {
+  const maxTotal = Math.max(...allOffers.map(o => o.total));
+  const CAT_LABELS = { coterminous: "Coterminous", fixed: "Fixed length" };
+  const catLabel = c => CAT_LABELS[c] || (c.charAt(0).toUpperCase() + c.slice(1));
+  const offerCats = [...new Set(allOffers.filter(o => !o.isIncumbent && o.category).map(o => o.category))];
+  const showOfferFilter = offerCats.length >= 2;
+  return `<section>
+    <div class="offer-filter-row">
+      <div class="section-label">All offers tendered — estimated annual cost</div>
+      ${showOfferFilter ? `<div class="offer-filter" id="offer-filter"><button data-f="all" class="on">All</button>${offerCats.map(c => `<button data-f="${esc(c)}">${esc(catLabel(c))}</button>`).join("")}</div>` : ""}
+    </div>
+    <div class="card"><div class="bars">` +
+    allOffers.slice().sort((a, b) => a.total - b.total).map((o, i) => {
+      const fill = o.isIncumbent ? "var(--rye-amber-fill)"
+        : o.id === rec.id ? "var(--rye-green-fill)" : "rgba(237,237,237,0.7)";
+      const chip = o.isIncumbent ? `<span class="chip warning">current</span>`
+        : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
+      return `<div class="bar-row" data-cat="${esc(o.category || 'other')}">
+        <div class="bar-name">${esc(o.supplier)}<span class="term">${esc(o.term)}</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${(o.total / maxTotal * 100).toFixed(1)}%;background:${fill};animation-delay:${i * 60}ms"></div></div>
+        <div class="bar-val">${gbp(o.total)} ${chip}</div>
+      </div>`;
+    }).join("") + `</div></div></section>`;
+}
 
 /* ---- Offer breakdown table ---- */
-html += `<section>
-  <div class="section-label">Cost breakdown by offer (£/year)</div>
-  <div class="table-wrap"><table>
-    <thead><tr><th>Offer</th>` +
-    comps.map(c => `<th>${esc(c.label)}</th>`).join("") +
-    `<th>Eff. p/kWh</th><th>Total</th>${inc ? "<th>vs current</th>" : ""}<th></th></tr></thead><tbody>` +
-  allOffers.slice().sort((a, b) => (a.isIncumbent ? -1 : b.isIncumbent ? 1 : a.total - b.total)).map(o => {
-    const delta = (inc && !o.isIncumbent)
-      ? `<td class="${o.deltaVsIncumbent <= 0 ? "best" : ""}">${gbpSigned(o.deltaVsIncumbent)}</td>`
-      : (inc ? "<td>—</td>" : "");
-    const chip = o.isIncumbent ? `<span class="chip warning">current</span>`
-      : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
-    return `<tr class="${o.isIncumbent ? "incumbent-row" : ""}">
-      <td class="name">${esc(o.supplier)}<span class="sub">${esc(o.term)}</span></td>` +
-      comps.map(c => `<td>${o.totals[c.key] ? gbp(o.totals[c.key]) : "—"}</td>`).join("") +
-      `<td>${o.perKwh.effective == null ? "—" : o.perKwh.effective.toFixed(2)}</td>` +
-      `<td class="total ${o.id === rec.id ? "best" : ""}">${gbp(o.total)}</td>${delta}<td>${chip}</td></tr>`;
-  }).join("") + `</tbody></table></div></section>`;
+function buildBreakdown() {
+  return `<section>
+    <div class="section-label">Cost breakdown by offer (£/year)</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Offer</th>` +
+      comps.map(c => `<th>${esc(c.label)}</th>`).join("") +
+      `<th>Eff. p/kWh</th><th>Total</th>${inc ? "<th>vs current</th>" : ""}<th></th></tr></thead><tbody>` +
+    allOffers.slice().sort((a, b) => (a.isIncumbent ? -1 : b.isIncumbent ? 1 : a.total - b.total)).map(o => {
+      const delta = (inc && !o.isIncumbent)
+        ? `<td class="${o.deltaVsIncumbent <= 0 ? "best" : ""}">${gbpSigned(o.deltaVsIncumbent)}</td>`
+        : (inc ? "<td>—</td>" : "");
+      const chip = o.isIncumbent ? `<span class="chip warning">current</span>`
+        : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
+      return `<tr class="${o.isIncumbent ? "incumbent-row" : ""}">
+        <td class="name">${esc(o.supplier)}<span class="sub">${esc(o.term)}</span></td>` +
+        comps.map(c => `<td>${o.totals[c.key] ? gbp(o.totals[c.key]) : "—"}</td>`).join("") +
+        `<td>${o.perKwh.effective == null ? "—" : o.perKwh.effective.toFixed(2)}</td>` +
+        `<td class="total ${o.id === rec.id ? "best" : ""}">${gbp(o.total)}</td>${delta}<td>${chip}</td></tr>`;
+    }).join("") + `</tbody></table></div></section>`;
+}
 
 /* ---- Site-by-site matrix ---- */
-if (TENDER.sites.length > 1) {
+function buildSiteMatrix() {
+  if (TENDER.sites.length <= 1) return "";
   const byId = {};
   allOffers.forEach(o => { byId[o.id] = {}; o.sites.forEach(s => byId[o.id][s.mpxn] = s); });
-  html += `<section>
+  return `<section>
     <div class="section-label">Site-by-site annual cost (£/year)</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Site</th><th>EAC kWh</th>` +
@@ -380,43 +434,126 @@ if (TENDER.sites.length > 1) {
 }
 
 /* ---- Rate books per offer ---- */
-const rateCols = [
-  ["unitRate", "Unit p/kWh"], ["dayRate", "Day p/kWh"], ["nightRate", "Night p/kWh"],
-  ["standingCharge", "Standing"], ["capacityCharge", "Capacity"],
-  ["networkCharge", "Network"], ["meterCharge", "Meter"],
-];
-html += `<section><div class="section-label">Quoted rates — full detail</div>` +
-  allOffers.map(o => {
-    const used = rateCols.filter(([k]) => o.sites.some(s => s.rates[k] != null));
-    const warn = o.warnings.length
-      ? `<div class="notice" style="margin:12px 20px">` +
-        o.warnings.map(w => `<div><span class="chip warning">note</span>${esc(w)}</div>`).join("") + `</div>` : "";
-    return `<details>
-      <summary><span class="caret">▶</span>${esc(o.supplier)}
-        <span class="chip ${o.isIncumbent ? "warning" : "neutral"}">${esc(o.isIncumbent ? "current" : o.term)}</span>
-        <span style="margin-left:auto" class="chip neutral">${gbp(o.total)}/yr</span></summary>
-      ${warn}
-      <div class="table-wrap"><table>
-        <thead><tr><th>Site</th><th>EAC kWh</th>` +
-        used.map(([, lbl]) => `<th>${lbl}</th>`).join("") +
-        `<th>Start</th><th>£/year</th></tr></thead><tbody>` +
-      o.sites.map(s => `<tr>
-        <td class="name">${esc(s.name)}<span class="sub">${esc(s.mpxn)}</span></td>
-        <td>${num(s.eac)}</td>` +
-        used.map(([k]) => `<td>${num(s.rates[k])}</td>`).join("") +
-        `<td>${esc(s.startDate) || "—"}</td><td class="total">${gbp(s.total)}</td></tr>`).join("") +
-      `</tbody></table></div></details>`;
-  }).join("") + `</section>`;
+function buildRateBooks() {
+  const rateCols = [
+    ["unitRate", "Unit p/kWh"], ["dayRate", "Day p/kWh"], ["nightRate", "Night p/kWh"],
+    ["standingCharge", "Standing"], ["capacityCharge", "Capacity"],
+    ["networkCharge", "Network"], ["meterCharge", "Meter"],
+  ];
+  return `<section><div class="section-label">Quoted rates — full detail</div>` +
+    allOffers.map(o => {
+      const used = rateCols.filter(([k]) => o.sites.some(s => s.rates[k] != null));
+      const warn = o.warnings.length
+        ? `<div class="notice" style="margin:12px 20px">` +
+          o.warnings.map(w => `<div><span class="chip warning">note</span>${esc(w)}</div>`).join("") + `</div>` : "";
+      return `<details>
+        <summary><span class="caret">▶</span>${esc(o.supplier)}
+          <span class="chip ${o.isIncumbent ? "warning" : "neutral"}">${esc(o.isIncumbent ? "current" : o.term)}</span>
+          <span style="margin-left:auto" class="chip neutral">${gbp(o.total)}/yr</span></summary>
+        ${warn}
+        <div class="table-wrap"><table>
+          <thead><tr><th>Site</th><th>EAC kWh</th>` +
+          used.map(([, lbl]) => `<th>${lbl}</th>`).join("") +
+          `<th>Start</th><th>£/year</th></tr></thead><tbody>` +
+        o.sites.map(s => `<tr>
+          <td class="name">${esc(s.name)}<span class="sub">${esc(s.mpxn)}</span></td>
+          <td>${num(s.eac)}</td>` +
+          used.map(([k]) => `<td>${num(s.rates[k])}</td>`).join("") +
+          `<td>${esc(s.startDate) || "—"}</td><td class="total">${gbp(s.total)}</td></tr>`).join("") +
+        `</tbody></table></div></details>`;
+    }).join("") + `</section>`;
+}
 
-/* ---- Footer ---- */
-html += `<footer>
-  <div class="section-label">Basis of comparison</div>
-  <ul class="assumptions">${TENDER.assumptions.map(a => `<li>${esc(a)}</li>`).join("")}${fee ? `<li id="assump-fee"></li>` : ""}</ul>
-  <div class="prepared">Prepared by RYE · independent, flat-fee energy brokerage — we take no supplier commission ·
-    generated ${TENDER.generated}</div>
-</footer>`;
+/* ---- Market context pane (scaffold; charts drawn after insert) ---- */
+function buildMarketPane() {
+  const m = TENDER.market || {};
+  const gasNote = (m.gas && m.gas.note) ? m.gas.note : "NBP gas futures.";
+  const updated = m.updated ? `Wholesale context as at ${esc(m.updated)}.` : "General UK wholesale context.";
+  return `<section style="margin-top:26px">
+      <div class="subtitle" style="font-size:13px;margin-top:0">${updated} These are indicative UK market references for context, not client-specific pricing — your tendered rates fix the energy block for the term.</div>
+      <div class="kpi-row" id="mkpis" style="margin-top:16px"></div>
+    </section>
+    ${(m.power && m.power.series) ? `<section>
+      <div class="chartcard">
+        <div class="section-label">UK wholesale power — recent</div>
+        <div class="subtitle" style="margin-bottom:14px">Daily-average power price (£/MWh)${m.headline ? ` · ${esc(m.headline)}` : ""}.</div>
+        <svg id="pchart" class="mchart" viewBox="0 0 1040 300"></svg>
+        <div class="legend" id="plegend"></div>
+        <div class="kpi-label" style="margin-top:10px">Indicative — static snapshot, refreshed periodically</div>
+      </div>
+    </section>` : ""}
+    <section>
+      <div class="split2">
+        ${(m.power && m.power.range5y && m.power.range5y.series) ? `<div class="chartcard">
+          <div class="section-label">Five-year context</div>
+          <div class="subtitle" style="margin-bottom:12px">Power range over five years (£/MWh) — the band stays wide year on year.</div>
+          <svg id="ychart" class="mchart" viewBox="0 0 520 200"></svg>
+        </div>` : ""}
+        ${(m.gas) ? `<div class="chartcard">
+          <div class="section-label">Gas — what's moving the price</div>
+          <div class="subtitle" style="margin-bottom:12px">${esc(gasNote)}</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px" id="gcards"></div>
+          <svg id="gchart" class="mchart" viewBox="0 0 520 120"></svg>
+        </div>` : ""}
+      </div>
+    </section>
+    ${m.commentary ? `<section>
+      <div class="card takeaway-card">
+        <div class="section-label">The takeaway</div>
+        <div class="subtitle" style="margin-bottom:0" id="mtakeaway"></div>
+      </div>
+    </section>` : ""}`;
+}
+
+/* ================= compose ================= */
+
+const hasInc = !!inc;
+const hasMarket = !!(TENDER.market && (TENDER.market.power || TENDER.market.gas));
+
+const savingsPane = hasInc ? (buildSavingsKpis() + buildRecVsInc() + buildBars()) : "";
+const portfolioPane =
+  buildPortfolioKpis()
+  + (!hasInc && fee ? buildFeeStandalone() : "")
+  + (!hasInc ? buildBars() : "")
+  + buildBreakdown()
+  + buildSiteMatrix()
+  + buildRateBooks();
+const marketPane = hasMarket ? buildMarketPane() : "";
+
+const tabs = [];
+if (hasInc) tabs.push(["savings", "Savings"]);
+tabs.push(["portfolio", "Portfolio"]);
+if (hasMarket) tabs.push(["market", "Market context"]);
+const defaultTab = hasInc ? "savings" : "portfolio";
+
+let html = buildHero() + buildWarnings();
+if (tabs.length > 1) {
+  html += `<div class="tabbar" role="tablist">` + tabs.map(([id, label]) =>
+    `<div class="tab ${id === defaultTab ? "active" : ""}" data-tab="${id}" onclick="showTab('${id}')">${esc(label)}</div>`).join("") + `</div>`;
+}
+if (hasInc) html += `<div id="tab-savings" class="tabpane"${defaultTab === "savings" ? "" : " hidden"}>${savingsPane}</div>`;
+html += `<div id="tab-portfolio" class="tabpane"${defaultTab === "portfolio" ? "" : " hidden"}>${portfolioPane}</div>`;
+if (hasMarket) html += `<div id="tab-market" class="tabpane" hidden>${marketPane}</div>`;
+html += buildFooter();
+
+function buildFooter() {
+  const minDaysNote = "";
+  return `<footer>
+    <div class="section-label">Basis of comparison</div>
+    <ul class="assumptions">${TENDER.assumptions.map(a => `<li>${esc(a)}</li>`).join("")}${fee ? `<li id="assump-fee"></li>` : ""}</ul>
+    <div class="prepared">Prepared by RYE · independent, flat-fee energy brokerage — we take no supplier commission ·
+      generated ${TENDER.generated}</div>
+  </footer>`;
+}
 
 document.getElementById("app").innerHTML = html;
+
+/* ---- Tab switching ---- */
+function showTab(t) {
+  document.querySelectorAll(".tabpane").forEach(p => { p.hidden = (p.id !== "tab-" + t); });
+  document.querySelectorAll(".tab").forEach(el => el.classList.toggle("active", el.dataset.tab === t));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 
 /* ---- Offer filter interactivity ---- */
 (function () {
@@ -465,18 +602,119 @@ if (fee) {
       `RYE charges a flat subscription fee and takes no supplier commission.`;
   }
 
-  slider.addEventListener("input", () => {
+  if (slider) slider.addEventListener("input", () => {
     const psm = +(list * (1 - slider.value / 100)).toFixed(2);
     input.value = psm;
     apply(psm);
   });
-  input.addEventListener("input", () => {
+  if (input) input.addEventListener("input", () => {
     const psm = parseFloat(input.value) || 0;
     slider.value = Math.min(100, Math.max(0, Math.round((1 - psm / list) * 100)));
     apply(psm);
   });
   apply(fee.perSiteMonth);
 }
+
+/* ================= Market context charts ================= */
+function mLineChart(id, data, W, H, o) {
+  const svg = document.getElementById(id);
+  if (!svg || !data || !data.length) return;
+  const padL = 36, padR = 16, padT = 14, padB = 22, n = data.length, min = o.min, max = o.max;
+  const X = i => padL + i * (W - padL - padR) / (n - 1);
+  const Y = v => padT + (max - v) / (max - min) * (H - padT - padB);
+  let s = "";
+  for (let i = 0; i <= 4; i++) {
+    const val = min + (max - min) * i / 4, y = Y(val);
+    s += `<line class="gridln" x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}"/>`;
+    s += `<text class="axlabel" x="${padL - 6}" y="${y + 3}" text-anchor="end">${Math.round(val)}</text>`;
+  }
+  if (o.fill) {
+    let a = `M ${X(0)} ${Y(data[0])}`; data.forEach((v, i) => a += ` L ${X(i)} ${Y(v)}`);
+    a += ` L ${X(n - 1)} ${H - padB} L ${X(0)} ${H - padB} Z`;
+    s += `<path d="${a}" fill="${o.color}" opacity="0.12"/>`;
+  }
+  let p = ""; data.forEach((v, i) => p += (i ? " L " : "M ") + X(i) + " " + Y(v));
+  s += `<path d="${p}" fill="none" stroke="${o.color}" stroke-width="2" stroke-linejoin="round"/>`;
+  if (o.months) o.months.forEach((mo, i) => {
+    const x = padL + i * (W - padL - padR) / (o.months.length - 1);
+    s += `<text class="axlabel" x="${x}" y="${H - 6}" text-anchor="middle">${esc(mo)}</text>`;
+  });
+  if (o.markMin) {
+    let mi = 0; data.forEach((v, i) => { if (v < data[mi]) mi = i; });
+    s += `<circle cx="${X(mi)}" cy="${Y(data[mi])}" r="3.5" fill="${CHART.blue}" stroke="#000" stroke-width="1.5"/>`;
+    s += `<text class="mk" x="${X(mi)}" y="${Y(data[mi]) + 16}" text-anchor="middle" fill="${CHART.blue}">${data[mi].toFixed(0)}</text>`;
+  }
+  if (o.markLast) {
+    const lv = data[n - 1];
+    s += `<circle cx="${X(n - 1)}" cy="${Y(lv)}" r="3.5" fill="${o.color}" stroke="#000" stroke-width="1.5"/>`;
+    s += `<text class="mk" x="${X(n - 1) - 6}" y="${Y(lv) - 9}" text-anchor="end" fill="${CHART.t1}">${lv.toFixed(2)}</text>`;
+  }
+  svg.innerHTML = s;
+}
+
+function renderMarket() {
+  const m = TENDER.market;
+  if (!m) return;
+  const power = m.power || {}, gas = m.gas || {};
+  const spot = power.spotNow;
+  const r5 = power.range5y || {};
+
+  // KPI cards
+  const cards = [];
+  if (spot != null) cards.push({ t: "Power spot", k: (spot / 10).toFixed(2), lab: `p/kWh · £${spot.toFixed(2)}/MWh today`, cls: "accent-amber" });
+  if (gas.spotNow != null) cards.push({ t: "Gas spot", k: gas.spotNow.toFixed(2), lab: "p/therm · NBP", cls: "accent-purple" });
+  if (r5.min != null && r5.max != null) cards.push({ t: "5-yr power range", k: `${(r5.min / 10).toFixed(1)}–${(r5.max / 10).toFixed(1)}`, lab: `p/kWh · £${r5.min}–${r5.max}/MWh`, cls: "accent-blue" });
+  if (power.series && power.series.length > 1) {
+    const first = power.series[0], last = power.series[power.series.length - 1];
+    const chg = (last - first) / first * 100;
+    cards.push({ t: "Trend", k: `${chg >= 0 ? "+" : ""}${chg.toFixed(0)}%`, lab: "power vs start of period", cls: chg >= 0 ? "accent-amber" : "accent-green" });
+  }
+  const mkpis = document.getElementById("mkpis");
+  if (mkpis) mkpis.innerHTML = cards.map(x =>
+    `<div class="card ${x.cls}"><div class="kpi-label">${esc(x.t)}</div><div class="kpi-value">${x.k}</div><div class="kpi-sub">${esc(x.lab)}</div></div>`).join("");
+
+  // Power line
+  if (power.series && power.series.length) {
+    const lo = Math.min(...power.series), hi = Math.max(...power.series);
+    mLineChart("pchart", power.series, 1040, 300, {
+      min: Math.floor((lo - 10) / 10) * 10, max: Math.ceil((hi + 10) / 10) * 10,
+      color: CHART.amber, months: power.seriesLabels, markMin: true, markLast: true,
+    });
+    const pl = document.getElementById("plegend");
+    if (pl) pl.innerHTML = `<span class="lg"><span class="sw" style="background:${CHART.amber}"></span>UK power (£/MWh)</span>`;
+  }
+
+  // 5-year range
+  if (r5.series && r5.series.length) {
+    const lo = Math.min(...r5.series), hi = Math.max(...r5.series);
+    mLineChart("ychart", r5.series, 520, 200, {
+      min: Math.floor((lo - 5) / 10) * 10, max: Math.ceil((hi + 5) / 10) * 10,
+      color: CHART.blue, months: r5.yearLabels, markLast: true,
+    });
+  }
+
+  // Gas cards + mini chart
+  if (gas.contracts && gas.contracts.length) {
+    const gc = document.getElementById("gcards");
+    if (gc) gc.innerHTML = gas.contracts.map(g =>
+      `<div class="gcard"><div class="kpi-label">${esc(g[0])}</div>
+        <div class="kpi-value" style="font-size:17px;margin-top:4px">${Number(g[1]).toFixed(2)}</div>
+        <div class="kpi-label" style="letter-spacing:.02em;margin-top:2px">p/therm</div></div>`).join("");
+  }
+  if (gas.series && gas.series.length) {
+    const lo = Math.min(...gas.series), hi = Math.max(...gas.series);
+    mLineChart("gchart", gas.series, 520, 120, {
+      min: Math.floor((lo - 5) / 10) * 10, max: Math.ceil((hi + 5) / 10) * 10,
+      color: CHART.purple, markLast: true, fill: true,
+    });
+  }
+
+  // Takeaway
+  const tk = document.getElementById("mtakeaway");
+  if (tk && m.commentary) tk.textContent = m.commentary;
+}
+
+if (hasMarket) renderMarket();
 </script>
 </body>
 </html>

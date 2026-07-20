@@ -1,0 +1,32 @@
+{
+  "_note": "STATIC market-context dataset for the client dashboard's Market context tab. This is placeholder data modelled on the PPA dashboard's market figures. Refresh it by hand (or later from api.rye.energy) and redeploy. All figures are indicative UK wholesale references, not client-specific. Delete this file (or set the fields to null) to hide the Market context tab.",
+  "updated": "2026-07-17",
+  "headline": "UK wholesale at the higher end of its recent range",
+  "commentary": "UK power has spent 2026 swinging between roughly £70 and £110/MWh, and currently sits near the top of that band. Gas — which sets the UK power price the majority of the time — is back at a four-week high after bottoming in late June, so the market is climbing again. Over five years wholesale power has ranged from about £55 to £127/MWh, and that band stays wide year on year: the point of a fixed contract isn't that today's price is unusually cheap, it's that it converts a moving, unpredictable cost into a flat line you can budget around for the term.",
+  "power": {
+    "unit": "£/MWh",
+    "spotNow": 107.98,
+    "series": [80, 86, 98, 104, 106, 101, 88, 79, 74, 71, 83, 110, 96, 90, 101, 93, 86, 88, 84, 80, 91, 97, 100, 105, 101, 93, 98, 107.98],
+    "seriesLabels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"],
+    "range5y": {
+      "min": 55,
+      "max": 127,
+      "series": [100, 112, 127, 104, 88, 70, 58, 63, 72, 80, 90, 100, 84, 78, 92, 105, 110, 84, 90, 107.98],
+      "yearLabels": ["2022", "2023", "2024", "2025", "2026"]
+    }
+  },
+  "gas": {
+    "unit": "p/therm",
+    "spotNow": 129.71,
+    "note": "NBP gas futures at a four-week high, up from a ~99 p/therm low on 25 Jun.",
+    "series": [107, 112, 101, 95, 98, 106, 110, 114, 112, 113, 116, 122, 127, 120, 118, 112, 116, 121, 120, 112, 118, 124, 127, 129, 129.71],
+    "contracts": [
+      ["AUG 26", 129.71],
+      ["SEP 26", 130.07],
+      ["OCT 26", 130.35],
+      ["NOV 26", 133.44],
+      ["WINTER 26", 131.25],
+      ["Q1 27", 129.19]
+    ]
+  }
+}
