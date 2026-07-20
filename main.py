@@ -34,26 +34,34 @@ Endpoints (built incrementally):
                         inline; static publish + UUID link is Phase 3.
 
 Team UI: a vanilla single-page wizard (no build step) served from web/ at /app.
-No app-level auth — the tool is open. Access control for the internal UI will be
-Vercel deployment protection (SSO / password on the deployment) once on Pro; that
-needs no app code. The client-facing dashboard links (Phase 3) get their own
-unguessable-UUID lifecycle per the build spec.
+Access control is an app-level HTTP Basic gate (see team_gate below): one Vercel
+project serves BOTH the private team app (/app + /api) and the PUBLIC client
+dashboards (/d/<slug>/<uuid>), and Vercel Deployment Protection can't make a public
+path exception on Pro — so the gate lives here and exempts the public route. Leave
+Vercel Deployment Protection OFF.
 
 Config via env vars (set in Vercel project settings, never in code):
-  RETOOL_DATABASE_URL  — Postgres connection string for the Retool DB.
+  TEAM_ACCESS_KEY      — Basic-auth password for the team app (/api + /app). Unset
+                         = open (local dev + tests). The public /d/* route + health
+                         are always exempt.
+  RETOOL_DATABASE_URL  — Postgres connection string for the tender store.
   ANTHROPIC_API_KEY    — (later, for /map) Claude key.
   ANTHROPIC_BASE_URL   — (optional) route Claude via the Vercel AI Gateway.
   ANTHROPIC_MODEL      — (optional) mapping model; defaults to claude-sonnet-5.
 """
+import base64
+import datetime
 import json
 import os
+import secrets
 import shutil
 import sys
 import tempfile
+import uuid
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -65,6 +73,45 @@ app = FastAPI(title="RYE Tender Tool API")
 
 # Quote file types the extractor can read.
 ALLOWED_EXT = {".xlsx", ".xlsm", ".csv"}
+
+
+# --- team gate (app-level, public client pages exempt) ----------------------
+#
+# One Vercel project serves BOTH the private team app (/app + /api) and the
+# PUBLIC client dashboards (/d/<slug>/<uuid>). Vercel Deployment Protection can't
+# make a public path exception on Pro, so the privacy boundary lives here: when
+# TEAM_ACCESS_KEY is set, everything requires HTTP Basic auth (password == the
+# key; username ignored) EXCEPT the public client route, health, and the root.
+# Unset = open, so local dev + tests run unchanged. The browser handles the
+# Basic prompt, so there's no unlock screen to maintain.
+_GATE_OPEN_PATHS = {"/", "/api/health", "/favicon.ico"}
+_GATE_PUBLIC_PREFIXES = ("/d/",)  # published client dashboards — must stay public
+
+
+@app.middleware("http")
+async def team_gate(request: Request, call_next):
+    key = os.environ.get("TEAM_ACCESS_KEY")
+    path = request.url.path
+    gated = (
+        key
+        and path not in _GATE_OPEN_PATHS
+        and not any(path.startswith(p) for p in _GATE_PUBLIC_PREFIXES)
+    )
+    if gated:
+        supplied = ""
+        hdr = request.headers.get("authorization", "")
+        if hdr.startswith("Basic "):
+            try:
+                supplied = base64.b64decode(hdr[6:]).decode("utf-8", "ignore").partition(":")[2]
+            except Exception:
+                supplied = ""
+        if not secrets.compare_digest(supplied, key):
+            return Response(
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="RYE Tender Tool", charset="UTF-8"'},
+                content="Authentication required.",
+            )
+    return await call_next(request)
 
 
 def _norm_supplier(name: Optional[str]) -> Optional[str]:
@@ -223,6 +270,34 @@ def _get_tender(tender_id: str, version: Optional[int] = None) -> Optional[dict]
                 cur.execute("select payload from tenders where id = %s order by version desc limit 1;", (tender_id,))
             row = cur.fetchone()
             return row[0] if row else None  # jsonb -> dict
+    finally:
+        conn.close()
+
+
+def _get_tender_by_uuid(url_uuid: str) -> Optional[dict]:
+    """Latest version of the tender that owns this url_uuid — the public link key.
+
+    Two-step on purpose: find the tender id that ever used this uuid, then return
+    its LATEST version. That way a revoke (which writes a new version with a fresh
+    uuid) makes the old link dead — the caller checks the latest payload's url_uuid
+    still equals the requested one, and after a rotation it won't. Returns None if
+    no tender ever used the uuid (or no DB).
+    """
+    conn = _db_connect()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("select id from tenders where url_uuid = %s limit 1;", (url_uuid,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            cur.execute(
+                "select payload from tenders where id = %s order by version desc limit 1;",
+                (row[0],),
+            )
+            latest = cur.fetchone()
+            return latest[0] if latest else None
     finally:
         conn.close()
 
@@ -856,6 +931,149 @@ def render_endpoint(body: RenderBody):
     except (Exception, SystemExit) as e:
         raise HTTPException(status_code=422, detail=f"Render failed: {type(e).__name__}: {e}")
     return HTMLResponse(content=html)
+
+
+# --- publish / revoke / public client link ---------------------------------
+
+_NOINDEX = {"X-Robots-Tag": "noindex, nofollow"}
+
+
+class PublishBody(BaseModel):
+    tender_id: str
+    version: Optional[int] = None
+
+
+class RevokeBody(BaseModel):
+    tender_id: str
+
+
+def _is_expired(expires_at) -> bool:
+    """True if an ISO date (YYYY-MM-DD) is strictly before today (UTC)."""
+    if not expires_at:
+        return False
+    try:
+        d = datetime.date.fromisoformat(str(expires_at)[:10])
+        return d < datetime.datetime.now(datetime.timezone.utc).date()
+    except ValueError:
+        return False
+
+
+@app.post("/api/publish")
+def publish_endpoint(body: PublishBody, request: Request):
+    """Publish a tender: mint/keep its unguessable link and mark it live.
+
+    Writes a NEW version (version-never-overwrite) with status=published, a slug +
+    url_uuid (minted if absent), and the full dashboard_url pointing at the public
+    route on this deployment. Returns the client link. The link is public because
+    the team gate exempts /d/*.
+    """
+    import assemble_tender as at
+
+    tender = _get_tender(body.tender_id, body.version)
+    if tender is None:
+        raise HTTPException(status_code=404, detail=f"No tender found for id={body.tender_id}")
+    if not tender.get("quotes"):
+        raise HTTPException(status_code=400, detail="Tender has no quotes — nothing to publish.")
+
+    tender["status"] = "published"
+    if not tender.get("url_uuid"):
+        tender["url_uuid"] = str(uuid.uuid4())
+    if not tender.get("slug"):
+        tender["slug"] = at.slugify(tender.get("client_name")) or "client"
+    nv = _next_version(tender["id"])
+    if nv is not None:
+        tender["version"] = nv
+    tender["created_at"] = at._now_rfc3339_z()
+    base = str(request.base_url).rstrip("/")
+    tender["dashboard_url"] = f"{base}/d/{tender['slug']}/{tender['url_uuid']}"
+
+    try:
+        at.validate_tender(tender)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Publish validation failed: {type(e).__name__}: {e}")
+    _write_tender(tender)
+    return {
+        "ok": True, "id": tender["id"], "version": tender["version"], "status": "published",
+        "url": tender["dashboard_url"], "url_uuid": tender["url_uuid"], "slug": tender["slug"],
+        "expires_at": tender.get("expires_at"),
+    }
+
+
+@app.post("/api/revoke")
+def revoke_endpoint(body: RevokeBody):
+    """Revoke a published link: rotate url_uuid + set back to draft.
+
+    Writes a new version with a fresh url_uuid, so the old link stops resolving
+    (the public route checks the LATEST version's uuid). Re-publishing mints a new
+    link. This is the leaked-link kill switch from the build spec.
+    """
+    import assemble_tender as at
+
+    tender = _get_tender(body.tender_id)
+    if tender is None:
+        raise HTTPException(status_code=404, detail=f"No tender found for id={body.tender_id}")
+    tender["url_uuid"] = str(uuid.uuid4())
+    tender["status"] = "draft"
+    tender["dashboard_url"] = None
+    nv = _next_version(tender["id"])
+    if nv is not None:
+        tender["version"] = nv
+    tender["created_at"] = at._now_rfc3339_z()
+    try:
+        at.validate_tender(tender)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Revoke validation failed: {type(e).__name__}: {e}")
+    _write_tender(tender)
+    return {"ok": True, "revoked": True, "id": tender["id"], "version": tender["version"], "status": "draft"}
+
+
+def _client_message_html(title: str, body: str) -> str:
+    """Minimal branded standalone page for the expired / not-found client states."""
+    return (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='robots' content='noindex, nofollow'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>{title}</title><style>"
+        "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
+        "background:#000;color:#ededed;font-family:ui-sans-serif,system-ui,sans-serif}"
+        ".card{max-width:420px;padding:32px;text-align:center}"
+        ".logo{width:28px;height:28px;border-radius:6px;background:#fff;color:#000;font-weight:700;"
+        "display:flex;align-items:center;justify-content:center;margin:0 auto 16px}"
+        "h1{font-size:18px;font-weight:600;margin:0 0 8px}p{color:#a1a1a1;font-size:14px;line-height:1.5;margin:0}"
+        "</style></head><body><div class='card'><div class='logo'>R</div>"
+        f"<h1>{title}</h1><p>{body}</p></div></body></html>"
+    )
+
+
+@app.get("/d/{slug}/{url_uuid}")
+def public_dashboard(slug: str, url_uuid: str):
+    """The public client dashboard, reached by the unguessable link. No auth.
+
+    Serves the rendered dashboard only when the LATEST version of the tender still
+    carries this url_uuid AND is published AND not past expires_at. Otherwise a
+    plain expired / not-found page. Always noindex. `slug` is cosmetic — the uuid
+    is the secret.
+    """
+    import build_dashboard as bd
+
+    tender = _get_tender_by_uuid(url_uuid)
+    if not tender or tender.get("url_uuid") != url_uuid or tender.get("status") != "published":
+        return HTMLResponse(
+            _client_message_html("Link unavailable",
+                                 "This tender link is no longer active. Please contact RYE for an up-to-date link."),
+            status_code=404, headers=_NOINDEX,
+        )
+    if _is_expired(tender.get("expires_at")):
+        return HTMLResponse(
+            _client_message_html("This quote has expired",
+                                 "The pricing in this tender is no longer valid. Please contact RYE for a refreshed quote."),
+            status_code=200, headers=_NOINDEX,
+        )
+    try:
+        html = bd.render_tender(tender)
+    except (Exception, SystemExit) as e:
+        raise HTTPException(status_code=500, detail=f"Could not render the dashboard: {type(e).__name__}: {e}")
+    return HTMLResponse(content=html, headers=_NOINDEX)
 
 
 # --- team UI (static, no build step) ----------------------------------------

@@ -26,10 +26,11 @@ separation is what makes the output safe to send to a client.
 
 ## Where we are right now (branch state)
 
-`main` (= `origin/main`) is current through **PR #10**. The whole headless pipeline
-(**map → extract → assemble → render**) plus the Phase 2 team UI through the assemble
-step are built, merged, and deployed. **One feature branch is open and awaiting
-merge: `feat/team-ui-render-register` (UI PR 3 — see below).** Merge history:
+`main` (= `origin/main`) is current through **PR #12**. The whole pipeline
+(**map → extract → assemble → render**) plus the full Phase 2 team UI (through the
+tender register + render preview) are built, merged, and deployed. **Phase 3
+(publish + public client link + app-level gate) is built and tested but UNCOMMITTED
+on a new branch — see the Phase 3 note below.** Merge history:
 
 - PR #1 — Phase 1 spike: `/api/health`, `/api/db-check`, `/api/inspect`.
 - PR #2/#3 — header-detection improvement + weekendRate band end-to-end.
@@ -40,10 +41,51 @@ merge: `feat/team-ui-render-register` (UI PR 3 — see below).** Merge history:
 - PR #8 — `/api/render` (canonical tender → dashboard HTML, inline).
 - PR #9 — Phase 2 UI PR 1: team UI shell at `/app` (key gate, upload, mapping
   review/confirm), verified live 2026-07-17.
-- PR #10 — Phase 2 UI PR 2: extract + assemble steps; **app-level auth removed**
-  (`/app` is open — see below); price-ranked `/api/cost` with up-to-2 featured
-  offers + price-based recommendation; hardcoded consumption splits; reworked
-  weekend costing. (Details in the PR-2 note further down.)
+- PR #10 — Phase 2 UI PR 2: extract + assemble steps; price-ranked `/api/cost` with
+  up-to-2 featured offers + price-based recommendation; hardcoded consumption splits;
+  reworked weekend costing. (PR-2 note further down.)
+- PR #11 — Phase 2 UI PR 3: tender register (`GET /api/tenders`), render preview
+  overlay, Step 6; + the sites.csv-at-assemble fix and the zero-kVA warning fix.
+- PR #12 — reject stacked-table sheets (guidance, not a crash) + mandatory supplier
+  choice on step 1.
+
+**Phase 3 — publish + public client link + app gate (built this session, 2026-07-20,
+UNCOMMITTED on a new branch).** This is the last functional piece — turning a saved
+tender into a live, shareable, unguessable client URL. Key decision (with Rory):
+**one Vercel project** serves both the private team app and the public client
+dashboards, so access control is an **app-level HTTP Basic gate** in `main.py`
+(`team_gate`), NOT Vercel Deployment Protection (which can't exempt a public path on
+Pro). This REVISITS the PR-2 "auth removed, use Vercel Deployment Protection"
+decision — that plan broke once we needed public client pages on the same deployment.
+- **Gate**: when `TEAM_ACCESS_KEY` is set, `/api` + `/app` need HTTP Basic auth
+  (password == the key; username ignored; browser handles the prompt — no unlock
+  screen). Exempt: `/d/*` (public dashboards), `/api/health`, `/`. Unset = open
+  (local dev + tests). **Set `TEAM_ACCESS_KEY` in Vercel (Prod + Preview); leave
+  Vercel Deployment Protection OFF.**
+- **`POST /api/publish`** `{tender_id}` → new version, `status=published`, mint
+  slug + `url_uuid` if absent, set `dashboard_url` to `<host>/d/<slug>/<uuid>`.
+- **`GET /d/<slug>/<uuid>`** (public, noindex) → serves the dashboard only if the
+  LATEST version still carries that uuid AND is published AND not past `expires_at`;
+  else an expired / unavailable page. `_get_tender_by_uuid` fetches the latest
+  version of the tender that owns the uuid, so a rotated uuid kills old links.
+- **`POST /api/revoke`** `{tender_id}` → new version with a fresh `url_uuid` +
+  `status=draft` → the old link 404s (leaked-link kill switch). Re-publish mints a
+  new link.
+- **UI**: Step 6 "Publish client link" (live URL + copy/open); register shows the
+  link + a Revoke action for published tenders.
+- **`vercel.json`** pins the function region to `lhr1` (London) for UK/EU latency +
+  residency intent.
+- Tests: `tests/test_publish.py` (publish/revoke/public-route states, DB mocked),
+  `test_ui.py` gate test updated, `dom_smoke.js` walks publish. Full suite green.
+- **Data residency (still open, not a functional blocker):** Retool Cloud stores the
+  DB on AWS in Retool's region (effectively US; NOT EU-configurable on Team — that's
+  Enterprise/self-host). "Outbound regions" only affect egress routing, not storage.
+  The stored tender data is mostly B2B commercial (company names, site addresses,
+  MPANs, EAC, rates) — MPAN isn't PII on its own, but sole-trader clients / residential
+  supply addresses can be personal data. Decision pending: accept US under Retool's
+  DPA/SCCs, OR point `RETOOL_DATABASE_URL` at an EU/UK Postgres (e.g. Neon `eu-west`;
+  ~30 min, DDL in `schema/retool_tables.sql`, app is DB-agnostic). Build on the
+  current DB with TEST data until decided.
 
 **OPEN BRANCH (not yet merged): `feat/team-ui-render-register`** — Phase 2 UI PR 3:
 the render preview + tender register (see the PR-3 note below). Frontend + one small
@@ -330,7 +372,8 @@ python3 tests/test_render.py       # /api/render: canonical->HTML adapter + feat
 python3 tests/test_cost.py         # /api/cost: price ranking, cheapest full-coverage, degenerate-offer guard
 python3 tests/test_capacity.py     # annualise(): zero per-kVA charge is silent; real one still warns
 python3 tests/test_stacked.py      # refuse a sheet with two stacked rate tables (guidance, not a crash)
-python3 tests/test_ui.py           # team UI: open access, static /app, /suppliers, /tenders register
+python3 tests/test_publish.py      # publish / public /d/<uuid> route / revoke (DB mocked)
+python3 tests/test_ui.py           # team UI: Basic-auth gate (public /d/* exempt), static /app, /suppliers, /tenders
 node tests/dom_smoke.js            # optional: jsdom walk of the whole wizard incl. preview + register (npm i jsdom first)
 ```
 All Python tests should print their "ALL … PASSED" line. No network needed (the LLM and DB

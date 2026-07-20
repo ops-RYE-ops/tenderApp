@@ -83,6 +83,11 @@ const routes = {
   '/api/cost': COST_RESP,
   '/api/assemble': ASSEMBLE_RESP,
   '/api/render': '<!doctype html><html><body><h1>RYE dashboard preview MARKER</h1></body></html>',
+  '/api/publish': {
+    ok: true, id: TENDER_ID, version: 2, status: 'published',
+    url: 'http://localhost/d/amorino-uk/22222222-2222-4222-8222-222222222222',
+    url_uuid: '22222222-2222-4222-8222-222222222222', slug: 'amorino-uk', expires_at: null,
+  },
   '/api/tenders': {
     ok: true,
     tenders: [{
@@ -218,8 +223,15 @@ const check = (name, cond) => {
   window.document.getElementById('btn-to-preview').click();
   await new Promise((r) => setTimeout(r, 20));
   check('step 6 (preview) visible', !$('step-6').classList.contains('hidden'));
-  check('would-be client URL shown', $('publish-meta').textContent.includes('rye.energy/amorino-uk/'));
-  check('publish button is gated (disabled)', $('btn-publish').disabled === true);
+  check('publish button is enabled', $('btn-publish').disabled === false);
+
+  $('btn-publish').click();
+  await new Promise((r) => setTimeout(r, 50));
+  check('publish result shows the client link',
+    !$('publish-result').classList.contains('hidden') &&
+    ($('publish-url').value || '').includes('/d/amorino-uk/'));
+  check('copy + open controls rendered',
+    !!window.document.getElementById('btn-copy-url') && !!window.document.getElementById('btn-open-url'));
 
   $('btn-preview').click();
   await new Promise((r) => setTimeout(r, 50));

@@ -185,15 +185,16 @@
   <!-- step 6: preview & publish -->
   <div id="step-6" class="card hidden">
     <h2>Preview &amp; publish</h2>
-    <p class="sub">The client-facing dashboard, built from the saved tender. Give it a final review — spot-check a couple of site costs against the source — before it goes out. Publishing to a live per-client link is the last step and needs Vercel Pro.</p>
+    <p class="sub">The client-facing dashboard, built from the saved tender. Give it a final review — spot-check a couple of site costs against the source — then publish to get an unguessable client link you can paste into Front / WhatsApp.</p>
     <div class="result-grid" id="publish-meta"></div>
     <div class="actions">
       <button class="btn-secondary" id="btn-back-to-assemble">Back to assemble</button>
       <button class="btn-secondary" id="btn-preview">Preview client dashboard</button>
       <div class="spacer"></div>
-      <button class="btn-primary" id="btn-publish" disabled title="Publishing needs Vercel Pro (Phase 3)">Publish live link</button>
+      <button class="btn-primary" id="btn-publish">Publish client link</button>
     </div>
-    <div class="notice" id="publish-note">Publishing — a live <span class="mono">rye.energy/&lt;client&gt;/&lt;uuid&gt;</span> link with expiry + revoke — is gated on the Vercel Pro move (Phase 3). Everything up to it is ready; for now use <b>Preview</b> to review the exact dashboard the client will see.</div>
+    <div id="publish-loading" class="hidden"><span class="spinner"></span> <span>Publishing…</span></div>
+    <div id="publish-result" class="hidden"></div>
     <div id="preview-msg"></div>
   </div>
 </div>
