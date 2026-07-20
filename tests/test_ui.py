@@ -50,7 +50,8 @@ def test_team_gate():
         check("wrong password -> 401", client.get("/api/suppliers", headers=bad).status_code == 401)
         check("correct password -> 200", client.get("/api/suppliers", headers=good).status_code == 200)
         check("/api/health exempt", client.get("/api/health").status_code == 200)
-        check("/ exempt", client.get("/").status_code == 200)
+        root = client.get("/", follow_redirects=False)
+        check("/ exempt + redirects to /app/", root.status_code in (307, 308) and root.headers.get("location", "").startswith("/app"))
         check("public /d/* not gated (no 401)", client.get("/d/foo/bar").status_code != 401)
     finally:
         os.environ.pop("TEAM_ACCESS_KEY", None)

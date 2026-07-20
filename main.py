@@ -61,7 +61,7 @@ import uuid
 from typing import Any, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -131,7 +131,8 @@ def _norm_supplier(name: Optional[str]) -> Optional[str]:
 
 @app.get("/")
 def root():
-    return {"ok": True, "service": "rye-tender-tool", "app": "/app", "see": "/docs"}
+    """Send visitors straight to the team app; the bare domain shouldn't show JSON."""
+    return RedirectResponse(url="/app/")
 
 
 @app.get("/api/health")

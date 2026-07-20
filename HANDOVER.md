@@ -26,11 +26,13 @@ separation is what makes the output safe to send to a client.
 
 ## Where we are right now (branch state)
 
-`main` (= `origin/main`) is current through **PR #12**. The whole pipeline
-(**map → extract → assemble → render**) plus the full Phase 2 team UI (through the
-tender register + render preview) are built, merged, and deployed. **Phase 3
-(publish + public client link + app-level gate) is built and tested but UNCOMMITTED
-on a new branch — see the Phase 3 note below.** Merge history:
+**The app is COMPLETE, merged, and live.** `main` (= `origin/main`) now includes
+Phase 3. The full flow — **map → extract → assemble → render → publish** — plus the
+team UI (wizard + register) and the public client link were **verified end-to-end on
+the RYE Pro deployment 2026-07-20**, including sharing a live client dashboard link.
+Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
+`tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
+"Deployment & ops status" below for the live config. Merge history:
 
 - PR #1 — Phase 1 spike: `/api/health`, `/api/db-check`, `/api/inspect`.
 - PR #2/#3 — header-detection improvement + weekendRate band end-to-end.
@@ -49,9 +51,9 @@ on a new branch — see the Phase 3 note below.** Merge history:
 - PR #12 — reject stacked-table sheets (guidance, not a crash) + mandatory supplier
   choice on step 1.
 
-**Phase 3 — publish + public client link + app gate (built this session, 2026-07-20,
-UNCOMMITTED on a new branch).** This is the last functional piece — turning a saved
-tender into a live, shareable, unguessable client URL. Key decision (with Rory):
+**Phase 3 — publish + public client link + app gate (MERGED + live, verified
+end-to-end 2026-07-20).** The last functional piece — turning a saved tender into a
+live, shareable, unguessable client URL. Key decision (with Rory):
 **one Vercel project** serves both the private team app and the public client
 dashboards, so access control is an **app-level HTTP Basic gate** in `main.py`
 (`team_gate`), NOT Vercel Deployment Protection (which can't exempt a public path on
@@ -175,13 +177,13 @@ decision below.
   would have zeroed out night for plain day/night offers — that's why this had to be a
   cost-engine change, not just a default. `tests/test_weekend.py` updated to the new
   numbers.)
-- **AUTH REMOVED — the tool is now OPEN.** The PR-1 shared-key gate (`TEAM_ACCESS_KEY`
-  middleware, `X-RYE-Key` header, `/api/auth-check`, the unlock screen + email field)
-  was deleted this session (decision with Rory, 2026-07-17): overkill for a 1–3 person
-  team and it wanted zero setup. `/app` opens straight into the wizard. `created_by`
-  is left unset → backend stamps its default. **Replacement is Vercel deployment
-  protection (SSO/password) once on Pro — no app code; see Next steps step 7.** A
-  lingering `TEAM_ACCESS_KEY` env var is now ignored and can be deleted.
+- **AUTH (this bullet is now SUPERSEDED — see the Phase 3 note above).** PR-2 removed
+  the PR-1 gate and planned to use Vercel Deployment Protection instead. That plan was
+  reversed in Phase 3: once the public client dashboards had to live on the same
+  deployment as the private team app, Deployment Protection couldn't exempt them on
+  Pro, so an **app-level HTTP Basic gate came back** (`team_gate` in main.py, keyed on
+  `TEAM_ACCESS_KEY`, exempting `/d/*`). Net: `TEAM_ACCESS_KEY` is live and required
+  again; leave Vercel Deployment Protection OFF.
 - Tests: `test_ui.py` now asserts open access + `/api/auth-check` is 404;
   `dom_smoke.js` walks unlock-free load → … → extract → assemble (28 checks). Full
   Python suite + DOM smoke all green. (jsdom is an ad-hoc local dep: `npm i jsdom`;
@@ -235,6 +237,29 @@ small read-only endpoint.
   warns (real undercosting). Covered by `tests/test_capacity.py`. (Open design
   question for later: whether internal "excluded" warnings should show client-side at
   all, or only in the team pre-publish review — left as-is for now.)
+
+## Deployment & ops status (as of 2026-07-20)
+
+- **Hosting:** RYE company **Vercel Pro** account, project `tender-app`, live at
+  `tender-app-chi.vercel.app`. (Migrated off Rory's personal hobby account — the app
+  is Git-backed + DB-backed, so the move was just a re-import.) **TODO:** disconnect
+  the Git integration on (or delete) the OLD hobby project so a push doesn't deploy
+  to both.
+- **Env vars (Production + Preview):** `TEAM_ACCESS_KEY` (team Basic-auth password),
+  `RETOOL_DATABASE_URL`, `ANTHROPIC_API_KEY` (freshly minted during the move — old
+  key revoked), optional `ANTHROPIC_BASE_URL`. Vercel never shows these again; re-add
+  from source if the project moves.
+- **Access:** app-level Basic gate (see Phase 3). **Vercel Deployment Protection is
+  OFF and must stay off** (it can't exempt the public `/d/*` client route on Pro).
+- **Region:** `lhr1` (London) via `vercel.json`.
+- **Spend:** no hard cap — Spend Management is account-global at RYE and a cap could
+  pause the whole company product; **notifications enabled** instead. (This tool's
+  spend is tiny — cache-suppressed Claude mapping calls.)
+- **Custom domain:** `tender.rye.energy` added in Vercel, pending GoDaddy DNS (CNAME
+  `tender` → the vercel-dns value + a `_vercel` TXT to release it from the old hobby
+  account). Optional/cosmetic — the app works on the vercel.app URL. Domains are at
+  **GoDaddy**; main-site hosting is elsewhere, so only this one subdomain points at
+  Vercel (root site + email + `runonrye.com` untouched).
 
 Git workflow we're using: feature branch → `git push` → Vercel auto-builds a
 **Preview** deployment → open a PR on GitHub → merge → `main` auto-deploys to
@@ -445,55 +470,56 @@ are mocked in test_map / test_assemble_api / test_render / test_ui).
    reminder too). **This completes the headless pipeline: map → extract → assemble →
    render.**
 
-Remaining beyond the backend:
-5. **Phase 2 — team UI** (new-tender, upload, mapping review, tender register).
-   **UI PR 1 merged (PR #9)** — vanilla SPA in `web/` served at `/app`.
-   ~~**UI PR 2**~~ **DONE (open branch `feat/team-ui-extract-assemble`, awaiting
-   merge)** — extract + assemble screens; app-level auth removed; price-ranked
-   include tick-list (via new `/api/cost`) with up-to-2 featured offers and a
-   price-based recommendation; hardcoded consumption splits + reworked weekend
-   costing. Full detail in the branch-state section above. Verify on the preview:
-   run a real quote through map/confirm → Continue to extract (upload the client's
-   sites.csv), check counts + the unmatched flag → Continue to assemble, confirm the
-   offers are costed + ranked cheapest-first (cheapest badged), tick up to 2, save,
-   and confirm a versioned draft lands in the Retool `tenders` table (re-save with the
-   same tender → version increments). Then `/api/render` the saved id and check only
-   the featured offers show, with the cheapest as the recommendation.
-   ~~**UI PR 3**~~ **DONE (open branch `feat/team-ui-render-register`, awaiting
-     merge)** — `GET /api/tenders` register endpoint over `tenders_latest`, the
-     register screen (nav toggle), the `/api/render` preview overlay (sandboxed
-     iframe), and Step 6 "Preview & publish" with the publish button gated on Pro.
-     Detail in the PR-3 note above. This completes the team-facing flow; the only
-     remaining team-UI work is Phase 3 publish (below). Verify on the preview: open
-     Register, Preview a saved tender (iframe shows the dashboard), and from a fresh
-     assemble check Step 6 shows the would-be URL with Publish disabled.
-6. **Phase 3 — render & deliver**: static hosting on the custom domain, the UUID link
-   lifecycle (noindex, expiry, revoke/rotate), and turning on the learned-mappings
-   cache in the flow. This is where `/render` graduates from inline HTML to a
-   published per-client URL.
-7. **Upgrade to Vercel Pro** before going live / real client data: commercial use
-   (Hobby is non-commercial only), team seats, spend controls, EU-region pinning,
-   static-IP add-on if needed. **Turn on Vercel Deployment Protection** (Settings →
-   Deployment Protection → Vercel Authentication/SSO, or a shared password) — this is
-   the replacement for the app-level key gate removed in UI PR 2, and it needs zero
-   app code. Do this as part of the Pro cutover, before the tool holds real client
-   data, since on Hobby `/app` is currently open to anyone with the URL.
+**Phases 0–3 are all DONE and merged** (backend pipeline, team UI PR 1–3, and Phase 3
+publish/link/gate above). The build is functionally complete and live on Vercel Pro.
+
+## What's left (housekeeping + decisions, none blocking the app from running)
+
+1. **Data residency decision** (before REAL client data — test data is fine now).
+   Retool Cloud stores the DB on AWS in Retool's region (effectively US; not
+   EU-configurable on Team — that's Enterprise/self-host). The stored data is mostly
+   B2B commercial (company names, site addresses, MPANs, EAC, rates); MPAN alone isn't
+   PII, but sole-trader clients / residential supply addresses can be. Options: accept
+   US under Retool's DPA/SCCs, OR point `RETOOL_DATABASE_URL` at an EU/UK Postgres
+   (e.g. Neon `eu-west`; ~30 min, DDL in `schema/retool_tables.sql`, app is
+   DB-agnostic). No code change needed either way beyond the connection string.
+2. **Disconnect / delete the OLD hobby Vercel project** so a push doesn't deploy to
+   both accounts (Settings → Git → Disconnect).
+3. **Finish the custom domain** `tender.rye.energy` (GoDaddy CNAME + `_vercel` TXT;
+   see Deployment & ops status). Optional/cosmetic; publish a tender *after* it's live
+   so the client links carry the custom host.
+4. **Future / nice-to-have** (not required): swap the shared-key gate for real **SSO**
+   via a two-project split (private team app + separate public client-pages project)
+   if per-person auth is wanted; a light audit/version-history view; turning "excluded"
+   cost warnings into team-only (not client-facing) notes. **Visual design polish is
+   the next session** — see below.
+
+## For the next (visual-design) session
+
+The founder sent visual changes. Everything visual lives in a few places:
+- **Team app UI:** `web/index.html`, `web/app.css` (RYE design tokens — colours,
+  fonts, spacing all defined at the top of app.css), `web/app.js` (behaviour). No
+  build step — edit and redeploy.
+- **Client-facing dashboard:** `assets/dashboard_template.html` (the published page's
+  own HTML/CSS; the cost data is injected as `__TENDER_DATA__`). This is what clients
+  see at `/d/<slug>/<uuid>`.
+- **Brand tokens / patterns:** the `rye-design-system` skill is the source of truth —
+  use it when making visual changes so everything stays on-brand.
+- After any UI edit, run `node tests/dom_smoke.js` (jsdom walk) to catch breakages,
+  and eyeball on a preview deploy.
 
 The pipeline core is transport-agnostic: every script is a plain importable
 function, so the endpoints stay thin wrappers.
 
-## Open checks / blockers
+## Resolved / no longer open
 
-- **EU data residency** — the locked decision. Retool support emailed 2026-07-16
-  (is our org US or EU hosted? can it migrate?), awaiting reply; needed before any
-  live client data. Vercel EU-region pinning of functions needs Pro.
-- **Company Postgres** may be IP-firewalled — if so, either a Vercel static IP
-  (~$100/mo, Pro-only) or sync site-reference data into Retool DB and read from there.
-- **Vercel Pro** — required for commercial use / team / spend caps (see step 5).
-
-Resolved this session (no longer open): Vercel Python runtime works; FastAPI is a
-supported framework; external DB connection to Retool DB works over SSL; AI Gateway
-BYOK is available on all plans.
+- Vercel Python runtime + FastAPI work; external Postgres over SSL works; AI Gateway
+  BYOK is on all plans; **moved to Vercel Pro** (RYE company account); spend handled
+  via notifications (no hard cap — global-account constraint).
+- **Company Postgres / site-reference:** currently an uploaded `sites.csv` at
+  extract/assemble (authoritative site names + EAC/kVA). Syncing it from the read-only
+  company Postgres into the tender DB (killing the upload + the static-IP question) is
+  still an optional future improvement, not a blocker.
 
 ## Environment / workflow gotchas
 
