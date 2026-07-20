@@ -477,6 +477,20 @@ async def map_quote(
                 mapping = None
             if mapping is not None:
                 source = "cache"
+                # Cached sheet names can be stale — the fingerprint ignores sheet
+                # names (they carry the date), so a re-dated re-tender of the same
+                # supplier template hits this cached mapping but its sheet names no
+                # longer exist in the new file. Re-point them at this upload before
+                # returning, so /extract doesn't KeyError on a missing worksheet.
+                mapping = mh.resync_sheets(mapping, inspection)
+                have = {s["name"] for s in inspection["sheets"]}
+                missing = [s for s in (mapping.get("sheets") or []) if s not in have]
+                if missing:
+                    notes.append(
+                        "cached mapping still references sheet(s) not in this file: "
+                        + ", ".join(missing)
+                        + " — set the sheet list on the review screen before extracting"
+                    )
         else:
             notes.append("no supplier provided — cache lookup skipped; saving will need a supplier")
 

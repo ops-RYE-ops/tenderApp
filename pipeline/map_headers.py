@@ -297,6 +297,34 @@ def sample_values(inspection, mapping, max_samples=3):
     return out
 
 
+def resync_sheets(mapping, inspection):
+    """Re-point a mapping's sheet names at the CURRENTLY uploaded file.
+
+    The layout fingerprint deliberately ignores sheet names (they carry the
+    client/date), so a cached mapping can come back carrying stale, differently
+    dated sheet names — e.g. a re-tender of the same supplier template where the
+    sheets are named for new contract-end dates. Because an identical fingerprint
+    guarantees the same sheet COUNT and order, we remap the sheet list positionally
+    onto the current file's sheet names and re-key `term_labels` to match. If the
+    counts don't line up (rare — a mapping that deliberately excluded sheets), leave
+    it untouched for the caller to flag rather than guess.
+    """
+    current = [s.get("name") for s in inspection.get("sheets", [])]
+    old = mapping.get("sheets")
+    if not old or not current or len(old) != len(current):
+        return mapping
+    if list(old) == list(current):
+        return mapping  # already in sync
+    out = dict(mapping)
+    out["sheets"] = list(current)
+    labels = mapping.get("term_labels")
+    if isinstance(labels, dict) and labels:
+        out["term_labels"] = {
+            current[i]: labels[o] for i, o in enumerate(old) if o in labels
+        }
+    return out
+
+
 # --- /map : the single LLM call --------------------------------------------
 
 def build_payload(inspection, sample_rows=3):

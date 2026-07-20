@@ -176,7 +176,38 @@ def test_endpoint_paths(monkeypatch_env=None):
     os.unlink(f)
 
 
+def test_resync_sheets():
+    print("resync_sheets — stale cached sheet names re-point to the current file")
+    # A cache hit for the same supplier layout can carry sheet names from an
+    # earlier, differently-dated file (the fingerprint ignores sheet names).
+    inspection = {"path": "f.xlsx", "sheets": [
+        {"name": "100% Fixed 16-08-2027"},
+        {"name": "100% Fixed 20-01-2028"},
+    ]}
+    cached = {
+        "sheets": ["100% Fixed 31-07-2027", "100% Fixed 04-11-2027"],
+        "term_labels": {"100% Fixed 31-07-2027": "Fixed to Jul 2027",
+                        "100% Fixed 04-11-2027": "Fixed to Nov 2027"},
+        "columns": {"unitRate": "Unit Rate (p/kWh)"},
+    }
+    out = mh.resync_sheets(cached, inspection)
+    check("sheets re-pointed to the current file",
+          out["sheets"] == ["100% Fixed 16-08-2027", "100% Fixed 20-01-2028"])
+    check("term_labels re-keyed positionally",
+          out["term_labels"] == {"100% Fixed 16-08-2027": "Fixed to Jul 2027",
+                                  "100% Fixed 20-01-2028": "Fixed to Nov 2027"})
+    check("other mapping keys untouched", out["columns"] == {"unitRate": "Unit Rate (p/kWh)"})
+    check("original cached mapping not mutated", cached["sheets"][0] == "100% Fixed 31-07-2027")
+    # Count mismatch (a mapping that excluded sheets) -> left untouched, not guessed.
+    same = mh.resync_sheets(cached, {"sheets": [{"name": "OnlyOne"}]})
+    check("count mismatch leaves the mapping untouched", same["sheets"][0] == "100% Fixed 31-07-2027")
+    # No sheets in the mapping (single-sheet/CSV) -> unchanged.
+    nos = mh.resync_sheets({"columns": {}}, inspection)
+    check("mapping with no sheets is returned as-is", "sheets" not in nos)
+
+
 if __name__ == "__main__":
     test_fingerprint_and_samples()
     test_endpoint_paths()
+    test_resync_sheets()
     print("ALL MAP CHECKS PASSED")
