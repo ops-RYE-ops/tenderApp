@@ -1,32 +1,32 @@
 {
-  "_note": "STATIC market-context dataset for the client dashboard's Market context tab. This is placeholder data modelled on the PPA dashboard's market figures. Refresh it by hand (or later from api.rye.energy) and redeploy. All figures are indicative UK wholesale references, not client-specific. Delete this file (or set the fields to null) to hide the Market context tab.",
-  "updated": "2026-07-17",
-  "headline": "UK wholesale at the higher end of its recent range",
-  "commentary": "UK power has spent 2026 swinging between roughly £70 and £110/MWh, and currently sits near the top of that band. Gas — which sets the UK power price the majority of the time — is back at a four-week high after bottoming in late June, so the market is climbing again. Over five years wholesale power has ranged from about £55 to £127/MWh, and that band stays wide year on year: the point of a fixed contract isn't that today's price is unusually cheap, it's that it converts a moving, unpredictable cost into a flat line you can budget around for the term.",
+  "_note": "One-time market snapshot taken 2026-07-20 from Rory's ICE/Tradingeconomics screenshots. Power spot (114.72 GBP/MWh) and the gas futures curve/3-month series are read from source. The power `series` (1Y spot) and `range5y` are traced from the charts (shape-accurate, not tick-exact). Refresh by hand and redeploy; delete this file to hide the Market context tab.",
+  "updated": "2026-07-20",
+  "headline": "power at its highest since 2023; gas futures elevated into 2027",
+  "commentary": "UK power is trading at its highest wholesale level since 2023 — when the Israel–Palestine conflict began — at £114.72/MWh, up on the day and with no sign of easing. Gas, which sets the UK power price most of the time, has kept climbing: front-month NBP futures are at their highest since the Iran conflict flared in March 2026 and the second-highest in two years, with elevated prices persisting right through to summer 2027. The market is at the top of its recent range and the forward curve offers no real relief until well into next year — exactly the environment a fixed contract is designed to take the sting out of.",
   "power": {
     "unit": "£/MWh",
-    "spotNow": 107.98,
-    "series": [80, 86, 98, 104, 106, 101, 88, 79, 74, 71, 83, 110, 96, 90, 101, 93, 86, 88, 84, 80, 91, 97, 100, 105, 101, 93, 98, 107.98],
-    "seriesLabels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"],
+    "spotNow": 114.72,
+    "series": [80, 77, 80, 82, 84, 85, 84, 86, 87, 89, 92, 107, 74, 70, 73, 111, 96, 90, 104, 97, 92, 88, 96, 101, 108, 114.72],
+    "seriesLabels": ["Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"],
     "range5y": {
-      "min": 55,
-      "max": 127,
-      "series": [100, 112, 127, 104, 88, 70, 58, 63, 72, 80, 90, 100, 84, 78, 92, 105, 110, 84, 90, 107.98],
+      "min": 70,
+      "max": 220,
+      "series": [160, 190, 210, 175, 120, 100, 108, 130, 85, 70, 72, 84, 80, 86, 88, 92, 96, 104, 110, 114.72],
       "yearLabels": ["2022", "2023", "2024", "2025", "2026"]
     }
   },
   "gas": {
     "unit": "p/therm",
-    "spotNow": 129.71,
-    "note": "NBP gas futures at a four-week high, up from a ~99 p/therm low on 25 Jun.",
-    "series": [107, 112, 101, 95, 98, 106, 110, 114, 112, 113, 116, 122, 127, 120, 118, 112, 116, 121, 120, 112, 118, 124, 127, 129, 129.71],
+    "spotNow": 140.95,
+    "note": "NBP gas futures at their highest since the Iran conflict (Mar 2026) — second-highest in two years — with elevated prices persisting through to summer 2027.",
+    "series": [101, 108, 110, 106, 111, 115, 112, 122, 121, 126, 120, 118, 112, 100, 99, 101, 97, 96, 102, 104, 103, 116, 121, 131, 133, 140.95],
     "contracts": [
-      ["AUG 26", 129.71],
-      ["SEP 26", 130.07],
-      ["OCT 26", 130.35],
-      ["NOV 26", 133.44],
-      ["WINTER 26", 131.25],
-      ["Q1 27", 129.19]
+      ["AUG 26", 140.95],
+      ["NOV 26", 145.18],
+      ["DEC 26", 146.50],
+      ["JAN 27", 146.71],
+      ["WINTER 26", 141.00],
+      ["SUMMER 27", 94.00]
     ]
   }
 }
