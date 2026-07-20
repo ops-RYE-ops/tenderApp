@@ -477,6 +477,17 @@ def main(argv):
     )
     assumptions.extend(tender.get("notes", []))
 
+    # Static market-context dataset (assets/market_snapshot.json, next to the
+    # template). App-wide, not client-specific; injected so the dashboard's
+    # Market context tab can render offline. Absent/invalid -> None -> tab hidden.
+    market_data = None
+    market_path = template_path.parent / "market_snapshot.json"
+    try:
+        if market_path.exists():
+            market_data = json.loads(market_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        market_data = None
+
     payload = {
         "client": tender.get("client_name", "Client"),
         "label": tender.get("tender_label", "Tender comparison"),
@@ -495,6 +506,7 @@ def main(argv):
         ],
         "assumptions": assumptions,
         "globalWarnings": sorted(set(global_warnings)),
+        "market": market_data,
     }
 
     template = template_path.read_text(encoding="utf-8")
