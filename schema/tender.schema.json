@@ -271,6 +271,7 @@
       "required": ["p_kwh_uplift"],
       "properties": {
         "p_kwh_uplift": { "type": "number", "description": "Commission as a unit uplift, p/kWh, applied to total consumption." },
+        "included": { "type": "boolean", "description": "True when the supplier's quoted rate ALREADY contains this commission (so it's shown as included, not added on top — avoids double-counting)." },
         "label": { "type": "string", "description": "Client-facing commission label." }
       }
     },

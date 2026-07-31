@@ -549,6 +549,7 @@ function assembleMeta() {
     // Commission (p/kWh uplift) is charged INSTEAD of the flat fee.
     const uplift = parseFloat($("in-commission-uplift").value);
     if (!isNaN(uplift)) meta.commission_p_kwh_uplift = uplift;
+    meta.commission_included = $("in-commission-included").checked;
   } else {
     const feeList = parseFloat($("in-fee-list").value);
     if (!isNaN(feeList)) meta.fee_list_price_site_month = feeList;

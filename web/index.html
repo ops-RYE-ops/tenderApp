@@ -179,7 +179,14 @@
       <div class="field">
         <span class="label">Commission — unit uplift (p/kWh)</span>
         <input type="number" id="in-commission-uplift" value="0.30" step="0.01" min="0">
-        <div class="siteref-sub">Added to the supplier rate; the client sees the rate with and without it, plus the annual commission.</div>
+        <div class="siteref-sub">The client sees the rate with and without commission, plus the annual figure.</div>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:2px">
+          <input type="checkbox" id="in-commission-included">
+          <span class="label" style="margin:0">Already included in the supplier rate</span>
+        </label>
+        <div class="siteref-sub">Tick if the supplier baked commission into the quoted rate — it's then shown as included, not added, so it isn't double-counted.</div>
       </div>
     </div>
 
