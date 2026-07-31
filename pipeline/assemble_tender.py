@@ -265,6 +265,21 @@ def _build_rye_fee(meta):
     return fee or None
 
 
+def _build_rye_commission(meta):
+    """Assemble the rye_commission block from meta (p/kWh uplift), or None.
+
+    Alternative to rye_fee (mutually exclusive). Accepts an explicit
+    `rye_commission` dict, or a flattened `commission_p_kwh_uplift` (+ label)."""
+    if meta.get("rye_commission") is not None:
+        return meta["rye_commission"]
+    if meta.get("commission_p_kwh_uplift") is not None:
+        c = {"p_kwh_uplift": meta["commission_p_kwh_uplift"]}
+        if meta.get("commission_label") is not None:
+            c["label"] = meta["commission_label"]
+        return c
+    return None
+
+
 def _build_recommended(meta):
     """Carry through an explicitly chosen lead offer, or None. Never computed."""
     if meta.get("recommended") is not None:
@@ -333,9 +348,14 @@ def assemble(extracts, meta, incumbent=None):
     recommended = _build_recommended(meta)
     if recommended is not None:
         tender["recommended"] = recommended
-    rye_fee = _build_rye_fee(meta)
-    if rye_fee is not None:
-        tender["rye_fee"] = rye_fee
+    rye_commission = _build_rye_commission(meta)
+    if rye_commission is not None:
+        # Commission is charged INSTEAD of the flat fee; don't stamp both.
+        tender["rye_commission"] = rye_commission
+    else:
+        rye_fee = _build_rye_fee(meta)
+        if rye_fee is not None:
+            tender["rye_fee"] = rye_fee
     if meta.get("charge_basis"):
         tender["charge_basis"] = meta["charge_basis"]
     if meta.get("notes"):

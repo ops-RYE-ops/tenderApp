@@ -108,6 +108,12 @@ function onSupplierChange() {
   $("field-new-supplier").classList.toggle("hidden", $("in-supplier").value !== NEW_SUPPLIER);
 }
 
+function onChargeModelChange() {
+  const commission = $("in-charge-model").value === "commission";
+  $("fee-fields").classList.toggle("hidden", commission);
+  $("commission-fields").classList.toggle("hidden", !commission);
+}
+
 function currentSupplier() {
   const v = $("in-supplier").value;
   const raw = v === NEW_SUPPLIER ? $("in-new-supplier").value : v;
@@ -357,7 +363,7 @@ function renderSiteref() {
   const clear = $("btn-clear-siteref");
   nameEl.textContent = state.sitesCsv ? state.sitesCsv.name : "";
   clear.classList.toggle("hidden", !state.sitesCsv);
-  $("btn-pick-siteref").textContent = state.sitesCsv ? "Replace" : "Choose sites.csv";
+  $("btn-pick-siteref").textContent = state.sitesCsv ? "Replace" : "Choose site reference";
 }
 
 function openExtract() {
@@ -539,10 +545,16 @@ function assembleMeta() {
   // created_by is left unset -> the backend stamps a sensible default. day_split /
   // weekend_split are NOT sent -> the backend applies the standing hardcoded splits
   // (day/night 70/30, weekend 2/7 where a weekend rate is quoted).
-  const feeList = parseFloat($("in-fee-list").value);
-  if (!isNaN(feeList)) meta.fee_list_price_site_month = feeList;
-  const feeDisc = parseFloat($("in-fee-discount").value);
-  if (!isNaN(feeDisc)) meta.fee_discount_pct = feeDisc;
+  if ($("in-charge-model").value === "commission") {
+    // Commission (p/kWh uplift) is charged INSTEAD of the flat fee.
+    const uplift = parseFloat($("in-commission-uplift").value);
+    if (!isNaN(uplift)) meta.commission_p_kwh_uplift = uplift;
+  } else {
+    const feeList = parseFloat($("in-fee-list").value);
+    if (!isNaN(feeList)) meta.fee_list_price_site_month = feeList;
+    const feeDisc = parseFloat($("in-fee-discount").value);
+    if (!isNaN(feeDisc)) meta.fee_discount_pct = feeDisc;
+  }
 
   const exp = $("in-expires").value;
   if (exp) meta.expires_at = exp;
@@ -801,6 +813,8 @@ async function revokeTender(tenderId) {
 
 document.addEventListener("DOMContentLoaded", () => {
   $("in-supplier").addEventListener("change", onSupplierChange);
+  $("in-charge-model").addEventListener("change", onChargeModelChange);
+  onChargeModelChange();
   $("btn-to-upload").addEventListener("click", toUpload);
   $("btn-back-1").addEventListener("click", () => showStep(1));
   $("btn-back-2").addEventListener("click", () => { showStep(2); renderFiles(); });

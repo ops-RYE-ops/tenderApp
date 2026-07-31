@@ -512,6 +512,47 @@ publish/link/gate above). The build is functionally complete and live on Vercel 
    `{tender_id}` + a per-row action in `web/app.js`; cover with a test like
    `test_publish.py`.
 
+6. ~~**Commission option instead of the RYE fee**~~ **DONE 2026-07-31** (see
+   Recently done). Founder model: commission = a **unit uplift (p/kWh)** on total
+   consumption, shown to the client as a single £/yr figure plus the unit rate with and
+   without the uplift.
+7. **Multiple suppliers in one tender** (gap — becomes pressing as tenders go
+   multi-supplier). The data model already supports it (`tender.quotes[]`, each quote
+   carries its own `supplier`), but the **wizard collects ONE supplier at step 1 and
+   stamps it on every uploaded file**: `/extract` passes `state.meta.supplier` into
+   `process_quote.run`, which sets `quote.supplier = supplier or mapping.get("supplier")`
+   for every offer. So today a tender is effectively single-supplier (multiple *terms*
+   of one supplier vs the incumbent). Fix: move supplier selection to **per-file** (at
+   upload / map-review) so each quote carries its own supplier — which also makes the
+   mapping cache key `(supplier, fingerprint)` correct per file. Phase-2-UI enhancement;
+   no schema change.
+
+**Recently done (2026-07-31):**
+- **Commission option (p/kWh uplift), instead of the flat fee — built end-to-end.**
+  Model (with founder): commission = a **unit uplift (p/kWh)** on total consumption,
+  shown to the client as a single £/yr figure plus the unit rate **with and without**
+  the uplift. Pieces: schema `rye_commission {p_kwh_uplift}` (mutually exclusive with
+  `rye_fee`); `assemble_tender._build_rye_commission` reads a flattened
+  `commission_p_kwh_uplift` from meta, stamps `rye_commission` and omits `rye_fee`;
+  `build_dashboard` emits a `commission` payload block (annual = uplift × total kWh,
+  `baseEffective`, `withUpliftEffective`, net saving after commission) and sets
+  `fee=None` when it's present; `render_tender` now carries `rye_commission` through;
+  the dashboard renders `buildCommission()` (no slider) in the Savings tab (with
+  incumbent) or the Portfolio tab (without). Wizard **step 5 has a "How RYE is paid"
+  toggle** (fee | commission) that swaps the fee inputs for a p/kWh-uplift input
+  (`web/index.html`, `web/app.js`). Verified schema-valid + assemble + jsdom render
+  (both tabs, rates with/without, no fee slider) + full suite + dom_smoke. **Still to
+  do:** a dedicated commission unit test (currently covered indirectly by
+  render/assemble suites).
+- **Total consumption (EAC) card** added to the client dashboard — first KPI on both
+  the Savings and Portfolio rows (`buildSavingsKpis` / `buildPortfolioKpis` in
+  `assets/dashboard_template.html`), in kWh/yr (or GWh for large portfolios).
+- **sites.csv filename friction removed.** The app never required the name `sites.csv`
+  — `_save_upload` checks the extension only, and the picker is `accept=".csv"`, so a
+  dated Retool export (`sites_2026-07-31_122851.csv`) already works. Updated the wizard
+  copy + button (`web/index.html`, `web/app.js`) so no one hunts through Downloads to
+  rename it.
+
 ## Client dashboard — tabs + Market context (done 2026-07-20)
 
 The client-facing dashboard (`assets/dashboard_template.html`, served at

@@ -222,6 +222,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const allOffers = (TENDER.incumbent ? [TENDER.incumbent] : []).concat(TENDER.offers);
 const rec = TENDER.offers.find(o => o.id === (TENDER.recommendedId || TENDER.bestId)) || TENDER.offers[0];
 const fee = TENDER.fee;
+const commission = TENDER.commission;
 const inc = TENDER.incumbent;
 const savings = inc ? inc.total - rec.total : null;
 const totalEac = TENDER.sites.reduce((a, s) => a + (s.eac || 0), 0);
@@ -254,6 +255,11 @@ function buildWarnings() {
 function buildSavingsKpis() {
   const pct = (Math.abs(savings) / inc.total * 100).toFixed(1);
   return `<section><div class="kpi-row">
+    <div class="card accent-blue">
+      <div class="kpi-label">Total consumption</div>
+      <div class="kpi-value">${totalEac >= 1e6 ? (totalEac / 1e6).toFixed(2) : num(totalEac)}</div>
+      <div class="kpi-sub">${totalEac >= 1e6 ? "GWh" : "kWh"}/yr · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
+    </div>
     <div class="card accent-green">
       <div class="kpi-label">Estimated annual spend</div>
       <div class="kpi-value">${gbp(rec.total)}</div>
@@ -303,6 +309,10 @@ function buildRecVsInc() {
             <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/site/month · <span id="fee-disc"></span></span>
           </div>
         </div>` : ""}
+        ${commission ? `
+        <div class="kpi-label" style="margin-top:14px">Net ${commission.netSaving >= 0 ? "saving" : "increase"} after commission</div>
+        <div class="kpi-value ${commission.netSaving >= 0 ? "pos" : "warn"}" style="font-size:26px;margin-top:6px">${gbp(Math.abs(commission.netSaving))}</div>
+        <div class="kpi-sub">RYE commission ${commission.pKwhUplift} p/kWh · ${gbp(commission.annual)}/yr</div>` : ""}
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>Standardised comparison</th>
@@ -312,6 +322,7 @@ function buildRecVsInc() {
           <tr><td class="name">Mean unit rate (p/kWh)</td>${pk(inc.perKwh.unit)}${pk(rec.perKwh.unit, rec.perKwh.unit <= inc.perKwh.unit ? "best" : "")}</tr>
           <tr><td class="name">Mean non-commodity costs (p/kWh)</td>${pk(inc.perKwh.nonCommodity)}${pk(rec.perKwh.nonCommodity, rec.perKwh.nonCommodity <= inc.perKwh.nonCommodity ? "best" : "")}</tr>
           <tr><td class="name">Mean effective rate (p/kWh)</td>${pk(inc.perKwh.effective, "neg")}${pk(rec.perKwh.effective, rec.perKwh.effective <= inc.perKwh.effective ? "best" : "warn")}</tr>
+          ${commission ? `<tr><td class="name">Effective rate incl. RYE commission (p/kWh)</td><td>—</td><td class="total">${commission.withUpliftEffective == null ? "—" : commission.withUpliftEffective.toFixed(2)}</td></tr>` : ""}
           <tr><td class="name">Forecasted annual spend</td><td>${gbp(inc.total)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total)}</td></tr>
           <tr><td class="name">Annual spend per site</td><td>${gbp(inc.total / perSite)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total / perSite)}</td></tr>
           <tr><td class="name">Forecasted annual saving</td><td></td><td class="${savings >= 0 ? "best" : "warn"}">${gbpSigned(rec.total - inc.total)}</td></tr>
@@ -342,13 +353,49 @@ function buildFeeStandalone() {
   </section>`;
 }
 
+/* ---- Commission headline KPIs (lead with the energy deal, not the commission) ---- */
+function buildCommissionKpis() {
+  const base = commission.baseEffective;
+  return `<section><div class="kpi-row">
+    <div class="card accent-blue">
+      <div class="kpi-label">Total consumption</div>
+      <div class="kpi-value">${totalEac >= 1e6 ? (totalEac / 1e6).toFixed(2) : num(totalEac)}</div>
+      <div class="kpi-sub">${totalEac >= 1e6 ? "GWh" : "kWh"}/yr · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
+    </div>
+    <div class="card accent-blue">
+      <div class="kpi-label">Blended unit rate</div>
+      <div class="kpi-value">${base == null ? "—" : base.toFixed(2)}</div>
+      <div class="kpi-sub">p/kWh all-in · excl. commission</div>
+    </div>
+    <div class="card accent-green">
+      <div class="kpi-label">Total estimated spend</div>
+      <div class="kpi-value">${gbp(rec.total)}</div>
+      <div class="kpi-sub">${esc(rec.supplier)} · ${esc(rec.term)}</div>
+    </div>
+  </div></section>`;
+}
+
+/* ---- Commission rate build-up (line items; shown when there's no incumbent table) ---- */
+function buildCommission() {
+  const c = commission;
+  const rate = v => v == null ? "—" : Number(v).toFixed(2) + " p/kWh";
+  return `<section>
+    <div class="section-label">${esc(c.label)}</div>
+    <div class="table-wrap" style="max-width:560px"><table><tbody>
+      <tr><td class="name">Supplier all-in rate</td><td>${rate(c.baseEffective)}</td></tr>
+      <tr><td class="name">RYE commission · ${c.pKwhUplift} p/kWh</td><td>${gbp(c.annual)}/yr</td></tr>
+      <tr><td class="name">All-in rate incl. commission</td><td class="total">${rate(c.withUpliftEffective)}</td></tr>
+    </tbody></table></div>
+  </section>`;
+}
+
 /* ---- Portfolio: context KPIs ---- */
 function buildPortfolioKpis() {
   return `<section><div class="kpi-row">
     <div class="card accent-blue">
-      <div class="kpi-label">Portfolio</div>
-      <div class="kpi-value">${TENDER.sites.length}</div>
-      <div class="kpi-sub">site${TENDER.sites.length === 1 ? "" : "s"} · ${num(totalEac)} kWh/yr</div>
+      <div class="kpi-label">Total consumption</div>
+      <div class="kpi-value">${totalEac >= 1e6 ? (totalEac / 1e6).toFixed(2) : num(totalEac)}</div>
+      <div class="kpi-sub">${totalEac >= 1e6 ? "GWh" : "kWh"}/yr · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
     </div>
     <div class="card">
       <div class="kpi-label">Offers tendered</div>
@@ -510,10 +557,10 @@ function buildMarketPane() {
 const hasInc = !!inc;
 const hasMarket = !!(TENDER.market && (TENDER.market.power || TENDER.market.gas));
 
-const savingsPane = hasInc ? (buildSavingsKpis() + buildRecVsInc() + buildBars()) : "";
+const savingsPane = hasInc ? ((commission ? buildCommissionKpis() : buildSavingsKpis()) + buildRecVsInc() + buildBars()) : "";
 const portfolioPane =
-  buildPortfolioKpis()
-  + (!hasInc && fee ? buildFeeStandalone() : "")
+  (commission ? buildCommissionKpis() : buildPortfolioKpis())
+  + (!hasInc ? (commission ? buildCommission() : (fee ? buildFeeStandalone() : "")) : "")
   + (!hasInc ? buildBars() : "")
   + buildBreakdown()
   + buildSiteMatrix()
