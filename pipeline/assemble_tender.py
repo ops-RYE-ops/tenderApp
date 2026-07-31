@@ -274,6 +274,8 @@ def _build_rye_commission(meta):
         return meta["rye_commission"]
     if meta.get("commission_p_kwh_uplift") is not None:
         c = {"p_kwh_uplift": meta["commission_p_kwh_uplift"]}
+        if meta.get("commission_included") is not None:
+            c["included"] = bool(meta["commission_included"])
         if meta.get("commission_label") is not None:
             c["label"] = meta["commission_label"]
         return c

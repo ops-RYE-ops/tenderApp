@@ -452,19 +452,32 @@ def main(argv):
     if tender.get("rye_commission"):
         rc = tender["rye_commission"]
         uplift = float(rc.get("p_kwh_uplift") or 0)
+        included = bool(rc.get("included"))
         eac_total_comm = sum((s["eac"] or 0) for s in rec["sites"])
         comm_annual = uplift * eac_total_comm / 100
-        base_eff = rec["perKwh"]["effective"]
+        base_eff = rec["perKwh"]["effective"]   # the offer's quoted effective rate
         gross = incumbent["total"] - rec["total"] if incumbent else None
         n = len(all_mpxns)
+        if included:
+            # Commission is ALREADY in the quoted rate: the rate/spend already contain
+            # it, so nothing is added and the saving isn't reduced (no double-count).
+            rate_incl = base_eff
+            rate_excl = round(base_eff - uplift, 2) if base_eff is not None else None
+            net = gross
+        else:
+            # Commission is added ON TOP of the supplier rate.
+            rate_excl = base_eff
+            rate_incl = round(base_eff + uplift, 2) if base_eff is not None else None
+            net = (gross - comm_annual) if gross is not None else None
         commission = {
             "label": rc.get("label", "RYE commission"),
             "pKwhUplift": uplift,
+            "included": included,
             "annual": round(comm_annual, 2),
-            "baseEffective": base_eff,
-            "withUpliftEffective": round(base_eff + uplift, 2) if base_eff is not None else None,
-            "netSaving": round(gross - comm_annual, 2) if gross is not None else None,
-            "netSavingPerSite": round((gross - comm_annual) / n, 2) if gross is not None else None,
+            "rateExclCommission": rate_excl,
+            "rateInclCommission": rate_incl,
+            "netSaving": round(net, 2) if net is not None else None,
+            "netSavingPerSite": round(net / n, 2) if net is not None else None,
         }
         fee = None  # commission is charged instead of the fee
 
@@ -496,10 +509,12 @@ def main(argv):
     # fee control's current value.)
     if commission:
         n_sites = len(all_mpxns)
+        incl_txt = ("already included in the supplier rate" if commission["included"]
+                    else "added to the supplier rate")
         assumptions.append(
-            f"{commission['label']}: {commission['pKwhUplift']} p/kWh uplift on the supplier "
-            f"rate (£{round(commission['annual']):,}/yr across {n_sites} "
-            f"site{'' if n_sites == 1 else 's'}), shown with and without the uplift. RYE "
+            f"{commission['label']}: {commission['pKwhUplift']} p/kWh, {incl_txt} "
+            f"(£{round(commission['annual']):,}/yr across {n_sites} "
+            f"site{'' if n_sites == 1 else 's'}), shown with and without commission. RYE "
             "charges commission on this tender in place of a subscription fee."
         )
     assumptions.append(

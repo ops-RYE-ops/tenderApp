@@ -287,6 +287,10 @@ function buildSavingsKpis() {
 function buildRecVsInc() {
   const pk = (v, cls) => `<td class="${cls || ""}">${v == null ? "—" : Number(v).toFixed(2)}</td>`;
   const perSite = TENDER.sites.length || 1;
+  // The comparison already lists the offer's quoted effective rate; the extra
+  // commission row reveals the "other" rate (the one the quote doesn't state).
+  const cOther = commission ? (commission.included ? commission.rateExclCommission : commission.rateInclCommission) : null;
+  const cOtherLabel = commission && commission.included ? "excl." : "incl.";
   return `<section>
     <div class="section-label">Our recommendation — ${esc(rec.supplier)} · ${esc(rec.term)}</div>
     <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:14px" class="rec-grid">
@@ -312,7 +316,7 @@ function buildRecVsInc() {
         ${commission ? `
         <div class="kpi-label" style="margin-top:14px">Net ${commission.netSaving >= 0 ? "saving" : "increase"} after commission</div>
         <div class="kpi-value ${commission.netSaving >= 0 ? "pos" : "warn"}" style="font-size:26px;margin-top:6px">${gbp(Math.abs(commission.netSaving))}</div>
-        <div class="kpi-sub">RYE commission ${commission.pKwhUplift} p/kWh · ${gbp(commission.annual)}/yr</div>` : ""}
+        <div class="kpi-sub">RYE commission ${commission.pKwhUplift} p/kWh · ${gbp(commission.annual)}/yr${commission.included ? " · already in the rate" : ""}</div>` : ""}
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>Standardised comparison</th>
@@ -322,7 +326,7 @@ function buildRecVsInc() {
           <tr><td class="name">Mean unit rate (p/kWh)</td>${pk(inc.perKwh.unit)}${pk(rec.perKwh.unit, rec.perKwh.unit <= inc.perKwh.unit ? "best" : "")}</tr>
           <tr><td class="name">Mean non-commodity costs (p/kWh)</td>${pk(inc.perKwh.nonCommodity)}${pk(rec.perKwh.nonCommodity, rec.perKwh.nonCommodity <= inc.perKwh.nonCommodity ? "best" : "")}</tr>
           <tr><td class="name">Mean effective rate (p/kWh)</td>${pk(inc.perKwh.effective, "neg")}${pk(rec.perKwh.effective, rec.perKwh.effective <= inc.perKwh.effective ? "best" : "warn")}</tr>
-          ${commission ? `<tr><td class="name">Effective rate incl. RYE commission (p/kWh)</td><td>—</td><td class="total">${commission.withUpliftEffective == null ? "—" : commission.withUpliftEffective.toFixed(2)}</td></tr>` : ""}
+          ${commission ? `<tr><td class="name">Effective rate ${cOtherLabel} RYE commission (p/kWh)</td><td>—</td><td class="total">${cOther == null ? "—" : cOther.toFixed(2)}</td></tr>` : ""}
           <tr><td class="name">Forecasted annual spend</td><td>${gbp(inc.total)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total)}</td></tr>
           <tr><td class="name">Annual spend per site</td><td>${gbp(inc.total / perSite)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total / perSite)}</td></tr>
           <tr><td class="name">Forecasted annual saving</td><td></td><td class="${savings >= 0 ? "best" : "warn"}">${gbpSigned(rec.total - inc.total)}</td></tr>
@@ -355,7 +359,7 @@ function buildFeeStandalone() {
 
 /* ---- Commission headline KPIs (lead with the energy deal, not the commission) ---- */
 function buildCommissionKpis() {
-  const base = commission.baseEffective;
+  const base = commission.rateExclCommission;
   return `<section><div class="kpi-row">
     <div class="card accent-blue">
       <div class="kpi-label">Total consumption</div>
@@ -379,13 +383,17 @@ function buildCommissionKpis() {
 function buildCommission() {
   const c = commission;
   const rate = v => v == null ? "—" : Number(v).toFixed(2) + " p/kWh";
-  return `<section>
-    <div class="section-label">${esc(c.label)}</div>
-    <div class="table-wrap" style="max-width:560px"><table><tbody>
-      <tr><td class="name">Supplier all-in rate</td><td>${rate(c.baseEffective)}</td></tr>
+  const rows = c.included ? `
+      <tr><td class="name">All-in rate (incl. commission)</td><td class="total">${rate(c.rateInclCommission)}</td></tr>
+      <tr><td class="name">of which RYE commission · ${c.pKwhUplift} p/kWh</td><td>${gbp(c.annual)}/yr</td></tr>
+      <tr><td class="name">Rate excl. RYE commission</td><td>${rate(c.rateExclCommission)}</td></tr>`
+    : `
+      <tr><td class="name">Supplier all-in rate</td><td>${rate(c.rateExclCommission)}</td></tr>
       <tr><td class="name">RYE commission · ${c.pKwhUplift} p/kWh</td><td>${gbp(c.annual)}/yr</td></tr>
-      <tr><td class="name">All-in rate incl. commission</td><td class="total">${rate(c.withUpliftEffective)}</td></tr>
-    </tbody></table></div>
+      <tr><td class="name">All-in rate incl. commission</td><td class="total">${rate(c.rateInclCommission)}</td></tr>`;
+  return `<section>
+    <div class="section-label">${esc(c.label)}${c.included ? " — included in the supplier rate" : ""}</div>
+    <div class="table-wrap" style="max-width:560px"><table><tbody>${rows}</tbody></table></div>
   </section>`;
 }
 

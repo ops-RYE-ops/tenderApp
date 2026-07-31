@@ -513,9 +513,12 @@ publish/link/gate above). The build is functionally complete and live on Vercel 
    `test_publish.py`.
 
 6. ~~**Commission option instead of the RYE fee**~~ **DONE 2026-07-31** (see
-   Recently done). Founder model: commission = a **unit uplift (p/kWh)** on total
-   consumption, shown to the client as a single £/yr figure plus the unit rate with and
-   without the uplift.
+   Recently done). Commission = a **unit uplift (p/kWh)** on total consumption. Final
+   client-facing treatment: headline tiles lead with the energy deal (consumption /
+   blended rate excl. commission / total spend) and commission is a **line item** in
+   the breakdown, not a headline figure. Includes an **"already included in the supplier
+   rate" toggle** so a baked-in commission is shown as included (not added on top, and
+   the saving isn't reduced by it) — prevents double-counting.
 7. **Multiple suppliers in one tender** (gap — becomes pressing as tenders go
    multi-supplier). The data model already supports it (`tender.quotes[]`, each quote
    carries its own `supplier`), but the **wizard collects ONE supplier at step 1 and
@@ -526,6 +529,13 @@ publish/link/gate above). The build is functionally complete and live on Vercel 
    upload / map-review) so each quote carries its own supplier — which also makes the
    mapping cache key `(supplier, fingerprint)` correct per file. Phase-2-UI enhancement;
    no schema change.
+8. **Navigate/edit an existing tender in the wizard** (requested 2026-07-31). Today the
+   wizard is forward-only and there's no way to edit a saved tender — you start again.
+   Wanted: move freely back/forward between steps, and load a saved tender from the
+   register to edit (re-map, re-tick offers, change fee/commission) rather than rebuild.
+   Bigger Phase-2 UI/state piece (wizard state persistence + hydrate from a stored
+   tender). Pairs naturally with item 5 (register actions — which the founder
+   reconfirmed 2026-07-31, specifically deleting UNPUBLISHED tenders to cut clutter).
 
 **Recently done (2026-07-31):**
 - **Commission option (p/kWh uplift), instead of the flat fee — built end-to-end.**
