@@ -98,6 +98,9 @@
     "rye_fee": {
       "$ref": "#/$defs/rye_fee"
     },
+    "rye_commission": {
+      "$ref": "#/$defs/rye_commission"
+    },
     "charge_basis": {
       "$ref": "#/$defs/charge_basis",
       "description": "Tender-wide default charge bases. Overridden per quote by that quote's own charge_basis."
@@ -259,6 +262,16 @@
         "per_site_month": { "type": "number", "description": "Overrides the discount calc if given." },
         "annual": { "type": "number", "description": "Overrides per_site_month if given." },
         "label": { "type": "string", "description": "Client-facing fee label." }
+      }
+    },
+    "rye_commission": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "RYE's commission model: a per-kWh uplift added to the supplier rate, charged INSTEAD of the flat rye_fee (mutually exclusive — when both are present the dashboard uses commission).",
+      "required": ["p_kwh_uplift"],
+      "properties": {
+        "p_kwh_uplift": { "type": "number", "description": "Commission as a unit uplift, p/kWh, applied to total consumption." },
+        "label": { "type": "string", "description": "Client-facing commission label." }
       }
     },
     "extractResult": {

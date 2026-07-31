@@ -121,12 +121,12 @@
 
     <div class="siteref">
       <div>
-        <span class="label">Site reference / incumbent (sites.csv — optional)</span>
-        <div class="siteref-sub">One file, two jobs: overrides site names + EAC/kVA here, and provides the incumbent contract at the assemble step. Leave empty to use the quote's own figures with no incumbent baseline.</div>
+        <span class="label">Site reference / incumbent (sites_*.csv — optional)</span>
+        <div class="siteref-sub">One file, two jobs: overrides site names + EAC/kVA here, and provides the incumbent contract at the assemble step. Any dated Retool export works as-is (e.g. sites_2026-07-31_122851.csv) — no need to rename it. Leave empty to use the quote's own figures with no incumbent baseline.</div>
       </div>
       <div class="siteref-right">
         <span id="siteref-name" class="mono siteref-file"></span>
-        <button class="btn-secondary" id="btn-pick-siteref">Choose sites.csv</button>
+        <button class="btn-secondary" id="btn-pick-siteref">Choose site reference</button>
         <button class="btn-ghost hidden" id="btn-clear-siteref">Remove</button>
         <input type="file" id="in-siteref" accept=".csv" class="hidden">
       </div>
@@ -154,6 +154,19 @@
 
     <div class="row">
       <div class="field">
+        <span class="label">How RYE is paid</span>
+        <select id="in-charge-model">
+          <option value="fee">RYE fee (flat subscription)</option>
+          <option value="commission">Commission (p/kWh uplift)</option>
+        </select>
+      </div>
+      <div class="field">
+        <span class="label">Expiry (link validity — optional)</span>
+        <input type="date" id="in-expires">
+      </div>
+    </div>
+    <div class="row" id="fee-fields">
+      <div class="field">
         <span class="label">RYE fee — list price (£/site/month)</span>
         <input type="number" id="in-fee-list" value="90" step="1" min="0">
       </div>
@@ -161,9 +174,12 @@
         <span class="label">RYE fee — discount (%)</span>
         <input type="number" id="in-fee-discount" value="80" step="1" min="0" max="100">
       </div>
+    </div>
+    <div class="row hidden" id="commission-fields">
       <div class="field">
-        <span class="label">Expiry (link validity — optional)</span>
-        <input type="date" id="in-expires">
+        <span class="label">Commission — unit uplift (p/kWh)</span>
+        <input type="number" id="in-commission-uplift" value="0.30" step="0.01" min="0">
+        <div class="siteref-sub">Added to the supplier rate; the client sees the rate with and without it, plus the annual commission.</div>
       </div>
     </div>
 

@@ -278,7 +278,7 @@ def render_tender(tender, template_path=None):
     try:
         cfg = {k: tender[k] for k in (
             "client_name", "tender_label", "utility", "day_split", "weekend_split",
-            "charge_basis", "rye_fee", "recommended", "notes", "expires_at",
+            "charge_basis", "rye_fee", "rye_commission", "recommended", "notes", "expires_at",
         ) if k in tender}
 
         # The client dashboard shows only the FEATURED offers (up to 2, chosen at
@@ -445,6 +445,29 @@ def main(argv):
             "netSavingPerSite": round((gross - annual) / n, 2) if gross is not None else None,
         }
 
+    # Optional RYE COMMISSION block -> a per-kWh uplift charged INSTEAD of the fee.
+    # The client sees a single commission figure plus the unit rate with and without
+    # the uplift. Mutually exclusive with the fee (commission wins if both slipped in).
+    commission = None
+    if tender.get("rye_commission"):
+        rc = tender["rye_commission"]
+        uplift = float(rc.get("p_kwh_uplift") or 0)
+        eac_total_comm = sum((s["eac"] or 0) for s in rec["sites"])
+        comm_annual = uplift * eac_total_comm / 100
+        base_eff = rec["perKwh"]["effective"]
+        gross = incumbent["total"] - rec["total"] if incumbent else None
+        n = len(all_mpxns)
+        commission = {
+            "label": rc.get("label", "RYE commission"),
+            "pKwhUplift": uplift,
+            "annual": round(comm_annual, 2),
+            "baseEffective": base_eff,
+            "withUpliftEffective": round(base_eff + uplift, 2) if base_eff is not None else None,
+            "netSaving": round(gross - comm_annual, 2) if gross is not None else None,
+            "netSavingPerSite": round((gross - comm_annual) / n, 2) if gross is not None else None,
+        }
+        fee = None  # commission is charged instead of the fee
+
     # --- Assumption footnotes (auto-built, always disclosed) ----------------
     assumptions = []
     if any(s["splitUsed"] for o in offers + ([incumbent] if incumbent else []) for s in o["sites"]):
@@ -471,6 +494,14 @@ def main(argv):
     )
     # (Fee footnote is rendered live by the template so it always matches the
     # fee control's current value.)
+    if commission:
+        n_sites = len(all_mpxns)
+        assumptions.append(
+            f"{commission['label']}: {commission['pKwhUplift']} p/kWh uplift on the supplier "
+            f"rate (£{round(commission['annual']):,}/yr across {n_sites} "
+            f"site{'' if n_sites == 1 else 's'}), shown with and without the uplift. RYE "
+            "charges commission on this tender in place of a subscription fee."
+        )
     assumptions.append(
         "All figures are annual estimates from quoted rates and current estimated "
         "consumption (EAC/AQ), excluding VAT and CCL. Actual billing will vary with usage."
@@ -507,6 +538,7 @@ def main(argv):
         "assumptions": assumptions,
         "globalWarnings": sorted(set(global_warnings)),
         "market": market_data,
+        "commission": commission,
     }
 
     template = template_path.read_text(encoding="utf-8")
