@@ -218,6 +218,12 @@ const gbp = v => "£" + Math.round(v).toLocaleString("en-GB");
 const gbpSigned = v => (v > 0 ? "+" : v < 0 ? "−" : "") + "£" + Math.round(Math.abs(v)).toLocaleString("en-GB");
 const num = v => v == null ? "—" : Number(v).toLocaleString("en-GB", { maximumFractionDigits: 3 });
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+/* Portfolio size for the title byline: GWh for large portfolios, MWh for most,
+   kWh for a single small meter. Annual consumption, so the unit is always /yr. */
+const eacHeadline = kwh =>
+  kwh >= 1e6 ? (kwh / 1e6).toFixed(2) + " GWh"
+    : kwh >= 1e3 ? Math.round(kwh / 1e3).toLocaleString("en-GB") + " MWh"
+      : Math.round(kwh).toLocaleString("en-GB") + " kWh";
 
 const allOffers = (TENDER.incumbent ? [TENDER.incumbent] : []).concat(TENDER.offers);
 const rec = TENDER.offers.find(o => o.id === (TENDER.recommendedId || TENDER.bestId)) || TENDER.offers[0];
@@ -241,7 +247,7 @@ function buildHero() {
     <div class="section-label">${esc(TENDER.utility || "energy")} tender · ${TENDER.offers.length} offers · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
     <h1>${esc(TENDER.label)}</h1>
     <div class="subtitle">Prepared for ${esc(TENDER.client)} by RYE.
-      <span class="mono">Standardised annual costs — like-for-like across all offers.</span></div>
+      <span class="mono">${totalEac > 0 ? `${eacHeadline(totalEac)} tender. ` : ""}Standardised annual costs — like-for-like across all offers.</span></div>
   </header>`;
 }
 
@@ -251,39 +257,12 @@ function buildWarnings() {
     `<div class="notice"><span class="chip warning">note</span>${esc(w)}</div>`).join("") + `</section>`;
 }
 
-/* ---- Savings: headline KPIs ---- */
-function buildSavingsKpis() {
-  const pct = (Math.abs(savings) / inc.total * 100).toFixed(1);
-  return `<section><div class="kpi-row">
-    <div class="card accent-blue">
-      <div class="kpi-label">Total consumption</div>
-      <div class="kpi-value">${totalEac >= 1e6 ? (totalEac / 1e6).toFixed(2) : num(totalEac)}</div>
-      <div class="kpi-sub">${totalEac >= 1e6 ? "GWh" : "kWh"}/yr · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
-    </div>
-    <div class="card accent-green">
-      <div class="kpi-label">Estimated annual spend</div>
-      <div class="kpi-value">${gbp(rec.total)}</div>
-      <div class="kpi-sub">${esc(rec.supplier)} · ${esc(rec.term)}</div>
-    </div>
-    <div class="card ${savings >= 0 ? "accent-green" : "accent-amber"}">
-      <div class="kpi-label">Est. annual ${savings >= 0 ? "saving" : "increase"} vs current</div>
-      <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}">${gbp(Math.abs(savings))}</div>
-      <div class="kpi-sub">vs ${esc(inc.supplier)}</div>
-    </div>
-    <div class="card accent-blue">
-      <div class="kpi-label">Blended unit rate</div>
-      <div class="kpi-value">${rec.perKwh.effective == null ? "—" : rec.perKwh.effective.toFixed(2)}</div>
-      <div class="kpi-sub">p/kWh all-in · recommended</div>
-    </div>
-    <div class="card ${savings >= 0 ? "accent-green" : "accent-amber"}">
-      <div class="kpi-label">${savings >= 0 ? "Saving" : "Increase"} vs current</div>
-      <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}">${pct}%</div>
-      <div class="kpi-sub">${savings >= 0 ? "lower than" : "higher than"} current contract</div>
-    </div>
-  </div></section>`;
-}
+/* NB: the header KPI rows (total consumption / blended unit rate / estimated
+   spend, and their fee and portfolio variants) were removed deliberately — every
+   figure they carried is in the standardised comparison table below, and the
+   portfolio size now sits in the title byline. Don't reinstate them. */
 
-/* ---- Savings: recommendation vs incumbent ---- */
+/* ---- Summary: recommendation vs baseline ---- */
 function buildRecVsInc() {
   const pk = (v, cls) => `<td class="${cls || ""}">${v == null ? "—" : Number(v).toFixed(2)}</td>`;
   const perSite = TENDER.sites.length || 1;
@@ -313,10 +292,11 @@ function buildRecVsInc() {
             <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/site/month · <span id="fee-disc"></span></span>
           </div>
         </div>` : ""}
-        ${commission ? `
+        ${commission ? (commission.included ? `
+        <div class="kpi-sub" style="margin-top:14px">RYE commission ${commission.pKwhUplift} p/kWh · ${gbp(commission.annual)}/yr · already in the rate above</div>` : `
         <div class="kpi-label" style="margin-top:14px">Net ${commission.netSaving >= 0 ? "saving" : "increase"} after commission</div>
         <div class="kpi-value ${commission.netSaving >= 0 ? "pos" : "warn"}" style="font-size:26px;margin-top:6px">${gbp(Math.abs(commission.netSaving))}</div>
-        <div class="kpi-sub">RYE commission ${commission.pKwhUplift} p/kWh · ${gbp(commission.annual)}/yr${commission.included ? " · already in the rate" : ""}</div>` : ""}
+        <div class="kpi-sub">RYE commission ${commission.pKwhUplift} p/kWh · ${gbp(commission.annual)}/yr</div>`) : ""}
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>Standardised comparison</th>
@@ -357,28 +337,6 @@ function buildFeeStandalone() {
   </section>`;
 }
 
-/* ---- Commission headline KPIs (lead with the energy deal, not the commission) ---- */
-function buildCommissionKpis() {
-  const base = commission.rateExclCommission;
-  return `<section><div class="kpi-row">
-    <div class="card accent-blue">
-      <div class="kpi-label">Total consumption</div>
-      <div class="kpi-value">${totalEac >= 1e6 ? (totalEac / 1e6).toFixed(2) : num(totalEac)}</div>
-      <div class="kpi-sub">${totalEac >= 1e6 ? "GWh" : "kWh"}/yr · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
-    </div>
-    <div class="card accent-blue">
-      <div class="kpi-label">Blended unit rate</div>
-      <div class="kpi-value">${base == null ? "—" : base.toFixed(2)}</div>
-      <div class="kpi-sub">p/kWh all-in · excl. commission</div>
-    </div>
-    <div class="card accent-green">
-      <div class="kpi-label">Total estimated spend</div>
-      <div class="kpi-value">${gbp(rec.total)}</div>
-      <div class="kpi-sub">${esc(rec.supplier)} · ${esc(rec.term)}</div>
-    </div>
-  </div></section>`;
-}
-
 /* ---- Commission rate build-up (line items; shown when there's no incumbent table) ---- */
 function buildCommission() {
   const c = commission;
@@ -395,27 +353,6 @@ function buildCommission() {
     <div class="section-label">${esc(c.label)}${c.included ? " — included in the supplier rate" : ""}</div>
     <div class="table-wrap" style="max-width:560px"><table><tbody>${rows}</tbody></table></div>
   </section>`;
-}
-
-/* ---- Portfolio: context KPIs ---- */
-function buildPortfolioKpis() {
-  return `<section><div class="kpi-row">
-    <div class="card accent-blue">
-      <div class="kpi-label">Total consumption</div>
-      <div class="kpi-value">${totalEac >= 1e6 ? (totalEac / 1e6).toFixed(2) : num(totalEac)}</div>
-      <div class="kpi-sub">${totalEac >= 1e6 ? "GWh" : "kWh"}/yr · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
-    </div>
-    <div class="card">
-      <div class="kpi-label">Offers tendered</div>
-      <div class="kpi-value">${TENDER.offers.length}</div>
-      <div class="kpi-sub">compared like-for-like</div>
-    </div>
-    <div class="card accent-green">
-      <div class="kpi-label">Recommended offer</div>
-      <div class="kpi-value">${gbp(rec.total)}</div>
-      <div class="kpi-sub">${esc(rec.supplier)} · ${esc(rec.term)}</div>
-    </div>
-  </div></section>`;
 }
 
 /* ---- Cost comparison bars ---- */
@@ -565,10 +502,9 @@ function buildMarketPane() {
 const hasInc = !!inc;
 const hasMarket = !!(TENDER.market && (TENDER.market.power || TENDER.market.gas));
 
-const savingsPane = hasInc ? ((commission ? buildCommissionKpis() : buildSavingsKpis()) + buildRecVsInc() + buildBars()) : "";
+const savingsPane = hasInc ? (buildRecVsInc() + buildBars()) : "";
 const portfolioPane =
-  (commission ? buildCommissionKpis() : buildPortfolioKpis())
-  + (!hasInc ? (commission ? buildCommission() : (fee ? buildFeeStandalone() : "")) : "")
+  (!hasInc ? (commission ? buildCommission() : (fee ? buildFeeStandalone() : "")) : "")
   + (!hasInc ? buildBars() : "")
   + buildBreakdown()
   + buildSiteMatrix()
@@ -576,9 +512,9 @@ const portfolioPane =
 const marketPane = hasMarket ? buildMarketPane() : "";
 
 const tabs = [];
-if (hasInc) tabs.push(["savings", "Savings"]);
+if (hasInc) tabs.push(["savings", "Summary"]);
 tabs.push(["portfolio", "Portfolio"]);
-if (hasMarket) tabs.push(["market", "Market context"]);
+if (hasMarket) tabs.push(["market", "Market Review"]);
 const defaultTab = hasInc ? "savings" : "portfolio";
 
 let html = buildHero() + buildWarnings();
@@ -593,10 +529,16 @@ html += buildFooter();
 
 function buildFooter() {
   const minDaysNote = "";
+  /* The small print has to match how RYE is actually charging on this tender.
+     The flat-fee / no-commission claim is false on a commission tender, and it
+     would sit directly under a Basis of comparison line stating the commission. */
+  const chargingNote = fee
+    ? "independent, flat-fee energy brokerage — we take no supplier commission"
+    : "independent energy brokerage · we work for you, not the supplier";
   return `<footer>
     <div class="section-label">Basis of comparison</div>
     <ul class="assumptions">${TENDER.assumptions.map(a => `<li>${esc(a)}</li>`).join("")}${fee ? `<li id="assump-fee"></li>` : ""}</ul>
-    <div class="prepared">Prepared by RYE · independent, flat-fee energy brokerage — we take no supplier commission ·
+    <div class="prepared">Prepared by RYE · ${chargingNote} ·
       generated ${TENDER.generated}</div>
   </footer>`;
 }
