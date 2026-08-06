@@ -146,6 +146,63 @@ def incumbent_from_sites_csv(path, client_name=None, mpxns=None, dbl=None):
     return {"supplier": supplier, "lines": lines}
 
 
+BENCHMARK_SUPPLIER = "Market benchmark"
+
+
+def incumbent_from_benchmark(mpxns, unit_rate, standing_charge=None,
+                             as_at=None, source=None, supplier=None):
+    """Build a BENCHMARK baseline block from one operator-entered rate card.
+
+    For the common-enough case where RYE has no incumbent rates for a client but
+    still needs to show a saving: the operator types a market-average unit rate
+    (and optionally a standing charge), and that single card is applied to every
+    meter in the tender. The result is the same shape as
+    `incumbent_from_sites_csv`, so it flows through the cost engine, the
+    comparison table and the savings maths untouched — the only difference is
+    `kind: "benchmark"`, which the dashboard uses to label the baseline honestly
+    and to invite the client to send their real rates.
+
+    Deliberately coarse: two numbers, not a full rate card. A benchmark is
+    indicative, and inventing an 'average' capacity or network charge per meter
+    would dress up a guess as precision. Non-commodity costs are broadly similar
+    between suppliers, so they largely cancel out of the saving anyway.
+
+    Returns None when no usable unit rate was given (mirrors
+    incumbent_from_sites_csv returning None for an unknown incumbent).
+    """
+    ur = parse_num(unit_rate)
+    if ur is None:
+        return None
+    sc = parse_num(standing_charge)
+
+    keys = sorted({_norm_mpxn(m) for m in (mpxns or []) if _norm_mpxn(m)})
+    if not keys:
+        return None
+
+    lines = []
+    for m in keys:
+        # Every rate field present (null where unset) so a benchmark line is
+        # shaped exactly like a sites.csv line — one line contract, no drift.
+        line = {"mpxn": m}
+        line.update({f: None for f in _INCUMBENT_RATE_FIELDS})
+        line["unitRate"] = ur
+        if sc is not None:
+            line["standingCharge"] = sc
+        lines.append(line)
+
+    block = {
+        "supplier": (supplier or "").strip() or BENCHMARK_SUPPLIER,
+        "term": "benchmark",
+        "kind": "benchmark",
+        "lines": lines,
+    }
+    if as_at:
+        block["as_at"] = str(as_at).strip()
+    if source:
+        block["source"] = str(source).strip()
+    return block
+
+
 def apply_site_reference(sites, csv_path, dbl=None):
     """Overlay RYE's sites.csv (site name + authoritative EAC/kVA) onto merged sites.
 

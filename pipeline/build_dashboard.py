@@ -307,6 +307,11 @@ def render_tender(tender, template_path=None):
                          "term": inc.get("term", "current"), "csv": inc_csv}
             if inc.get("charge_basis"):
                 inc_entry["charge_basis"] = inc["charge_basis"]
+            # Carry baseline provenance through so a benchmark baseline is never
+            # presented to the client as a real current contract.
+            for k in ("kind", "as_at", "source"):
+                if inc.get(k):
+                    inc_entry[k] = inc[k]
             cfg["incumbent"] = inc_entry
 
         cfg_path = os.path.join(work, "tender.json")
@@ -377,6 +382,18 @@ def main(argv):
         inc.setdefault("supplier", "Current contract")
         inc.setdefault("term", "current")
         incumbent = compute_offer(inc, tender, incumbent=True)
+
+    # What the savings baseline actually IS — a real contract or a typed market
+    # average. Drives the dashboard's labelling; absent kind means incumbent, so
+    # every tender assembled before benchmarks existed keeps its old wording.
+    baseline = None
+    if incumbent:
+        inc_cfg = tender["incumbent"]
+        baseline = {
+            "kind": inc_cfg.get("kind") or "incumbent",
+            "asAt": inc_cfg.get("as_at"),
+            "source": inc_cfg.get("source"),
+        }
 
     # --- Site universe & comparability -------------------------------------
     site_index = {}  # mpxn -> {name, eac}
@@ -517,6 +534,15 @@ def main(argv):
             f"site{'' if n_sites == 1 else 's'}), shown with and without commission. RYE "
             "charges commission on this tender in place of a subscription fee."
         )
+    # A benchmark baseline has to say so in the small print as well as on the
+    # page — the saving is against a market average, not against a real bill.
+    if baseline and baseline["kind"] == "benchmark":
+        who = tender.get("client_name") or "the client"
+        assumptions.append(
+            f"Baseline is a market benchmark, not {who}'s actual contract — no incumbent rates "
+            "were available. Savings shown are indicative and will change once actual rates "
+            "are supplied."
+        )
     assumptions.append(
         "All figures are annual estimates from quoted rates and current estimated "
         "consumption (EAC/AQ), excluding VAT and CCL. Actual billing will vary with usage."
@@ -554,6 +580,7 @@ def main(argv):
         "globalWarnings": sorted(set(global_warnings)),
         "market": market_data,
         "commission": commission,
+        "baseline": baseline,
     }
 
     template = template_path.read_text(encoding="utf-8")

@@ -1,32 +1,157 @@
 {
-  "_note": "Market snapshot taken 2026-07-30 from Rory's ICE/Tradingeconomics screenshots. Power spot (122.44 GBP/MWh) and the gas futures curve/3-month series are read from source. The power `series` (1Y spot) and `range5y` are traced from the charts (shape-accurate, not tick-exact). Refresh by hand and redeploy; delete this file to hide the Market context tab.",
-  "updated": "2026-07-30",
-  "headline": "power back up to £122/MWh; gas climbing again after a brief dip off a two-year high",
-  "commentary": "UK power has pushed back up to £122.44/MWh, up 4.47% on the day. After gas set a roughly two-year high in late July and eased for a couple of days, prices have turned higher again — front-month NBP gas is back around 142 p/therm and power has followed it up. The forward curve stays elevated through the winter (gas contracts hold near 148–149 p/therm into Q1 2027) and only really softens from summer 2027 (Q3 27 around 93 p/therm). The recent dip proved brief and the market is climbing off it — which is the case for fixing the energy block for the term rather than riding a curve that keeps grinding higher.",
-  "power": {
-    "unit": "£/MWh",
-    "spotNow": 122.44,
-    "series": [80, 77, 80, 82, 84, 85, 84, 86, 87, 89, 92, 107, 74, 70, 73, 111, 96, 90, 100, 95, 90, 92, 100, 113, 122, 127, 117, 122.44],
-    "seriesLabels": ["Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"],
-    "range5y": {
-      "min": 70,
-      "max": 220,
-      "series": [160, 190, 210, 175, 120, 100, 108, 130, 85, 70, 72, 84, 80, 86, 88, 92, 96, 104, 110, 122.44],
-      "yearLabels": ["2022", "2023", "2024", "2025", "2026"]
-    }
-  },
-  "gas": {
-    "unit": "p/therm",
-    "spotNow": 142.10,
-    "note": "NBP gas futures eased for a couple of days off a two-year high, but have started climbing again; the curve stays elevated through winter, only softening by summer 2027.",
-    "series": [110, 111, 108, 106, 112, 118, 123, 122, 126, 120, 113, 108, 101, 98, 97, 101, 100, 104, 111, 120, 130, 140, 149, 152, 141, 142.10],
-    "contracts": [
-      ["AUG 26", 142.10],
-      ["NOV 26", 148.31],
-      ["DEC 26", 148.10],
-      ["JAN 27", 149.10],
-      ["WINTER 26", 143.50],
-      ["Q3 27", 92.55]
-    ]
+ "_note": "Market snapshot taken 2026-08-06 from Rory's ICE / Trading Economics screenshots. Power spot (110.33 GBP/MWh, -4.89% on the day) and the NBP gas curve + 3-month series are read from source. The power 1Y `series` and `range5y` are traced from the charts (shape-accurate, not tick-exact). Refresh by hand and redeploy; delete this file to hide the Market Review tab.",
+ "updated": "2026-08-06",
+ "headline": "power down 10% on the week to £110/MWh, off the late-July high",
+ "commentary": "The market has turned over this week. UK power spot is £110.33/MWh, down 4.9% on the day and down about 10% from £122 a week ago. Front-month NBP gas has followed it down to 133 p/therm from 142, though it did bounce 4% today. The more important move is further out the curve: Nov 26, Dec 26 and Jan 27 have each shed 10–12 p/therm in a week, so Jan 27 now prices at 137.5 p/therm against 149.1 a week ago and Winter 26 sits at 133.3 against 143.5. That is the winter risk premium compressing by roughly 8% — the part of the curve that actually sets a renewal price. For anyone renewing into this winter it is a materially better entry than last week. Today's 4% bounce is the reminder that these windows close as quickly as they open: worth fixing the energy block where the term suits rather than waiting for a lower low.",
+ "power": {
+  "unit": "£/MWh",
+  "spotNow": 110.33,
+  "series": [
+   101,
+   103.5,
+   103,
+   103,
+   105,
+   102,
+   104,
+   103.5,
+   93,
+   92.5,
+   93.5,
+   91.5,
+   94.5,
+   92,
+   91,
+   90.3,
+   91,
+   98.3,
+   95.5,
+   93,
+   96.7,
+   102,
+   108,
+   115,
+   120.5,
+   126.7,
+   120,
+   110.33
+  ],
+  "seriesLabels": [
+   "Aug",
+   "Sep",
+   "Oct",
+   "Nov",
+   "Dec",
+   "Jan",
+   "Feb",
+   "Mar",
+   "Apr",
+   "May",
+   "Jun",
+   "Jul",
+   "Aug"
+  ],
+  "range5y": {
+   "min": 70,
+   "max": 220,
+   "series": [
+    160,
+    190,
+    210,
+    175,
+    120,
+    100,
+    108,
+    130,
+    85,
+    70,
+    72,
+    84,
+    80,
+    86,
+    88,
+    92,
+    96,
+    104,
+    122,
+    110.33
+   ],
+   "yearLabels": [
+    "2022",
+    "2023",
+    "2024",
+    "2025",
+    "2026"
+   ]
   }
+ },
+ "gas": {
+  "unit": "p/therm",
+  "spotNow": 133.1,
+  "note": "NBP front-month is 133.1 p/therm, up 3.95% on the day but down from 142 a week ago and well off the late-July high near 155. The winter curve has come down with it.",
+  "series": [
+   107,
+   112,
+   116,
+   123,
+   127,
+   123,
+   119,
+   114,
+   119,
+   122,
+   121,
+   115,
+   102,
+   99,
+   101,
+   98,
+   104,
+   107,
+   106,
+   122,
+   132,
+   141,
+   152,
+   155,
+   142,
+   144,
+   138,
+   133.1
+  ],
+  "contracts": [
+   [
+    "SEP 26",
+    133.1
+   ],
+   [
+    "OCT 26",
+    133.27
+   ],
+   [
+    "NOV 26",
+    136.8
+   ],
+   [
+    "DEC 26",
+    137.99
+   ],
+   [
+    "JAN 27",
+    137.5
+   ],
+   [
+    "FEB 27",
+    135.0
+   ],
+   [
+    "WINTER 26",
+    133.3
+   ],
+   [
+    "Q1 27",
+    131.0
+   ]
+  ]
+ }
 }

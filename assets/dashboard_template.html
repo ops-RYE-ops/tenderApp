@@ -231,6 +231,13 @@ const fee = TENDER.fee;
 const commission = TENDER.commission;
 const inc = TENDER.incumbent;
 const savings = inc ? inc.total - rec.total : null;
+/* Is the baseline the client's real contract, or a typed market average? Every
+   label that says "current" has to soften to "benchmark" when it's the latter —
+   a benchmark saving presented as a contract saving is a promise we can't keep.
+   Absent baseline means a tender assembled before benchmarks existed: incumbent. */
+const baseline = TENDER.baseline || { kind: "incumbent" };
+const isBenchmark = baseline.kind === "benchmark";
+const baseLabel = isBenchmark ? "Market benchmark" : "Current";
 const totalEac = TENDER.sites.reduce((a, s) => a + (s.eac || 0), 0);
 const comps = TENDER.components;
 
@@ -262,6 +269,20 @@ function buildWarnings() {
    figure they carried is in the standardised comparison table below, and the
    portfolio size now sits in the title byline. Don't reinstate them. */
 
+/* ---- Summary: benchmark disclosure ----
+   Sits ABOVE the recommendation so the client reads what the saving is measured
+   against before they read the number itself. Doubles as the ask: the fastest way
+   to turn an indicative saving into a real one is for them to send their rates. */
+function buildBenchmarkNotice() {
+  if (!isBenchmark) return "";
+  return `<section><div class="notice">
+    <span class="chip warning">benchmark</span>
+    <b>Benchmarked, not billed.</b> We don't hold your current rates, so the figures below compare
+    our offers against UK market average costs — indicative only, not your actual contract.
+    Send us your latest bill or contract and we'll rebuild this against what you're really paying.
+  </div></section>`;
+}
+
 /* ---- Summary: recommendation vs baseline ---- */
 function buildRecVsInc() {
   const pk = (v, cls) => `<td class="${cls || ""}">${v == null ? "—" : Number(v).toFixed(2)}</td>`;
@@ -277,7 +298,7 @@ function buildRecVsInc() {
         <span class="chip success">recommended</span>
         <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-top:12px">${esc(rec.supplier)}</div>
         <div class="kpi-sub">${esc(rec.term)} fixed · covers all ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
-        <div class="kpi-label" style="margin-top:18px">Forecasted annual ${savings >= 0 ? "saving" : "increase"}</div>
+        <div class="kpi-label" style="margin-top:18px">${isBenchmark ? "Indicative" : "Forecasted"} annual ${savings >= 0 ? "saving" : "increase"}</div>
         <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}" style="font-size:40px;margin-top:8px">${gbp(Math.abs(savings))}</div>
         <div class="kpi-sub">${(Math.abs(savings) / inc.total * 100).toFixed(1)}% vs ${esc(inc.supplier)}</div>
         ${fee && fee.netSaving != null ? `
@@ -300,7 +321,7 @@ function buildRecVsInc() {
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>Standardised comparison</th>
-          <th>Current</th>
+          <th>${baseLabel}</th>
           <th>${esc(rec.supplier)} · ${esc(rec.term)}</th></tr></thead>
         <tbody>
           <tr><td class="name">Mean unit rate (p/kWh)</td>${pk(inc.perKwh.unit)}${pk(rec.perKwh.unit, rec.perKwh.unit <= inc.perKwh.unit ? "best" : "")}</tr>
@@ -309,7 +330,7 @@ function buildRecVsInc() {
           ${commission ? `<tr><td class="name">Effective rate ${cOtherLabel} RYE commission (p/kWh)</td><td>—</td><td class="total">${cOther == null ? "—" : cOther.toFixed(2)}</td></tr>` : ""}
           <tr><td class="name">Forecasted annual spend</td><td>${gbp(inc.total)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total)}</td></tr>
           <tr><td class="name">Annual spend per site</td><td>${gbp(inc.total / perSite)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total / perSite)}</td></tr>
-          <tr><td class="name">Forecasted annual saving</td><td></td><td class="${savings >= 0 ? "best" : "warn"}">${gbpSigned(rec.total - inc.total)}</td></tr>
+          <tr><td class="name">${isBenchmark ? "Indicative" : "Forecasted"} annual saving</td><td></td><td class="${savings >= 0 ? "best" : "warn"}">${gbpSigned(rec.total - inc.total)}</td></tr>
         </tbody>
       </table></div>
     </div>
@@ -371,10 +392,10 @@ function buildBars() {
     allOffers.slice().sort((a, b) => a.total - b.total).map((o, i) => {
       const fill = o.isIncumbent ? "var(--rye-amber-fill)"
         : o.id === rec.id ? "var(--rye-green-fill)" : "rgba(237,237,237,0.7)";
-      const chip = o.isIncumbent ? `<span class="chip warning">current</span>`
+      const chip = o.isIncumbent ? `<span class="chip warning">${isBenchmark ? "benchmark" : "current"}</span>`
         : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
       return `<div class="bar-row" data-cat="${esc(o.category || 'other')}">
-        <div class="bar-name">${esc(o.supplier)}<span class="term">${esc(o.term)}</span></div>
+        <div class="bar-name">${esc(o.supplier)}${o.isIncumbent && isBenchmark ? "" : `<span class="term">${esc(o.term)}</span>`}</div>
         <div class="bar-track"><div class="bar-fill" style="width:${(o.total / maxTotal * 100).toFixed(1)}%;background:${fill};animation-delay:${i * 60}ms"></div></div>
         <div class="bar-val">${gbp(o.total)} ${chip}</div>
       </div>`;
@@ -393,7 +414,7 @@ function buildBreakdown() {
       const delta = (inc && !o.isIncumbent)
         ? `<td class="${o.deltaVsIncumbent <= 0 ? "best" : ""}">${gbpSigned(o.deltaVsIncumbent)}</td>`
         : (inc ? "<td>—</td>" : "");
-      const chip = o.isIncumbent ? `<span class="chip warning">current</span>`
+      const chip = o.isIncumbent ? `<span class="chip warning">${isBenchmark ? "benchmark" : "current"}</span>`
         : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
       return `<tr class="${o.isIncumbent ? "incumbent-row" : ""}">
         <td class="name">${esc(o.supplier)}<span class="sub">${esc(o.term)}</span></td>` +
@@ -412,7 +433,7 @@ function buildSiteMatrix() {
     <div class="section-label">Site-by-site annual cost (£/year)</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Site</th><th>EAC kWh</th>` +
-      allOffers.map(o => `<th>${o.isIncumbent ? "Current" : esc(o.supplier) + "<br>" + esc(o.term)}</th>`).join("") +
+      allOffers.map(o => `<th>${o.isIncumbent ? baseLabel : esc(o.supplier) + "<br>" + esc(o.term)}</th>`).join("") +
       `</tr></thead><tbody>` +
     TENDER.sites.map(site => {
       const cells = allOffers.map(o => byId[o.id][site.mpxn]);
@@ -440,7 +461,7 @@ function buildRateBooks() {
           o.warnings.map(w => `<div><span class="chip warning">note</span>${esc(w)}</div>`).join("") + `</div>` : "";
       return `<details>
         <summary><span class="caret">▶</span>${esc(o.supplier)}
-          <span class="chip ${o.isIncumbent ? "warning" : "neutral"}">${esc(o.isIncumbent ? "current" : o.term)}</span>
+          <span class="chip ${o.isIncumbent ? "warning" : "neutral"}">${esc(o.isIncumbent ? (isBenchmark ? "benchmark" : "current") : o.term)}</span>
           <span style="margin-left:auto" class="chip neutral">${gbp(o.total)}/yr</span></summary>
         ${warn}
         <div class="table-wrap"><table>
@@ -502,7 +523,7 @@ function buildMarketPane() {
 const hasInc = !!inc;
 const hasMarket = !!(TENDER.market && (TENDER.market.power || TENDER.market.gas));
 
-const savingsPane = hasInc ? (buildRecVsInc() + buildBars()) : "";
+const savingsPane = hasInc ? (buildBenchmarkNotice() + buildRecVsInc() + buildBars()) : "";
 const portfolioPane =
   (!hasInc ? (commission ? buildCommission() : (fee ? buildFeeStandalone() : "")) : "")
   + (!hasInc ? buildBars() : "")
