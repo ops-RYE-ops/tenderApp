@@ -34,11 +34,19 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-07-20, merged):** the client dashboard was restructured into
-three tabs — **Savings / Portfolio / Market context** (a new static market snapshot
-feeds the Market tab), and a **mapping-cache fix** stopped re-dated re-tenders of the
-same supplier template from crashing at extract. Both are detailed in their own
-sections below.
+**Latest session (2026-08-06, on branch `feat/benchmark-baseline`, PR open, tested on
+the branch preview against the live DB):** a client-dashboard presentation pass (tabs
+renamed **Summary / Portfolio / Market Review**, all three header KPI rows removed, EAC
+moved into the title byline, the duplicated commission figure dropped, small print now
+matches how RYE is charging), a new **benchmark baseline** so a tender with no incumbent
+rates can still show a saving, and a **market snapshot refresh to 6 Aug 2026**. Detailed
+in its own section below.
+
+**Previous session (2026-07-20, merged):** the client dashboard was restructured into
+three tabs — then named *Savings / Portfolio / Market context*, renamed 2026-08-06 (a
+static market snapshot feeds the Market tab), and a **mapping-cache fix** stopped
+re-dated re-tenders of the same supplier template from crashing at extract. Both are
+detailed in their own sections below.
 
 Merge history:
 
@@ -547,7 +555,7 @@ publish/link/gate above). The build is functionally complete and live on Vercel 
   `build_dashboard` emits a `commission` payload block (annual = uplift × total kWh,
   `baseEffective`, `withUpliftEffective`, net saving after commission) and sets
   `fee=None` when it's present; `render_tender` now carries `rye_commission` through;
-  the dashboard renders `buildCommission()` (no slider) in the Savings tab (with
+  the dashboard renders `buildCommission()` (no slider) in the Summary tab (with
   incumbent) or the Portfolio tab (without). Wizard **step 5 has a "How RYE is paid"
   toggle** (fee | commission) that swaps the fee inputs for a p/kWh-uplift input
   (`web/index.html`, `web/app.js`). Verified schema-valid + assemble + jsdom render
@@ -557,32 +565,49 @@ publish/link/gate above). The build is functionally complete and live on Vercel 
 - **Total consumption (EAC) card** added to the client dashboard — first KPI on both
   the Savings and Portfolio rows (`buildSavingsKpis` / `buildPortfolioKpis` in
   `assets/dashboard_template.html`), in kWh/yr (or GWh for large portfolios).
+  **Superseded 2026-08-06:** all three KPI rows were removed and the EAC now lives in
+  the title byline. Those three builder functions no longer exist.
 - **sites.csv filename friction removed.** The app never required the name `sites.csv`
   — `_save_upload` checks the extension only, and the picker is `accept=".csv"`, so a
   dated Retool export (`sites_2026-07-31_122851.csv`) already works. Updated the wizard
   copy + button (`web/index.html`, `web/app.js`) so no one hunts through Downloads to
   rename it.
 
-## Client dashboard — tabs + Market context (done 2026-07-20)
+## Client dashboard — tabs + Market Review (done 2026-07-20, renamed + trimmed 2026-08-06)
 
 The client-facing dashboard (`assets/dashboard_template.html`, served at
-`/d/<slug>/<uuid>`) is now a **three-tab** layout, built client-side from the
-injected `__TENDER_DATA__`:
-- **Savings** — headline KPIs (portfolio spend, saving vs incumbent, blended unit
-  rate, saving %), the recommendation-vs-incumbent panel, and the offer comparison
-  bars. Shown and defaulted to **only when the tender has an `incumbent`**.
+`/d/<slug>/<uuid>`) is a **three-tab** layout, built client-side from the
+injected `__TENDER_DATA__`. Tab labels are **Summary / Portfolio / Market Review**; the
+pane ids are still `tab-savings` / `tab-portfolio` / `tab-market`, so don't be thrown by
+`savings` in the code — it means Summary.
+- **Summary** — the benchmark callout (benchmark baselines only), the
+  recommendation-vs-baseline panel, and the offer comparison bars. Shown and defaulted
+  to **only when the tender has an `incumbent`** (real or benchmark).
 - **Portfolio** — the per-site detail, unchanged (offer breakdown, site-by-site
-  matrix, rate books). Default tab when there's no incumbent (two-tab fallback).
-- **Market context** — chart-led (power spot + 1y series, 5-year range, gas curve
-  + cards, written takeaway). Hidden when there's no market data.
+  matrix, rate books). Default tab when there's no baseline (two-tab fallback).
+- **Market Review** — chart-led (power spot + 1y series, 5-year range, gas curve
+  + cards, written takeaway). Hidden when there's no market data. **This is the only
+  tab that still has a KPI card row** — the three tender KPI rows were removed
+  2026-08-06 because every figure they carried is in the comparison table.
 
 **Market data = a static snapshot, `assets/market_snapshot.json`.** `build_dashboard`
 loads it (next to the template) and injects it into the render payload as `market`;
 absent/invalid → `null` → the Market tab hides itself. Refresh by hand-editing the
 JSON and redeploying; the file's `_note` explains the shape. Current contents are a
-real snapshot taken 2026-07-20 from ICE/Tradingeconomics screenshots (power spot +
+real snapshot taken **2026-08-06** from ICE / Trading Economics screenshots (power spot +
 gas curve read from source; the 1y/5y power *series* are shape-traced, not
-tick-exact). Kept deliberately on the **live dashboard's older palette**
+tick-exact).
+
+**Published dashboards are rendered LIVE, not stored.** `GET /d/{slug}/{url_uuid}`
+calls `build_dashboard.render_tender(tender)` on every request, reading
+`assets/dashboard_template.html` and `assets/market_snapshot.json` from the deployment at
+that moment. So refreshing the market JSON and redeploying updates **every already-published
+client link** — there is no need to re-render or re-publish anything. The flip side: a
+template or market-data change is instantly visible to every client holding a live link,
+so treat both files as production. (Verified 2026-08-06 while chasing what turned out to
+be a stale browser tab.)
+
+The palette is kept deliberately on the **live dashboard's older palette**
 (emerald/amber) so the new tabs match the existing page — NOT the design-system
 skill's newer green/blue. A full palette migration is a separate, deliberate pass.
 
@@ -596,9 +621,94 @@ the `market_snapshot.json` shape), and either stamp it at publish or fetch
 server-side at render with a daily cache. (Claude's sandbox can't push, so a
 repo-file refresh always comes back as paste-safe git commands, not a silent write.)
 
-**Still open from the founder's visual feedback:** only the tab restructure + Market
-context were specced and built this session. Any other visual tweaks the founder
-raised are still to come — ask for the specifics.
+**Founder's visual feedback — closed 2026-08-06.** The outstanding tweaks (tab names, KPI
+rows, EAC placement, duplicated commission figure) were specced from annotated screenshots
+and built; see the next section.
+
+## Dashboard presentation pass + benchmark baseline (done 2026-08-06)
+
+Branch `feat/benchmark-baseline`, two commits, PR open. Driven by founder feedback on a
+live commission tender. Both suites green (`tests/test_render.py`,
+`tests/dom_smoke.js`) plus six render variants exercised in headless Chromium with no JS
+errors: real incumbent × (fee | commission-included | commission-on-top), benchmark ×
+(fee | commission), and no baseline at all.
+
+**1. Presentation changes (`assets/dashboard_template.html`)**
+
+- **Tabs renamed** Savings → **Summary**, Market context → **Market Review**. Pane ids
+  unchanged.
+- **All three header KPI rows deleted** — `buildSavingsKpis` (5-card, fee variant),
+  `buildCommissionKpis` (3-card, commission variant) and `buildPortfolioKpis`. Every
+  figure they held is in the standardised comparison table; the rows also wrapped badly
+  at 3–4 cards. There is a comment in the file saying don't reinstate them. Market Review
+  keeps its own cards.
+- **EAC moved into the title byline**: "Prepared for {client} by RYE. 1.16 GWh tender."
+  via `eacHeadline()` — GWh ≥ 1 GWh, MWh ≥ 1 MWh, else kWh. Styled as the smaller grey
+  mono, so only "Prepared for X by RYE." carries the heavier weight. Known cosmetic edge:
+  999,999 kWh renders "1,000 MWh" rather than rolling to 1.00 GWh.
+- **Commission de-duplicated.** When `commission.included` is true the net-saving-after-
+  commission figure is arithmetically identical to the gross saving printed directly above
+  it, so it now renders as a single disclosure line ("RYE commission 0.6 p/kWh · £1,020/yr
+  · already in the rate above"). When commission is added **on top** the full block stays,
+  because the number genuinely differs.
+- **Small print is charging-model aware** (`buildFooter`). The old footer claimed
+  "independent, flat-fee energy brokerage — we take no supplier commission" on *every*
+  tender, which directly contradicted the Basis-of-comparison line above it on commission
+  tenders. Now: flat-fee wording when `fee` is set, otherwise "independent energy
+  brokerage · we work for you, not the supplier".
+
+**2. Benchmark baseline — the client's rates are unknown, but they still see a saving**
+
+Previously a tender with no incumbent rates rendered with **no Summary tab at all**. Now
+the operator can type a market average and it flows through the existing incumbent code
+path untouched — the cost engine, comparison table, bars and site matrix needed no
+changes.
+
+- `schema/tender.schema.json` — `$defs.incumbent` gains **`kind`** (`incumbent` |
+  `benchmark`; absent = incumbent, so every pre-existing tender keeps its old wording),
+  plus `as_at` and `source`. **`as_at`/`source` are accepted but no longer collected or
+  displayed** — see "removed as clutter" below. They stay in the schema so tenders
+  assembled during the first commit remain valid.
+- `pipeline/assemble_tender.py` — new **`incumbent_from_benchmark(mpxns, unit_rate,
+  standing_charge=None, ...)`** applies one rate card to every meter in the tender and
+  returns the same shape as `incumbent_from_sites_csv`. Returns `None` on an unparseable
+  or missing rate, or no meters. Deliberately **two numbers, not a full rate card**:
+  inventing an average capacity or network charge per meter would dress a guess up as
+  precision, and non-commodity costs largely cancel out of the saving.
+- `main.py` `/api/assemble` — new form fields `benchmark_unit_rate`,
+  `benchmark_standing_charge` (`benchmark_as_at`, `benchmark_source` still accepted but
+  unused). **A real incumbent always wins**: the benchmark is only used when sites.csv
+  yields nothing, and if both are present the actual contract is used and a warning says
+  the benchmark was ignored.
+- `pipeline/build_dashboard.py` — carries `kind`/`as_at`/`source` into the render config
+  and emits a **`baseline`** payload block (`{kind, asAt, source}`), plus a Basis-of-
+  comparison line stating the baseline is a benchmark and the saving is indicative.
+- Dashboard — when `baseline.kind === "benchmark"`: an amber **"Benchmarked, not billed"**
+  callout above the recommendation (disclosure doubling as the ask for their real rates),
+  the baseline column headed **Market benchmark** not *Current*, the saving relabelled
+  **Indicative annual saving**, and a `benchmark` chip instead of `current` on the bar,
+  matrix and site detail.
+- Wizard step 5 — tickbox **"No incumbent rates — compare against a market benchmark"**
+  reveals the two fields. Ticking it without a unit rate blocks assemble with a message
+  rather than silently producing a baseline-less dashboard.
+
+**Removed as clutter (same session, second commit):** the "Rates as at" and "Source"
+fields were built, then removed at the founder's request from the wizard, the callout and
+the small print. Trade-off accepted knowingly: the benchmark is no longer dated or
+attributed on the client-facing page. If a client ever challenges a benchmark saving,
+that's the gap.
+
+**Operator guidance that matters more than the code.** The wording says "UK market
+average costs", so the number typed must be an average of **what businesses currently
+pay**, not the sharpest available new-contract rate — benchmark against today's best
+offers and the saving collapses to near zero, because RYE's offers *are* new-contract
+rates. DESNZ/Ofgem publish quarterly non-domestic averages; that's the defensible source.
+Also note the "optional" standing charge does real work: on a 518 MWh test portfolio,
+750 p/day accounted for roughly £3.2k of a £30.4k headline saving (~10%). Leave it blank
+unless there's a basis for it.
+
+**Still to do:** a dedicated unit test for the benchmark path (currently covered
+indirectly by the render/assemble suites and the manual variant sweep).
 
 ## Mapping-cache stale-sheet fix (done 2026-07-20)
 
@@ -668,6 +778,22 @@ function, so the endpoints stay thin wrappers.
 - Run scripts from repo root so same-dir imports resolve.
 - `.git/index.lock: File exists` with no git running → `rm -f .git/index.lock`.
   (Claude's file tooling touching the repo can leave one behind.)
+- **Claude must not run git against the repo through the device bridge.** The bridge is
+  denied unlink permission on the mounted folder, so git creates `.git/index.lock`, fails
+  to remove it, and every subsequent git command in the repo blocks. It happened
+  2026-08-06 from a single read-only `git status`. Claude reads and writes files; Rory runs
+  git. (Claude *can* move a stale lock out of the way — `mv` is permitted, `rm` isn't.)
+- **Stale ref locks silently block pruning.** `.git/refs/remotes/origin/**/*.lock` files
+  left by a crashed git make `git fetch --prune` error per-ref and leave phantom remote
+  branches in `git branch -a` forever — five of them dated 17 July were found on
+  2026-08-06. Clear with `find .git/refs -name "*.lock" -delete`, then `git fetch --prune`.
+- Deleting a local branch (`git branch -d x`) does **not** delete it on GitHub; that needs
+  `git push origin --delete x`. `git branch` alone shows only local branches — `git branch -a`
+  shows GitHub's too, and `git branch -r --merged origin/main` shows which remote branches
+  are safe to delete.
+- The repo's `.venv` symlinks to a macOS Python, so it is **broken inside Claude's Linux
+  sandbox** — Claude reconstructs deps in its own container instead. Rory needs
+  `source .venv/bin/activate` before running the test suites locally.
 - Vercel: "Environments" (custom pre-prod) are Pro-only; "Environment Variables"
   are free. Deployments tab defaults to the Production filter — switch to All to
   see branch previews.
