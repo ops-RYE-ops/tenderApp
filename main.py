@@ -682,6 +682,10 @@ async def assemble_endpoint(
     meta: str = Form(...),
     sites_csv: Optional[UploadFile] = File(None),
     persist: bool = Form(True),
+    benchmark_unit_rate: Optional[str] = Form(None),
+    benchmark_standing_charge: Optional[str] = Form(None),
+    benchmark_as_at: Optional[str] = Form(None),
+    benchmark_source: Optional[str] = Form(None),
 ):
     """Stitch extractResults + incumbent + meta into a canonical tender, and save it.
 
@@ -690,6 +694,12 @@ async def assemble_endpoint(
     version, status, utility, expires_at, day_split, recommended, rye_fee, notes,
     …). An optional `sites_csv` provides the incumbent contract (its rate columns +
     incumbentSupplier), joined on MPAN and restricted to this tender's meters.
+
+    When there are no incumbent rates, `benchmark_unit_rate` (p/kWh, plus optional
+    `benchmark_standing_charge` in p/day, `benchmark_as_at` and `benchmark_source`)
+    stands a market average in as the baseline so the client still sees a saving.
+    A real incumbent always wins — the benchmark is only used when sites.csv yields
+    nothing, so a stray benchmark field can never displace actual contract rates.
 
     Assembles via assemble_tender.assemble (moves NO values; stamps meta), validates
     against the canonical schema, then writes a new versioned row to the Retool
@@ -736,6 +746,33 @@ async def assemble_endpoint(
                 warnings.append("Meters span multiple incumbent suppliers — incumbent shown as 'Various'.")
             elif incumbent.get("supplier") == "Unknown":
                 warnings.append("Incumbent rates present but no incumbentSupplier named — shown as 'Unknown'.")
+
+        # Benchmark baseline: only when there's no real incumbent to compare against.
+        # Actual contract rates always take precedence over a typed market average.
+        if (benchmark_unit_rate or "").strip():
+            if incumbent is not None:
+                warnings.append(
+                    "Benchmark rates were supplied but sites.csv provided a real incumbent — "
+                    "the actual contract was used and the benchmark ignored."
+                )
+            else:
+                incumbent = at.incumbent_from_benchmark(
+                    _extract_mpxns(extracts_obj),
+                    benchmark_unit_rate,
+                    standing_charge=benchmark_standing_charge,
+                    as_at=benchmark_as_at,
+                    source=benchmark_source,
+                )
+                if incumbent is None:
+                    warnings.append(
+                        f"Could not read a benchmark unit rate from '{benchmark_unit_rate}' — "
+                        "assembling with no baseline."
+                    )
+                else:
+                    warnings.append(
+                        "Baseline is an operator-entered market benchmark, not the client's actual "
+                        "contract — the dashboard labels the saving as indicative."
+                    )
 
         # Version, never overwrite: bump to the next version for an existing id.
         if meta_obj.get("id") and persist:

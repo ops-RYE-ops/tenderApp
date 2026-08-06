@@ -191,6 +191,36 @@
     </div>
 
     <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="in-benchmark-on">
+        <span class="label" style="margin:0">No incumbent rates — compare against a market benchmark</span>
+      </label>
+      <div class="siteref-sub">Only used when the site reference has no incumbent rates for these meters — real contract rates always win. The dashboard labels the saving as indicative and asks the client to send their actual rates.</div>
+    </div>
+    <div id="benchmark-fields" class="hidden">
+      <div class="row">
+        <div class="field">
+          <span class="label">Benchmark unit rate (p/kWh)</span>
+          <input type="number" id="in-benchmark-unit" step="0.01" min="0" placeholder="e.g. 24.50">
+        </div>
+        <div class="field">
+          <span class="label">Benchmark standing charge (p/day — optional)</span>
+          <input type="number" id="in-benchmark-standing" step="0.01" min="0" placeholder="e.g. 45.00">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <span class="label">Rates as at</span>
+          <input type="date" id="in-benchmark-asat">
+        </div>
+        <div class="field">
+          <span class="label">Source (shown to the client)</span>
+          <input type="text" id="in-benchmark-source" placeholder="e.g. Ofgem non-domestic average, Q2 2026">
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
       <span class="label">Notes (client-facing footnotes — one per line, optional)</span>
       <textarea id="in-notes" placeholder="e.g. Drax offer valid until 10 Aug 2026"></textarea>
     </div>

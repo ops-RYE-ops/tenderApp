@@ -235,6 +235,18 @@
       "properties": {
         "supplier": { "type": "string", "minLength": 1 },
         "term": { "type": "string" },
+        "kind": {
+          "enum": ["incumbent", "benchmark"],
+          "description": "'incumbent' (the default when absent) is the client's real current contract, read from sites.csv. 'benchmark' is an operator-entered market average standing in for an unknown incumbent — indicative only. The dashboard labels it as such so a benchmark saving is never passed off as a contract saving."
+        },
+        "as_at": {
+          "type": ["string", "null"],
+          "description": "Date the benchmark rates were valid, ISO 'YYYY-MM-DD'. Shown to the client. Only meaningful when kind is 'benchmark'."
+        },
+        "source": {
+          "type": ["string", "null"],
+          "description": "Where the benchmark rates came from, e.g. 'Ofgem non-domestic average, Q2 2026'. Shown to the client. Only meaningful when kind is 'benchmark'."
+        },
         "charge_basis": { "$ref": "#/$defs/charge_basis" },
         "lines": {
           "type": "array",

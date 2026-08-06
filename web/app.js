@@ -114,6 +114,16 @@ function onChargeModelChange() {
   $("commission-fields").classList.toggle("hidden", !commission);
 }
 
+function onBenchmarkToggle() {
+  const on = $("in-benchmark-on").checked;
+  $("benchmark-fields").classList.toggle("hidden", !on);
+  // Default the as-at date to today - it goes on the client's dashboard, so it
+  // should never silently render blank just because nobody set it.
+  if (on && !$("in-benchmark-asat").value) {
+    $("in-benchmark-asat").value = new Date().toISOString().slice(0, 10);
+  }
+}
+
 function currentSupplier() {
   const v = $("in-supplier").value;
   const raw = v === NEW_SUPPLIER ? $("in-new-supplier").value : v;
@@ -584,6 +594,10 @@ async function doAssemble() {
     notice($("assemble-msg"), "Tick at least one offer to show the client.", "error");
     return;
   }
+  if ($("in-benchmark-on").checked && !($("in-benchmark-unit").value || "").trim()) {
+    notice($("assemble-msg"), "Enter a benchmark unit rate (p/kWh), or untick the benchmark baseline.", "error");
+    return;
+  }
   // Flag the featured offers on the quote objects - this rides through /assemble
   // into the tender, and /render shows only the featured ones.
   flat.forEach((q, i) => { q.featured = state.featured.has(i); });
@@ -600,6 +614,20 @@ async function doAssemble() {
     fd.append("meta", JSON.stringify(assembleMeta()));
     fd.append("persist", "true");
     if (state.sitesCsv) fd.append("sites_csv", state.sitesCsv);
+    // Benchmark baseline - only sent when the operator ticked it AND typed a rate.
+    // The backend ignores it if the site reference yields a real incumbent.
+    if ($("in-benchmark-on").checked) {
+      const unit = ($("in-benchmark-unit").value || "").trim();
+      if (unit) {
+        fd.append("benchmark_unit_rate", unit);
+        const standing = ($("in-benchmark-standing").value || "").trim();
+        if (standing) fd.append("benchmark_standing_charge", standing);
+        const asAt = ($("in-benchmark-asat").value || "").trim();
+        if (asAt) fd.append("benchmark_as_at", asAt);
+        const src = ($("in-benchmark-source").value || "").trim();
+        if (src) fd.append("benchmark_source", src);
+      }
+    }
     const r = await api("/api/assemble", { method: "POST", body: fd });
     state.meta.id = r.id;   // subsequent saves bump the version instead of duplicating
     state.saved = r;        // slug / url_uuid / version for the preview + publish step
@@ -815,6 +843,7 @@ async function revokeTender(tenderId) {
 document.addEventListener("DOMContentLoaded", () => {
   $("in-supplier").addEventListener("change", onSupplierChange);
   $("in-charge-model").addEventListener("change", onChargeModelChange);
+  $("in-benchmark-on").addEventListener("change", onBenchmarkToggle);
   onChargeModelChange();
   $("btn-to-upload").addEventListener("click", toUpload);
   $("btn-back-1").addEventListener("click", () => showStep(1));
