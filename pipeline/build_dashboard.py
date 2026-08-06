@@ -538,14 +538,11 @@ def main(argv):
     # page — the saving is against a market average, not against a real bill.
     if baseline and baseline["kind"] == "benchmark":
         who = tender.get("client_name") or "the client"
-        bits = [f"Baseline is a market benchmark, not {who}'s actual contract — no incumbent "
-                "rates were available."]
-        if baseline.get("asAt"):
-            bits.append(f"Benchmark rates as at {baseline['asAt']}.")
-        if baseline.get("source"):
-            bits.append(f"Source: {baseline['source']}.")
-        bits.append("Savings shown are indicative and will change once actual rates are supplied.")
-        assumptions.append(" ".join(bits))
+        assumptions.append(
+            f"Baseline is a market benchmark, not {who}'s actual contract — no incumbent rates "
+            "were available. Savings shown are indicative and will change once actual rates "
+            "are supplied."
+        )
     assumptions.append(
         "All figures are annual estimates from quoted rates and current estimated "
         "consumption (EAC/AQ), excluding VAT and CCL. Actual billing will vary with usage."

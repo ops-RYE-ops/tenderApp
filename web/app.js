@@ -115,13 +115,7 @@ function onChargeModelChange() {
 }
 
 function onBenchmarkToggle() {
-  const on = $("in-benchmark-on").checked;
-  $("benchmark-fields").classList.toggle("hidden", !on);
-  // Default the as-at date to today - it goes on the client's dashboard, so it
-  // should never silently render blank just because nobody set it.
-  if (on && !$("in-benchmark-asat").value) {
-    $("in-benchmark-asat").value = new Date().toISOString().slice(0, 10);
-  }
+  $("benchmark-fields").classList.toggle("hidden", !$("in-benchmark-on").checked);
 }
 
 function currentSupplier() {
@@ -622,10 +616,6 @@ async function doAssemble() {
         fd.append("benchmark_unit_rate", unit);
         const standing = ($("in-benchmark-standing").value || "").trim();
         if (standing) fd.append("benchmark_standing_charge", standing);
-        const asAt = ($("in-benchmark-asat").value || "").trim();
-        if (asAt) fd.append("benchmark_as_at", asAt);
-        const src = ($("in-benchmark-source").value || "").trim();
-        if (src) fd.append("benchmark_source", src);
       }
     }
     const r = await api("/api/assemble", { method: "POST", body: fd });

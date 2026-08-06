@@ -275,12 +275,10 @@ function buildWarnings() {
    to turn an indicative saving into a real one is for them to send their rates. */
 function buildBenchmarkNotice() {
   if (!isBenchmark) return "";
-  const asAt = baseline.asAt ? ` as at ${esc(baseline.asAt)}` : "";
-  const src = baseline.source ? ` Source: ${esc(baseline.source)}.` : "";
   return `<section><div class="notice">
     <span class="chip warning">benchmark</span>
     <b>Benchmarked, not billed.</b> We don't hold your current rates, so the figures below compare
-    our offers against UK market average costs${asAt} — indicative only, not your actual contract.${src}
+    our offers against UK market average costs — indicative only, not your actual contract.
     Send us your latest bill or contract and we'll rebuild this against what you're really paying.
   </div></section>`;
 }
