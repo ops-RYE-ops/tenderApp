@@ -57,6 +57,8 @@ import secrets
 import shutil
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 import uuid
 from typing import Any, Optional
 
@@ -989,6 +991,82 @@ def render_endpoint(body: RenderBody):
 
 _NOINDEX = {"X-Robots-Tag": "noindex, nofollow"}
 
+# --- publish webhook (fire-and-forget notify to the RYE tendering workflow) --
+#
+# When a dashboard is published, POST a small lifecycle event to a downstream
+# Retool workflow (URL + secret in the Vercel env). The workflow keys on `mpxns`
+# to advance each meter's status in RYE's Postgres. This is DELIBERATELY
+# decoupled: tenderApp knows nothing of RYE's schema, it just emits the event.
+#
+# Hard rule: this must NEVER break a publish. Any failure — unset URL, timeout,
+# non-2xx, DNS — is swallowed and reported in the publish response, never raised.
+# Env vars unset => skipped, so local dev + tests run unchanged.
+_WEBHOOK_TIMEOUT_S = 5
+
+
+def _tender_mpxns(tender: dict) -> list[str]:
+    """Every distinct meter point in the tender, in site order (deduped, as strings).
+
+    The publish webhook keys on these: the downstream workflow looks each MPAN/MPRN
+    up in RYE's site table and advances its status. Sites are authoritative; fall
+    back to quote lines only if a tender somehow carried no site-level mpxn.
+    """
+    seen: list[str] = []
+    for s in tender.get("sites", []):
+        m = s.get("mpxn")
+        if m and str(m) not in seen:
+            seen.append(str(m))
+    if not seen:  # defensive — pull from quote lines if sites had none
+        for q in tender.get("quotes", []):
+            for ln in q.get("lines", []):
+                m = ln.get("mpxn")
+                if m and str(m) not in seen:
+                    seen.append(str(m))
+    return seen
+
+
+def _fire_publish_webhook(tender: dict) -> dict:
+    """Notify the RYE tendering workflow that a dashboard went live. Fire-and-forget.
+
+    POSTs a small JSON event to PUBLISH_WEBHOOK_URL (if set), with a bearer secret
+    from PUBLISH_WEBHOOK_SECRET (if set). Returns a status dict for the publish
+    response; never raises. See the section note above for the no-break rule.
+    """
+    url = os.environ.get("PUBLISH_WEBHOOK_URL")
+    if not url:
+        return {"fired": False, "skipped": "PUBLISH_WEBHOOK_URL not set"}
+
+    payload = {
+        "event": "published",
+        "tender_id": tender.get("id"),
+        "version": tender.get("version"),
+        "client_name": tender.get("client_name"),
+        "tender_label": tender.get("tender_label"),
+        "utility": tender.get("utility", "electricity"),
+        "mpxns": _tender_mpxns(tender),
+        "dashboard_url": tender.get("dashboard_url"),
+        "url_uuid": tender.get("url_uuid"),
+        "expires_at": tender.get("expires_at"),
+        "created_by": tender.get("created_by"),
+        "created_at": tender.get("created_at"),
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    # Retool workflow webhooks authenticate via the X-Workflow-Api-Key header
+    # (not Authorization: Bearer). The key is the workflow trigger's API key —
+    # note it can differ per Retool environment (staging vs production).
+    secret = os.environ.get("PUBLISH_WEBHOOK_SECRET")
+    if secret:
+        headers["X-Workflow-Api-Key"] = secret
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=_WEBHOOK_TIMEOUT_S) as resp:
+            return {"fired": True, "status": resp.status, "mpxns": payload["mpxns"]}
+    except urllib.error.HTTPError as e:
+        return {"fired": False, "error": f"HTTP {e.code}", "mpxns": payload["mpxns"]}
+    except Exception as e:
+        return {"fired": False, "error": f"{type(e).__name__}: {e}", "mpxns": payload["mpxns"]}
+
 
 class PublishBody(BaseModel):
     tender_id: str
@@ -1044,10 +1122,14 @@ def publish_endpoint(body: PublishBody, request: Request):
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Publish validation failed: {type(e).__name__}: {e}")
     _write_tender(tender)
+    # Fire-and-forget: notify the RYE tendering workflow the dashboard is live.
+    # Never let a webhook failure break a publish (helper swallows all errors).
+    webhook = _fire_publish_webhook(tender)
     return {
         "ok": True, "id": tender["id"], "version": tender["version"], "status": "published",
         "url": tender["dashboard_url"], "url_uuid": tender["url_uuid"], "slug": tender["slug"],
         "expires_at": tender.get("expires_at"),
+        "webhook": webhook,
     }
 
 
