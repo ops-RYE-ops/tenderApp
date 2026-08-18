@@ -73,7 +73,7 @@ class _Receiver(BaseHTTPRequestHandler):
             body = json.loads(raw.decode("utf-8"))
         except Exception:
             body = None
-        _Receiver.last = {"body": body, "auth": self.headers.get("Authorization"),
+        _Receiver.last = {"body": body, "api_key": self.headers.get("X-Workflow-Api-Key"),
                           "content_type": self.headers.get("Content-Type")}
         self.send_response(_Receiver.reply_status)
         self.end_headers()
@@ -121,7 +121,7 @@ def main_test():
               body.get("mpxns") == ["2200017055132", "2200043435566"])
         check("dashboard_url included", "/d/pizzarova/" in (body.get("dashboard_url") or ""))
         check("tender_id + version included", body.get("tender_id") == TID and body.get("version") == 2)
-        check("bearer secret header sent", (got or {}).get("auth") == f"Bearer {secret}")
+        check("X-Workflow-Api-Key header sent (Retool auth)", (got or {}).get("api_key") == secret)
         check("content-type json", (got or {}).get("content_type") == "application/json")
 
         print("2) with the env unset, publish still succeeds and the hook is skipped")
@@ -147,6 +147,16 @@ def main_test():
         r4 = _publish(client)
         check("publish still -> 200 despite connection error", r4.status_code == 200)
         check("webhook reported an error, not raised", r4.json().get("webhook", {}).get("fired") is False)
+
+        print("5) a MALFORMED url does NOT break the publish (regression: Request() must be guarded)")
+        # A value with no scheme makes urllib.request.Request() raise ValueError.
+        # This once 500'd publish because Request() sat outside the try/except.
+        os.environ["PUBLISH_WEBHOOK_URL"] = "PUBLISH_WEBHOOK_SECRET"  # the real-world mixup
+        r5 = _publish(client)
+        check("publish still -> 200 despite malformed url", r5.status_code == 200)
+        check("webhook reported a ValueError, not raised",
+              r5.json().get("webhook", {}).get("fired") is False
+              and "ValueError" in (r5.json().get("webhook", {}).get("error") or ""))
     finally:
         os.environ.pop("PUBLISH_WEBHOOK_URL", None)
         os.environ.pop("PUBLISH_WEBHOOK_SECRET", None)

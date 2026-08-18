@@ -1050,13 +1050,19 @@ def _fire_publish_webhook(tender: dict) -> dict:
         "created_by": tender.get("created_by"),
         "created_at": tender.get("created_at"),
     }
-    body = json.dumps(payload).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    secret = os.environ.get("PUBLISH_WEBHOOK_SECRET")
-    if secret:
-        headers["Authorization"] = f"Bearer {secret}"
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    # Everything from here is best-effort and MUST NOT be able to break a publish.
+    # The Request() constructor itself raises on a malformed URL, so it lives
+    # inside the try too (a bad PUBLISH_WEBHOOK_URL must degrade to fired:false,
+    # never a 500). Retool workflow webhooks authenticate via the
+    # X-Workflow-Api-Key header (not Authorization: Bearer); the key is the
+    # trigger's API key and can differ per Retool environment.
     try:
+        body = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        secret = os.environ.get("PUBLISH_WEBHOOK_SECRET")
+        if secret:
+            headers["X-Workflow-Api-Key"] = secret
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=_WEBHOOK_TIMEOUT_S) as resp:
             return {"fired": True, "status": resp.status, "mpxns": payload["mpxns"]}
     except urllib.error.HTTPError as e:
