@@ -34,7 +34,14 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-08-06, on branch `feat/benchmark-baseline`, PR open, tested on
+**Latest session (2026-08-18, branch `feat/publish-webhook`):** a **publish → Retool
+webhook** — publishing a client dashboard now fires a fire-and-forget event to a Retool
+workflow ("Tender Database Update") that advances each meter's status in RYE's Postgres.
+First tie-in between the standalone tenderApp and RYE's existing tendering lifecycle;
+env-gated (off unless configured), in staging test. Plus a **market snapshot refresh to
+18 Aug 2026**. Detailed in "Publish webhook → RYE tendering workflow" below.
+
+**Session (2026-08-06, on branch `feat/benchmark-baseline`, PR open, tested on
 the branch preview against the live DB):** a client-dashboard presentation pass (tabs
 renamed **Summary / Portfolio / Market Review**, all three header KPI rows removed, EAC
 moved into the title byline, the duplicated commission figure dropped, small print now
@@ -725,6 +732,72 @@ guessed. Called on every cache hit in `/api/map`, which also adds a review-scree
 note if any referenced sheet still isn't in the file. Covered by
 `tests/test_map.py::test_resync_sheets`. Matters because re-tendering the same client
 repeatedly is common.
+
+## Publish webhook → RYE tendering workflow (2026-08-18, branch `feat/publish-webhook`)
+
+**What it does.** On `POST /api/publish`, tenderApp fires a fire-and-forget webhook to a
+downstream **Retool workflow** ("Tender Database Update"), which keys on the meter points
+to advance each site's status in RYE's Postgres (e.g. `AWAITING_QUOTE` →
+`PREPARING_CONTRACT`). Deliberately **event-only**: tenderApp knows nothing of RYE's
+schema, it just emits the event and the Retool workflow owns the DB write. This is
+"**Path A**" (a quick lifecycle tie-in) chosen ahead of the larger "Path B" (embedding
+the whole tender flow inside Retool — select sites → CSV → Front email → status
+transitions, all in one place, no handover). Path B is the longer-term direction.
+
+**Where it lives.** `main.py`: `_fire_publish_webhook(tender)` + `_tender_mpxns(tender)`,
+called at the end of `publish_endpoint` after `_write_tender`. Stdlib `urllib` only — no
+new runtime dependency. Isolated test: `tests/test_publish_webhook.py` (5 cases; needs
+`httpx2` for the TestClient — see requirements.txt).
+
+**Config — two Vercel env vars, both unset by default (webhook off ⇒ publishing unchanged):**
+- `PUBLISH_WEBHOOK_URL` — the full Retool endpoint, e.g.
+  `https://api.retool.com/v1/workflows/<id>/startTrigger?environment=staging`. The VALUE
+  must be the URL (starts with `https://`). Unset ⇒ webhook skipped.
+- `PUBLISH_WEBHOOK_SECRET` — the Retool workflow **API key** (`retool_wk_…`), sent as the
+  **`X-Workflow-Api-Key`** header (Retool's scheme — NOT `Authorization: Bearer`). Retool
+  keys are **per-environment**: staging URL needs the staging key, prod URL the prod key;
+  a prod key against the staging URL returns **403**.
+
+**Payload** (POST JSON): `event:"published"`, `tender_id`, `version`, `client_name`,
+`tender_label`, `utility`, `mpxns` (array of every site meter point — the join key the
+workflow matches on), `dashboard_url`, `url_uuid`, `expires_at`, `created_by`,
+`created_at`. The workflow's JS should do a **parameterised** update (bind mpxn + target
+status, never string-built SQL) and **guard the transition** (don't regress a meter
+already past `PREPARING_CONTRACT`).
+
+**Hard rule — a webhook failure must NEVER break a publish.** All fallible work — including
+the `urllib.request.Request()` constructor, which raises `ValueError` on a malformed URL —
+sits inside one try/except that returns a status dict; `publish_endpoint` echoes it as the
+response's `webhook` field (`{fired:true,status}` or `{fired:false,error}`). Watch that
+field (or the network tab) to see each fire's outcome. Regression test covers: malformed
+URL, a 500 endpoint, an unreachable endpoint, and the unset-env skip.
+
+**Staging safely (Vercel Preview scoping).** Set both env vars **Preview-scoped** only,
+pointing at the Retool **staging** URL/key; leave Production unset so `main`/prod stays a
+no-op. Push the branch → Vercel builds a Preview deploy → publish a test tender on the
+preview URL. Env-var AND code changes only take effect on a fresh build, so **redeploy
+after any change**. Promote by adding the same vars **Production-scoped** with the prod
+URL/key. Fast isolation test of a Retool endpoint: `curl -i` the URL with an
+`X-Workflow-Api-Key` header (or Retool's "Copy as cURL") — 200 = URL+key good, 401 = no
+key sent, 403 = wrong-env key, 400 "resources not configured" = the workflow's DB
+resources aren't wired for that environment.
+
+**Outstanding (2026-08-18).** Retool **staging** errors `400 — resources not configured
+for staging: rye-app-db, rye-app-db-replica`: the workflow's Postgres resources only have
+a production connection. Colleague to configure staging connections (or dry-run the update
+block) before a green staging E2E. **The tenderApp side is done and verified** — with a
+valid URL/key it fires and reports Retool's response; the only remaining gate to a full
+staging run is that Retool resource config.
+
+**Gotchas this cost us (don't repeat).** (1) The webhook PR (#21) was merged with the
+*pre-amend* commit before the code was final; we then amended + force-pushed, so `main`
+and the branch diverged and conflicted on `main.py`/the test — resolved by merging
+`origin/main` into the branch and taking the branch's version (`git checkout --ours`).
+**Don't merge a PR until the branch code is final.** (2) A Retool workflow API key was
+pasted into chat and had to be **rotated** — keep keys out of chat; the curl status line
+is all that's needed. (3) `PUBLISH_WEBHOOK_URL` was accidentally set to the literal value
+`PUBLISH_WEBHOOK_SECRET` in Vercel (URL/key crossed) — that's what surfaced the
+unguarded-`Request()` 500.
 
 ## sites.csv / Retool export (clarified 2026-07-20)
 
