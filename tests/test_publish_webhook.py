@@ -147,6 +147,16 @@ def main_test():
         r4 = _publish(client)
         check("publish still -> 200 despite connection error", r4.status_code == 200)
         check("webhook reported an error, not raised", r4.json().get("webhook", {}).get("fired") is False)
+
+        print("5) a MALFORMED url does NOT break the publish (regression: Request() must be guarded)")
+        # A value with no scheme makes urllib.request.Request() raise ValueError.
+        # This once 500'd publish because Request() sat outside the try/except.
+        os.environ["PUBLISH_WEBHOOK_URL"] = "PUBLISH_WEBHOOK_SECRET"  # the real-world mixup
+        r5 = _publish(client)
+        check("publish still -> 200 despite malformed url", r5.status_code == 200)
+        check("webhook reported a ValueError, not raised",
+              r5.json().get("webhook", {}).get("fired") is False
+              and "ValueError" in (r5.json().get("webhook", {}).get("error") or ""))
     finally:
         os.environ.pop("PUBLISH_WEBHOOK_URL", None)
         os.environ.pop("PUBLISH_WEBHOOK_SECRET", None)
