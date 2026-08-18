@@ -1,4 +1,3 @@
-
 openpyxl>=3.1
 jsonschema>=4.20
 anthropic>=0.40
@@ -7,3 +6,8 @@ anthropic>=0.40
 fastapi>=0.110
 psycopg2-binary>=2.9
 python-multipart>=0.0.9
+
+# Tests only — Starlette's TestClient HTTP backend (not used at runtime).
+# Current Starlette deprecates plain httpx and wants httpx2; on an OLDER
+# Starlette, swap this line for `httpx>=0.27` instead.
+httpx2>=2.12
