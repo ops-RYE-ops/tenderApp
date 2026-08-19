@@ -74,7 +74,8 @@ class _Receiver(BaseHTTPRequestHandler):
         except Exception:
             body = None
         _Receiver.last = {"body": body, "api_key": self.headers.get("X-Workflow-Api-Key"),
-                          "content_type": self.headers.get("Content-Type")}
+                          "content_type": self.headers.get("Content-Type"),
+                          "user_agent": self.headers.get("User-Agent")}
         self.send_response(_Receiver.reply_status)
         self.end_headers()
         self.wfile.write(b"{}")
@@ -123,6 +124,9 @@ def main_test():
         check("tender_id + version included", body.get("tender_id") == TID and body.get("version") == 2)
         check("X-Workflow-Api-Key header sent (Retool auth)", (got or {}).get("api_key") == secret)
         check("content-type json", (got or {}).get("content_type") == "application/json")
+        # Regression: must NOT send the default urllib UA (Cloudflare 403s it).
+        ua = (got or {}).get("user_agent") or ""
+        check("real User-Agent sent, not Python-urllib", "RYE-tenderApp" in ua and "urllib" not in ua)
 
         print("2) with the env unset, publish still succeeds and the hook is skipped")
         os.environ.pop("PUBLISH_WEBHOOK_URL", None)
@@ -157,6 +161,27 @@ def main_test():
         check("webhook reported a ValueError, not raised",
               r5.json().get("webhook", {}).get("fired") is False
               and "ValueError" in (r5.json().get("webhook", {}).get("error") or ""))
+
+        print("6) /api/webhook-check reports config and can test-fire (the debug endpoint)")
+        os.environ.pop("PUBLISH_WEBHOOK_URL", None)
+        os.environ.pop("PUBLISH_WEBHOOK_SECRET", None)
+        rc = client.get("/api/webhook-check")
+        cj = rc.json()
+        check("check -> 200, url_set false when unset", rc.status_code == 200 and cj.get("url_set") is False)
+        check("check reports secret_set false when unset", cj.get("secret_set") is False)
+        # now configure + test-fire against the live local receiver
+        os.environ["PUBLISH_WEBHOOK_URL"] = f"http://127.0.0.1:{port}/hook"
+        os.environ["PUBLISH_WEBHOOK_SECRET"] = secret
+        _Receiver.reply_status = 200
+        _Receiver.last = None
+        rc2 = client.get("/api/webhook-check?test=true")
+        cj2 = rc2.json()
+        check("check reports url_set true + host", cj2.get("url_set") is True and "127.0.0.1" in (cj2.get("url_host") or ""))
+        check("check test_fire fired -> 200", cj2.get("test_fire", {}).get("fired") is True and cj2["test_fire"].get("status") == 200)
+        check("test event received, empty mpxns (safe no-op)",
+              (_Receiver.last or {}).get("body", {}).get("event") == "webhook_test"
+              and (_Receiver.last or {}).get("body", {}).get("mpxns") == [])
+        check("test-fire sent the api key header", (_Receiver.last or {}).get("api_key") == secret)
     finally:
         os.environ.pop("PUBLISH_WEBHOOK_URL", None)
         os.environ.pop("PUBLISH_WEBHOOK_SECRET", None)
