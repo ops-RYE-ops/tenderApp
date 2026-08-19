@@ -1002,6 +1002,11 @@ _NOINDEX = {"X-Robots-Tag": "noindex, nofollow"}
 # non-2xx, DNS — is swallowed and reported in the publish response, never raised.
 # Env vars unset => skipped, so local dev + tests run unchanged.
 _WEBHOOK_TIMEOUT_S = 5
+# Retool's edge (Cloudflare) 403s the default "Python-urllib/x.y" user-agent as a
+# bot, so we MUST send a real one — verified 2026-08-19: urllib UA -> 403, normal
+# UA -> reaches the workflow. This is the difference between a fired and a blocked
+# webhook. Do not remove.
+_WEBHOOK_UA = "RYE-tenderApp/1.0 (+https://tender.rye.energy)"
 
 
 def _tender_mpxns(tender: dict) -> list[str]:
@@ -1025,17 +1030,44 @@ def _tender_mpxns(tender: dict) -> list[str]:
     return seen
 
 
-def _fire_publish_webhook(tender: dict) -> dict:
-    """Notify the RYE tendering workflow that a dashboard went live. Fire-and-forget.
+def _post_webhook(payload: dict) -> dict:
+    """POST a JSON payload to the configured webhook. Best-effort; never raises.
 
-    POSTs a small JSON event to PUBLISH_WEBHOOK_URL (if set), with a bearer secret
-    from PUBLISH_WEBHOOK_SECRET (if set). Returns a status dict for the publish
-    response; never raises. See the section note above for the no-break rule.
+    Shared by the publish hook and the /api/webhook-check diagnostic. ALL fallible
+    work — including the Request() constructor, which raises on a malformed URL —
+    is inside the try, so a bad PUBLISH_WEBHOOK_URL degrades to fired:false, never a
+    500. Retool workflow webhooks authenticate via the X-Workflow-Api-Key header
+    (not Authorization: Bearer); the key is the trigger's API key and can differ per
+    Retool environment. Returns {fired:true,status} | {fired:false,error} |
+    {fired:false,skipped} when unconfigured.
     """
     url = os.environ.get("PUBLISH_WEBHOOK_URL")
     if not url:
         return {"fired": False, "skipped": "PUBLISH_WEBHOOK_URL not set"}
+    try:
+        body = json.dumps(payload).encode("utf-8")
+        # User-Agent is required: Cloudflare 403s the default urllib UA (see _WEBHOOK_UA).
+        headers = {"Content-Type": "application/json", "User-Agent": _WEBHOOK_UA}
+        secret = os.environ.get("PUBLISH_WEBHOOK_SECRET")
+        if secret:
+            headers["X-Workflow-Api-Key"] = secret
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=_WEBHOOK_TIMEOUT_S) as resp:
+            return {"fired": True, "status": resp.status}
+    except urllib.error.HTTPError as e:
+        return {"fired": False, "error": f"HTTP {e.code}"}
+    except Exception as e:
+        return {"fired": False, "error": f"{type(e).__name__}: {e}"}
 
+
+def _fire_publish_webhook(tender: dict) -> dict:
+    """Notify the RYE tendering workflow that a dashboard went live. Fire-and-forget.
+
+    Builds the 'published' event and sends it via _post_webhook (which swallows all
+    errors). Returns the send result plus the mpxns, for the publish response's
+    `webhook` field. Never raises.
+    """
+    mpxns = _tender_mpxns(tender)
     payload = {
         "event": "published",
         "tender_id": tender.get("id"),
@@ -1043,32 +1075,47 @@ def _fire_publish_webhook(tender: dict) -> dict:
         "client_name": tender.get("client_name"),
         "tender_label": tender.get("tender_label"),
         "utility": tender.get("utility", "electricity"),
-        "mpxns": _tender_mpxns(tender),
+        "mpxns": mpxns,
         "dashboard_url": tender.get("dashboard_url"),
         "url_uuid": tender.get("url_uuid"),
         "expires_at": tender.get("expires_at"),
         "created_by": tender.get("created_by"),
         "created_at": tender.get("created_at"),
     }
-    # Everything from here is best-effort and MUST NOT be able to break a publish.
-    # The Request() constructor itself raises on a malformed URL, so it lives
-    # inside the try too (a bad PUBLISH_WEBHOOK_URL must degrade to fired:false,
-    # never a 500). Retool workflow webhooks authenticate via the
-    # X-Workflow-Api-Key header (not Authorization: Bearer); the key is the
-    # trigger's API key and can differ per Retool environment.
-    try:
-        body = json.dumps(payload).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-        secret = os.environ.get("PUBLISH_WEBHOOK_SECRET")
-        if secret:
-            headers["X-Workflow-Api-Key"] = secret
-        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=_WEBHOOK_TIMEOUT_S) as resp:
-            return {"fired": True, "status": resp.status, "mpxns": payload["mpxns"]}
-    except urllib.error.HTTPError as e:
-        return {"fired": False, "error": f"HTTP {e.code}", "mpxns": payload["mpxns"]}
-    except Exception as e:
-        return {"fired": False, "error": f"{type(e).__name__}: {e}", "mpxns": payload["mpxns"]}
+    result = _post_webhook(payload)
+    result["mpxns"] = mpxns
+    return result
+
+
+@app.get("/api/webhook-check")
+def webhook_check(test: bool = False):
+    """Diagnostic for the publish webhook. Team-gated; no side effects unless test=true.
+
+    Open GET /api/webhook-check in the browser (you're already authed via /app) to see
+    whether THIS deployment actually has the webhook env vars — the fast way to confirm
+    a build picked them up, without publishing a tender or reading Vercel logs.
+
+    Add ?test=true to send a harmless connectivity event (event 'webhook_test', no
+    meters, so the workflow's per-meter loop is a no-op) and get the REAL send result:
+      - {"fired": true, "status": 200}                -> URL + key are right on this deploy
+      - {"fired": false, "skipped": "...not set"}     -> this build has no PUBLISH_WEBHOOK_URL
+      - {"fired": false, "error": "HTTP 401/403"}     -> reached Retool, key/env wrong
+      - {"fired": false, "error": "HTTP 400 ..."}     -> reached + authed, workflow-side issue
+    """
+    url = os.environ.get("PUBLISH_WEBHOOK_URL")
+    out = {
+        "vercel_env": os.environ.get("VERCEL_ENV"),      # 'production' / 'preview'
+        "url_set": bool(url),
+        "url_host": url.split("//", 1)[-1].split("/", 1)[0] if url and "//" in url else (url or None),
+        "secret_set": bool(os.environ.get("PUBLISH_WEBHOOK_SECRET")),
+    }
+    if test:
+        out["test_fire"] = _post_webhook({
+            "event": "webhook_test",
+            "note": "connectivity check from /api/webhook-check — no meters, safe to no-op",
+            "mpxns": [],
+        })
+    return out
 
 
 class PublishBody(BaseModel):
