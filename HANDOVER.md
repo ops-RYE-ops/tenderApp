@@ -38,8 +38,11 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 webhook** — publishing a client dashboard now fires a fire-and-forget event to a Retool
 workflow ("Tender Database Update") that advances each meter's status in RYE's Postgres.
 First tie-in between the standalone tenderApp and RYE's existing tendering lifecycle;
-env-gated (off unless configured), in staging test. Plus a **market snapshot refresh to
-18 Aug 2026**. Detailed in "Publish webhook → RYE tendering workflow" below.
+env-gated (off unless configured). **Merged and working end-to-end on production 2026-08-19**
+— the tenderApp side is done (a nasty Cloudflare user-agent 403 and several Vercel env/deploy
+traps burned most of the session; all captured below); the colleague is finishing the Retool
+workflow's field mapping. Plus a **market snapshot refresh to 18 Aug 2026**. Detailed in
+"Publish webhook → RYE tendering workflow" below.
 
 **Session (2026-08-06, on branch `feat/benchmark-baseline`, PR open, tested on
 the branch preview against the live DB):** a client-dashboard presentation pass (tabs
@@ -765,12 +768,45 @@ workflow matches on), `dashboard_url`, `url_uuid`, `expires_at`, `created_by`,
 status, never string-built SQL) and **guard the transition** (don't regress a meter
 already past `PREPARING_CONTRACT`).
 
+**Payload contract — agreed 2026-08-19 (do not drift).** The webhook is a **slim event**,
+not the full tender: the "it's live" signal is **`event: "published"`** (top level), and
+the meters are a **flat top-level `mpxns` array of strings**. The Retool workflow was
+originally built against the *full stored tender JSON* (which signals via a top-level
+`status` field and nests meters as `sites[].mpxn`), so its first version rejected our
+payload with a 400 — it read `status`/`sites[].mpxn`, which the slim event doesn't have.
+Decision (Option A): keep the webhook slim (a big multi-site tender's full JSON would be a
+heavy payload on every publish; the workflow has DB access to fetch detail from
+`tender_id` if it needs it), and the **workflow reads `event` + top-level `mpxns`**. If you
+ever change these two keys in `_fire_publish_webhook`, the workflow breaks silently — treat
+`event` + `mpxns` as the frozen contract.
+
 **Hard rule — a webhook failure must NEVER break a publish.** All fallible work — including
 the `urllib.request.Request()` constructor, which raises `ValueError` on a malformed URL —
 sits inside one try/except that returns a status dict; `publish_endpoint` echoes it as the
 response's `webhook` field (`{fired:true,status}` or `{fired:false,error}`). Watch that
 field (or the network tab) to see each fire's outcome. Regression test covers: malformed
-URL, a 500 endpoint, an unreachable endpoint, and the unset-env skip.
+URL, a 500 endpoint, an unreachable endpoint, the unset-env skip, and the User-Agent
+(7 cases total in `tests/test_publish_webhook.py`).
+
+**⚠️ CRITICAL — outbound calls MUST send a real User-Agent (Cloudflare, 2026-08-19).**
+`api.retool.com` sits behind **Cloudflare**, which **403s the default `Python-urllib/x.y`
+user-agent as a bot** — *before* the request reaches Retool's auth. This cost most of a
+session: a correct URL + correct key still returned 403, purely because of the UA. Proof:
+same key+URL, `curl -A "Python-urllib/3.12"` → 403, `curl -A "curl/8.4"` → 400 (reached the
+workflow). The webhook now sends `User-Agent: RYE-tenderApp/1.0` (`_WEBHOOK_UA` in
+`main.py`) — **do not remove it**, and set a real UA on ANY future outbound HTTP from this
+app. (Symptom trap: Vercel's "External APIs / No outgoing requests" panel does **not** trace
+stdlib `urllib`, so it showed "no request" whether the call was skipped OR firing — don't
+trust it; read the `webhook` field instead.)
+
+**Debug endpoint — `GET /api/webhook-check` (team-gated).** Open
+`https://tender-app-chi.vercel.app/api/webhook-check?test=true` in the browser (you're
+authed via `/app`) to see, for *that* deployment: `url_set`, `url_host`, `secret_set`,
+`vercel_env`, and a live `test_fire` (a harmless `event:"webhook_test"`, empty `mpxns`, so
+the workflow no-ops). Statuses: `fired:true/200` or a `400` = healthy (past Cloudflare +
+authenticated); `403` = UA/Cloudflare or wrong-env key; `skipped` = the build has no
+`PUBLISH_WEBHOOK_URL`. This replaces the publish-and-squint loop — one URL tells you exactly
+where the pipeline stands, no tender published, no DB write.
 
 **Staging safely (Vercel Preview scoping).** Set both env vars **Preview-scoped** only,
 pointing at the Retool **staging** URL/key; leave Production unset so `main`/prod stays a
@@ -782,12 +818,19 @@ URL/key. Fast isolation test of a Retool endpoint: `curl -i` the URL with an
 key sent, 403 = wrong-env key, 400 "resources not configured" = the workflow's DB
 resources aren't wired for that environment.
 
-**Outstanding (2026-08-18).** Retool **staging** errors `400 — resources not configured
-for staging: rye-app-db, rye-app-db-replica`: the workflow's Postgres resources only have
-a production connection. Colleague to configure staging connections (or dry-run the update
-block) before a green staging E2E. **The tenderApp side is done and verified** — with a
-valid URL/key it fires and reports Retool's response; the only remaining gate to a full
-staging run is that Retool resource config.
+**Status (2026-08-19).** End-to-end on **production**: a real publish now fires, clears
+Cloudflare, authenticates, and the workflow runs (verified on a real 14-meter tender). The
+**tenderApp side is done**. Remaining is workflow-side: the colleague is updating the
+Retool workflow to read `event` (was `status`) and top-level `mpxns` (was `sites[].mpxn`)
+per the agreed contract above; once that lands, the meters' status advances in RYE's
+Postgres. (Staging was abandoned as a path — its `rye-app-db` resources were never wired
+for the staging environment, `400 resources not configured`; we tested on prod against
+throwaway tenders instead.)
+
+**OUTSTANDING — rotate the leaked keys.** Two live Retool keys went through chat/files this
+session: staging `retool_wk_c18c2c…` and **prod `retool_wk_bb769f…`** (in the colleague's
+`RYE API Connection.R`). Rotate the prod key in Retool, update `PUBLISH_WEBHOOK_SECRET` in
+Vercel + the R script, redeploy. Not yet done as of 2026-08-19.
 
 **Gotchas this cost us (don't repeat).** (1) The webhook PR (#21) was merged with the
 *pre-amend* commit before the code was final; we then amended + force-pushed, so `main`
@@ -797,7 +840,14 @@ and the branch diverged and conflicted on `main.py`/the test — resolved by mer
 pasted into chat and had to be **rotated** — keep keys out of chat; the curl status line
 is all that's needed. (3) `PUBLISH_WEBHOOK_URL` was accidentally set to the literal value
 `PUBLISH_WEBHOOK_SECRET` in Vercel (URL/key crossed) — that's what surfaced the
-unguarded-`Request()` 500.
+unguarded-`Request()` 500. (4) **Vercel env vars bake in at build time** — editing/adding a
+var does nothing to a running deployment; you must **redeploy** for it to take effect. Hours
+were lost publishing against builds that predated the vars. (5) **`tender-app-git-main-…` is
+the PRODUCTION deploy**, not a "branch" one (the `git-main` in the hostname is misleading);
+your feature branch is `tender-app-git-feat-…`. Vars are also **per-scope** (Production vs
+Preview) — a Production-only var is invisible to a preview deploy. (6) See the CRITICAL
+User-Agent note above — the single nastiest one: a perfectly correct key + URL still 403s
+from Python's default urllib UA.
 
 ## sites.csv / Retool export (clarified 2026-07-20)
 
