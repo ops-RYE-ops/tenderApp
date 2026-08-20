@@ -13,7 +13,7 @@
 // The canonical target fields, in display order (mirrors pipeline/rye_quote_core.py
 // TARGET_FIELDS — a display hint only; the backend schema stays the source of truth).
 const TARGET_FIELDS = [
-  "siteName", "mpxn", "updatedEac", "supplyStartDate",
+  "siteName", "mpxn", "updatedEac", "supplyStartDate", "supplyEndDate",
   "unitRate", "dayRate", "nightRate", "weekendRate", "standingCharge",
   "capacityCharge", "networkCharge", "meterCharge", "kva",
 ];
