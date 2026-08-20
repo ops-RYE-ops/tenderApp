@@ -57,7 +57,7 @@ def _sites_csv(rows, header=None):
 def test_rate_fields_in_sync_with_schema():
     print("incumbent rate fields stay in sync with the schema")
     schema = json.load(open(os.path.join(ROOT, "schema", "tender.schema.json")))
-    line_props = set(schema["$defs"]["line"]["properties"]) - {"mpxn", "supplyStartDate"}
+    line_props = set(schema["$defs"]["line"]["properties"]) - {"mpxn", "supplyStartDate", "supplyEndDate"}
     check("_INCUMBENT_RATE_FIELDS == schema line rate props",
           set(at._INCUMBENT_RATE_FIELDS) == line_props)
 
