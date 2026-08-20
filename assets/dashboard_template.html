@@ -123,6 +123,17 @@ td.total { color: var(--t1); }
 tr.incumbent-row td { color: var(--t3); }
 tr.incumbent-row td.name { color: var(--t2); }
 
+/* Effective-rate pair (current / offered) + inline deltas — site-by-site table */
+.effrate .cur { color: var(--t3); }
+.effrate .sep { color: var(--t4); margin: 0 3px; }
+.effrate .off { color: var(--t1); }
+.effrate .off.better { color: var(--rye-green); }
+.cell-delta { font-size: 10px; color: var(--t3); margin-left: 5px; font-variant-numeric: tabular-nums; }
+.cell-delta.save { color: var(--rye-green); }
+.cell-delta.rise { color: var(--rye-red); }
+td.diff.save { color: var(--rye-green); }
+td.diff.rise { color: var(--rye-red); }
+
 /* ---- Details / rate books ---- */
 details { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; }
 details[open] { border-color: var(--border-strong); }
@@ -331,6 +342,7 @@ function buildRecVsInc() {
           <tr><td class="name">Forecasted annual spend</td><td>${gbp(inc.total)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total)}</td></tr>
           <tr><td class="name">Annual spend per site</td><td>${gbp(inc.total / perSite)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total / perSite)}</td></tr>
           <tr><td class="name">${isBenchmark ? "Indicative" : "Forecasted"} annual saving</td><td></td><td class="${savings >= 0 ? "best" : "warn"}">${gbpSigned(rec.total - inc.total)}</td></tr>
+          <tr><td class="name">Portfolio cost efficiency</td><td></td><td class="total">Medium</td></tr>
         </tbody>
       </table></div>
     </div>
@@ -429,20 +441,58 @@ function buildSiteMatrix() {
   if (TENDER.sites.length <= 1) return "";
   const byId = {};
   allOffers.forEach(o => { byId[o.id] = {}; o.sites.forEach(s => byId[o.id][s.mpxn] = s); });
+  // One quote is the norm going forward: with a single offer we show a dedicated
+  // +/- column vs the baseline. With >1 offer that column is ambiguous, so each
+  // offer cell instead carries a small inline delta vs the baseline (the
+  // "£1,240 (−£380)" pattern from the finance reports).
+  const singleOffer = TENDER.offers.length === 1;
+  // Efficiency = each meter's all-in effective rate (£/yr ÷ EAC × 100), i.e. the
+  // p/kWh that meter is actually running at once every charge is standardised.
+  // Shown as a "current / offered" pair. The offered side ALWAYS uses the BEST
+  // (cheapest) quote, so with several offers on the page the column still reads
+  // against one clear number rather than an ambiguous average — the header says so.
+  const bestOffer = allOffers.find(o => !o.isIncumbent && o.id === TENDER.bestId)
+    || allOffers.find(o => !o.isIncumbent) || rec;
+  const eff = (cell, eac) => (cell && eac) ? (cell.total / eac * 100) : null;
+  const p1 = v => v == null ? "—" : v.toFixed(1) + "p";
+  const baseLc = baseLabel.toLowerCase();
+  const offeredLbl = singleOffer ? "offered" : "best";
   return `<section>
     <div class="section-label">Site-by-site annual cost (£/year)</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Site</th><th>EAC kWh</th>` +
+      `<th>Efficiency<br>${inc ? baseLc + " / " + offeredLbl : offeredLbl}</th>` +
       allOffers.map(o => `<th>${o.isIncumbent ? baseLabel : esc(o.supplier) + "<br>" + esc(o.term)}</th>`).join("") +
+      (singleOffer && inc ? `<th>${isBenchmark ? "Indicative " : ""}Δ vs ${baseLc}</th>` : "") +
       `</tr></thead><tbody>` +
     TENDER.sites.map(site => {
       const cells = allOffers.map(o => byId[o.id][site.mpxn]);
       const min = Math.min(...cells.map((c, i) => (c && !allOffers[i].isIncumbent) ? c.total : Infinity));
+      const incCell = inc ? byId[inc.id][site.mpxn] : null;
+      const recCell = byId[rec.id][site.mpxn];
+      const bestCell = byId[bestOffer.id][site.mpxn];
+      const effInc = eff(incCell, site.eac), effBest = eff(bestCell, site.eac);
+      const effHtml = `<td class="effrate">` +
+        (inc ? `<span class="cur">${p1(effInc)}</span><span class="sep">/</span>` : "") +
+        `<span class="off ${(effInc != null && effBest != null && effBest <= effInc) ? "better" : ""}">${p1(effBest)}</span></td>`;
+      const costCells = cells.map((c, i) => {
+        if (!c) return `<td>—</td>`;
+        const isInc = allOffers[i].isIncumbent;
+        const best = !isInc && c.total === min ? "best" : "";
+        let deltaHtml = "";
+        if (!singleOffer && inc && !isInc && incCell) {
+          const d = c.total - incCell.total; // negative = cheaper than baseline
+          deltaHtml = `<span class="cell-delta ${d <= 0 ? "save" : "rise"}">(${gbpSigned(d)})</span>`;
+        }
+        return `<td class="${best}">${gbp(c.total)}${deltaHtml}</td>`;
+      });
+      let diffHtml = "";
+      if (singleOffer && inc && incCell && recCell) {
+        const save = incCell.total - recCell.total; // positive = saving on this site
+        diffHtml = `<td class="diff ${save >= 0 ? "save" : "rise"}">${gbpSigned(save)}</td>`;
+      }
       return `<tr><td class="name">${esc(site.name)}<span class="sub">${esc(site.mpxn)}</span></td>
-        <td>${num(site.eac)}</td>` +
-        cells.map((c, i) => c
-          ? `<td class="${!allOffers[i].isIncumbent && c.total === min ? "best" : ""}">${gbp(c.total)}</td>`
-          : `<td>—</td>`).join("") + `</tr>`;
+        <td>${num(site.eac)}</td>` + effHtml + costCells.join("") + diffHtml + `</tr>`;
     }).join("") + `</tbody></table></div></section>`;
 }
 
