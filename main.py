@@ -743,7 +743,30 @@ async def assemble_endpoint(
             except (Exception, SystemExit) as e:
                 raise HTTPException(status_code=422, detail=f"Could not read incumbent from sites.csv: {type(e).__name__}: {e}")
             if incumbent is None:
-                warnings.append("sites.csv had no incumbent rate data for this tender's meters — assembling with no incumbent.")
+                # Turn a silent "no incumbent" into an actionable reason. The usual
+                # culprit is a client-name mismatch (the tender's client name must
+                # equal the sites.csv clientName column), which otherwise looks like
+                # the file was ignored entirely.
+                dx = at.diagnose_sites_csv(
+                    csv_path,
+                    client_name=meta_obj.get("client_name"),
+                    mpxns=_extract_mpxns(extracts_obj),
+                )
+                cn = meta_obj.get("client_name")
+                if dx["total_rows"] and dx["client_matches"] == 0:
+                    found = ", ".join(f"'{c}'" for c in dx["clients"]) or "none"
+                    warnings.append(
+                        f"sites.csv has {dx['total_rows']} row(s) but none match this tender's client "
+                        f"'{cn}' — clientName values in the file: {found}. No incumbent applied. "
+                        "Check the tender's client name matches the sites.csv clientName column."
+                    )
+                elif dx["client_matches"] and dx["mpxn_matches"] == 0:
+                    warnings.append(
+                        f"sites.csv has {dx['client_matches']} row(s) for '{cn}' but none match this "
+                        "tender's meter points (MPANs) — no incumbent applied. Check the MPANs line up."
+                    )
+                else:
+                    warnings.append("sites.csv had no incumbent rate data for this tender's meters — assembling with no incumbent.")
             elif incumbent.get("supplier") == "Various":
                 warnings.append("Meters span multiple incumbent suppliers — incumbent shown as 'Various'.")
             elif incumbent.get("supplier") == "Unknown":

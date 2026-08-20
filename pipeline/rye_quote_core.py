@@ -17,7 +17,7 @@ import re
 # RYE's fixed target schema, in order. The processed-CSV header order, the
 # canonical line fields, and a mapping's column keys all derive from this list.
 TARGET_FIELDS = [
-    "siteName", "mpxn", "updatedEac", "supplyStartDate",
+    "siteName", "mpxn", "updatedEac", "supplyStartDate", "supplyEndDate",
     "unitRate", "dayRate", "nightRate", "weekendRate", "standingCharge",
     "capacityCharge", "networkCharge", "meterCharge", "kva",
 ]

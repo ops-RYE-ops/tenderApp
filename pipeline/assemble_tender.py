@@ -146,6 +146,59 @@ def incumbent_from_sites_csv(path, client_name=None, mpxns=None, dbl=None):
     return {"supplier": supplier, "lines": lines}
 
 
+def diagnose_sites_csv(path, client_name=None, mpxns=None, dbl=None):
+    """Explain why a sites.csv yielded no incumbent — for an actionable warning.
+
+    Read-only companion to incumbent_from_sites_csv (never raises on a normal file).
+    The common footgun is a client-name mismatch: the tender's client name doesn't
+    equal the sites.csv `clientName` column, so every row is filtered out silently.
+    Returns counts to turn that into a clear message:
+      total_rows      — data rows in the file
+      clients         — sorted distinct clientName values seen
+      client_matches  — rows whose clientName matches client_name (all rows if the
+                        file has no clientName column, or no client_name was given)
+      mpxn_matches    — of client_matches, rows whose mpxn is in the tender
+      rate_rows       — of mpxn_matches, rows carrying at least one incumbent rate
+    """
+    dbl = dbl or {}
+    mpxn_col = dbl.get("mpxn_col", "mpxn")
+    client_col = dbl.get("client_col", "clientName")
+    want = {_norm_mpxn(m) for m in mpxns} if mpxns is not None else None
+    total_rows = client_matches = mpxn_matches = rate_rows = 0
+    clients = set()
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            fields = reader.fieldnames or []
+            has_client = client_col in fields
+            for r in reader:
+                if not any((v or "").strip() for v in r.values()):
+                    continue  # skip fully blank rows
+                total_rows += 1
+                cval = (r.get(client_col) or "").strip() if has_client else ""
+                if cval:
+                    clients.add(cval)
+                if client_name and has_client:
+                    if cval.lower() != client_name.strip().lower():
+                        continue
+                client_matches += 1
+                m = _norm_mpxn(r.get(mpxn_col))
+                if not m or (want is not None and m not in want):
+                    continue
+                mpxn_matches += 1
+                if any(parse_num(r.get(fld)) is not None for fld in _INCUMBENT_RATE_FIELDS):
+                    rate_rows += 1
+    except (OSError, csv.Error):
+        pass
+    return {
+        "total_rows": total_rows,
+        "clients": sorted(clients),
+        "client_matches": client_matches,
+        "mpxn_matches": mpxn_matches,
+        "rate_rows": rate_rows,
+    }
+
+
 BENCHMARK_SUPPLIER = "Market benchmark"
 
 

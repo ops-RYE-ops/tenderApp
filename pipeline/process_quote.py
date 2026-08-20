@@ -295,14 +295,16 @@ def write_csv(rows, path, overwrite=False):
 def row_to_line(row):
     """One TARGET-schema row -> a canonical quote line (rates as numbers|null).
 
-    mpxn stays a string. supplyStartDate passes through as a string (already
-    normalised to YYYY-MM-DD by clean_val). Every rate/charge is run through the
-    shared parse_num so the stored number is exactly what the cost engine sees.
-    Fields left blank by the mapping become null (not quoted).
+    mpxn stays a string. supplyStartDate / supplyEndDate pass through as strings
+    (already normalised to YYYY-MM-DD by clean_val). Every rate/charge is run
+    through the shared parse_num so the stored number is exactly what the cost
+    engine sees. Fields left blank by the mapping become null (not quoted).
     """
     line = {"mpxn": row.get("mpxn", "")}
     sd = (row.get("supplyStartDate") or "").strip()
     line["supplyStartDate"] = sd or None
+    ed = (row.get("supplyEndDate") or "").strip()
+    line["supplyEndDate"] = ed or None
     for f in LINE_RATE_FIELDS:
         line[f] = parse_num(row.get(f))
     return line

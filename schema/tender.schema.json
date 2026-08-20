@@ -175,6 +175,10 @@
           "type": ["string", "null"],
           "description": "Contract start date for this line, ISO 'YYYY-MM-DD' where present."
         },
+        "supplyEndDate": {
+          "type": ["string", "null"],
+          "description": "Contract end date for this line, ISO 'YYYY-MM-DD' where the quote states one; otherwise derived from supplyStartDate + term at render (flagged as estimated), or null for bespoke/coterminous terms that cannot be derived."
+        },
         "unitRate": { "$ref": "#/$defs/value", "description": "Single (standard) rate, p/kWh. Null on two-rate lines." },
         "dayRate": { "$ref": "#/$defs/value", "description": "Day rate, p/kWh. Null on single-rate lines." },
         "nightRate": { "$ref": "#/$defs/value", "description": "Night rate, p/kWh. Null on single-rate lines." },

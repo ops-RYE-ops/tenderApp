@@ -23,10 +23,11 @@ import csv
 import json
 import os
 import re
+import calendar
 import shutil
 import sys
 import tempfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 # Shared with the extractor so the two never diverge on schema or parsing.
@@ -97,6 +98,51 @@ def annualise(value, basis, eac, kva, warnings, charge_name, site):
         return value * 12
     raise SystemExit(f"ERROR: unknown charge basis '{basis}' (valid: {sorted(VALID_BASIS)})")
 
+
+
+def _months_from_term(term):
+    """Contract length in whole months parsed from a term string, else None.
+
+    Handles '12 months', '24 month', '3 years'. Bespoke / coterminous / 'fixed to
+    <date>' wording returns None — we never invent an end date for those.
+    """
+    if not term:
+        return None
+    t = str(term).lower()
+    m = re.search(r"(\d+)\s*month", t)
+    if m:
+        return int(m.group(1))
+    y = re.search(r"(\d+)\s*year", t)
+    if y:
+        return int(y.group(1)) * 12
+    return None
+
+
+def _add_months(d, n):
+    """Add n calendar months to a date, clamping to the target month's last day."""
+    idx = d.month - 1 + n
+    year = d.year + idx // 12
+    month = idx % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def derive_end_date(start_iso, term):
+    """(end_iso, True) derived from start + term, or (None, False) if not derivable.
+
+    A contract of N months starting on the 1st runs to the day BEFORE the same
+    date N months on (e.g. 2026-08-01 + 12m -> 2027-07-31). Returns derived=False
+    (and None) when there's no start, no parseable term, or an unparseable date —
+    the caller then shows nothing rather than a guess.
+    """
+    n = _months_from_term(term)
+    if not start_iso or not n:
+        return None, False
+    try:
+        sd = date.fromisoformat(str(start_iso)[:10])
+    except ValueError:
+        return None, False
+    return (_add_months(sd, n) - timedelta(days=1)).isoformat(), True
 
 
 def offer_category(entry):
@@ -193,6 +239,15 @@ def compute_offer(entry, tender, incumbent=False):
             "network": annualise(parse_num(row.get("networkCharge")), basis["networkCharge"], eac, kva, warnings, "Network charge", name),
             "meter": annualise(parse_num(row.get("meterCharge")), basis["meterCharge"], eac, kva, warnings, "Meter charge", name),
         }
+        # Contract dates: start passes through verbatim; end is used as quoted when
+        # the supplier stated one, otherwise derived from start + term (flagged so
+        # the dashboard can footnote it as estimated). Bespoke terms derive to "".
+        start_raw = (row.get("supplyStartDate") or "").strip()
+        end_raw = (row.get("supplyEndDate") or "").strip()
+        end_estimated = False
+        if not end_raw:
+            derived, end_estimated = derive_end_date(start_raw, entry.get("term", ""))
+            end_raw = derived or ""
         sites.append({
             "name": name,
             "mpxn": mpxn,
@@ -202,7 +257,9 @@ def compute_offer(entry, tender, incumbent=False):
             "rates": {k: parse_num(row.get(k)) for k in
                       ("unitRate", "dayRate", "nightRate", "weekendRate", "standingCharge",
                        "capacityCharge", "networkCharge", "meterCharge")},
-            "startDate": (row.get("supplyStartDate") or "").strip(),
+            "startDate": start_raw,
+            "endDate": end_raw,
+            "endEstimated": end_estimated,
             "costs": {k: round(v, 2) for k, v in costs.items()},
             "total": round(sum(costs.values()), 2),
         })
@@ -256,6 +313,7 @@ def _write_offer_csv(path, lines, sites):
                 "mpxn": m,
                 "updatedEac": "" if site.get("eac") is None else site.get("eac"),
                 "supplyStartDate": ln.get("supplyStartDate") or "",
+                "supplyEndDate": ln.get("supplyEndDate") or "",
                 "kva": "" if site.get("kva") is None else site.get("kva"),
             }
             for fld in rate_fields:
