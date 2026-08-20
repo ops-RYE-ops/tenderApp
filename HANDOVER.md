@@ -34,7 +34,39 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-08-18, branch `feat/publish-webhook`):** a **publish → Retool
+**Latest session (2026-08-20 — client-dashboard polish + contract dates, both merged &
+tested e2e on the preview):** two branches shipped.
+(1) **Portfolio presentation pass** (`feat/portfolio-efficiency-diff`) — the site-by-site
+table now runs Site · EAC · **Efficiency** · Current · Offer · **Δ**. New per-site
+**Efficiency** column = each meter's all-in effective p/kWh as a "current / offered" pair
+(`27.4p / 24.8p`); the offered side is pinned to the **best/cheapest** quote, and the header
+reads "current / best" when >1 offer is shown. New **Δ vs current** column for the
+single-offer case (green = saving); for the multi-offer case each offer cell instead carries
+an inline `(−£1,262)` muted delta (the finance-report pattern) and the Δ column is dropped.
+Plus a hardcoded **"Portfolio cost efficiency: Medium"** final row on the Summary tab's
+Standardised comparison table (always "Medium", always client-facing — a deliberate sales
+talking-point, not data).
+(2) **Contract start/end dates, end-to-end** (`feat/contract-end-dates`) — new
+`supplyEndDate` line field captured through the whole spine: `rye_quote_core.TARGET_FIELDS`
+(auto-flows to CSV cols + LLM tool schema + map prompt) → `process_quote.row_to_line` →
+`map_headers` SYSTEM_PROMPT (contract start/end column guidance) → `tender.schema.json` line
+def → `build_dashboard` (`_write_offer_csv` + site cell + new `derive_end_date`) → template →
+`web/app.js` TARGET_FIELDS. Rate books now show **Start + End** columns for quoted offers; a
+missing end date is **derived from start + term** and flagged with `*` + a footnote, and left
+blank (never guessed) for bespoke/coterminous terms. Incumbent rows show no dates (Rory's
+call — only the quoted contract dates matter). The standalone **quote-processing skill** was
+updated to match (new `supplyEndDate` target column + date-mapping guidance) and reinstalled
+by Rory. Also added an **incumbent client-mismatch warning** at `/api/assemble`
+(`assemble_tender.diagnose_sites_csv`): a sites.csv whose `clientName` doesn't equal the
+tender's client name now returns a message naming the client(s) actually found in the file,
+instead of silently dropping the incumbent — this bit us once (client typed "Test End dates"
+vs the file's "Treetop Golf", so every incumbent row was filtered out). All suites green:
+`make_and_verify`, `test_extract`, `test_cost`, `test_capacity`, `test_weekend`, `dom_smoke`
+(bumped to **14** target fields), `test_assemble_api` (line rate-field sync now excludes
+`supplyStartDate` + `supplyEndDate`). See the "UX / feature backlog" section below for what
+Rory wants next.
+
+**Session (2026-08-18, branch `feat/publish-webhook`):** a **publish → Retool
 webhook** — publishing a client dashboard now fires a fire-and-forget event to a Retool
 workflow ("Tender Database Update") that advances each meter's status in RYE's Postgres.
 First tie-in between the standalone tenderApp and RYE's existing tendering lifecycle;
@@ -582,6 +614,93 @@ publish/link/gate above). The build is functionally complete and live on Vercel 
   dated Retool export (`sites_2026-07-31_122851.csv`) already works. Updated the wizard
   copy + button (`web/index.html`, `web/app.js`) so no one hunts through Downloads to
   rename it.
+
+## UX / feature backlog (from Rory, 2026-08-20)
+
+Current priorities gathered after the dashboard + contract-date work landed. Some expand
+earlier "What's left" items (cross-referenced); none are blocking the live app.
+
+- **Edit steps mid-journey.** Going back to change an earlier wizard step is painful — the
+  flow is effectively forward-only. Make moving back/forward and editing a prior step
+  (re-map, re-tick offers, change fee/commission) easy. *Expands "What's left" item 8
+  (navigate/edit an existing tender); this is the higher-priority half of it.*
+- **"New tender" button does nothing.** Clicking it is a no-op today — the only way to start
+  a fresh tender is to refresh the page, which is clunky. Wire it to reset wizard state and
+  return to step 1. *Small bug/UX fix, `web/app.js` (state reset + screen switch).*
+- **Confirm-mapping / save-to-cache should close the mapping panel.** After confirming a
+  mapping you currently have to click Back manually; confirming should auto-close/advance.
+  *Small UX fix, `web/app.js` (the map review/confirm handler around the `#map-rows` flow).*
+- **Delete tenders from the register (incl. the DB row).** Testing leaves lots of draft
+  tenders cluttering the register with no way to remove them. Rory specifically wants a real
+  delete (hard purge of test/draft rows), not only a soft-archive. *Expands "What's left"
+  item 5, which proposed a soft delete/archive to preserve the audit trail — reconcile the
+  two: probably soft-archive for published tenders, hard-delete for drafts/test rows.*
+- **Test mode.** A sandbox/dry-run mode so testing doesn't create real register clutter or
+  demand exact client-name matches — e.g. a "test" flag that excludes a tender from the
+  register, and/or a way to skip/relax incumbent `clientName` scoping for dry runs. *New;
+  surfaced directly by the 2026-08-20 "Test End dates" incumbent-mismatch episode. Pairs with
+  the register-delete item.*
+- **Custom domain in Vercel.** Finish `tender.rye.energy` (GoDaddy CNAME + `_vercel` TXT).
+  *Still open — see "What's left" item 3 and "Deployment & ops status".*
+- **Retool consolidation ("Path B").** Explore bringing the whole tender flow into Retool to
+  link directly to RYE's Postgres (select sites → CSV → Front email → status transitions, all
+  in one place, no handover). The longer-term direction beyond the current publish-webhook
+  tie-in ("Path A"). *See "Publish webhook → RYE tendering workflow".*
+
+## Design: edit a tender from the register (scoped 2026-08-20, NOT built)
+
+The top UX ask (expands "UX / feature backlog" item 1). Goal: stop rebuilding a tender from
+scratch to change small things — load a saved tender from the register and edit it.
+
+**Hard constraint that shapes everything:** the raw uploaded quote files are NOT stored — only
+the *extracted result* (sites + quotes with rates) lives in the saved tender payload. So there
+are two tiers, and Tier 1 is the one to build first.
+
+**Tier 1 — edit WITHOUT re-uploading (build first; ~one focused session).**
+Everything the assemble step produced is already in the stored tender, so this needs no
+re-extraction:
+- **New endpoint `GET /api/tenders/{id}`** (optional `?version=`) → the full stored payload as
+  JSON, team-gated, degrades to 404 / `{tenders:[]}`-style with no DB. Reuses the existing
+  `_get_tender()` (today only `/api/render` consumes it, as HTML). Cover with a test like
+  `test_ui`/`test_render`.
+- **Register "Edit" action** (per row, beside Preview/Revoke) in `web/app.js` + `index.html`.
+  On click: fetch the payload, hydrate wizard state, jump straight to the assemble/review step
+  (step 5).
+- **Hydration (payload → `state`):**
+  - `state.meta.id = payload.id` → re-save bumps to the next version via the existing path.
+  - `state.meta.client_name / tender_label / utility` from payload.
+  - Build ONE synthetic extract `{sites: payload.sites, quotes: payload.quotes}` and drop it in
+    as a single confirmed `state.files` entry with `.extract` set, so the existing
+    `openAssemble()` path (`POST /api/cost` with `extracts`) re-ranks from stored data. Stored
+    `sites[]` already carry authoritative EAC (`eac_source:"db"`), so ranking matches the render
+    WITHOUT re-uploading sites.csv.
+  - Pre-tick `state.featured` from `payload.quotes[].featured` (fall back to 2 cheapest, as now);
+    prefill fee↔commission toggle + values from `payload.rye_fee` / `payload.rye_commission`;
+    recommendation from `payload.recommended`; expiry from `payload.expires_at`; benchmark fields
+    from `payload.incumbent` when `kind==="benchmark"`.
+- **Incumbent on edit — Rory's choice: "let me choose per edit".** Default = PRESERVE the stored
+  incumbent; allow replacing it. Precedence on save: new sites.csv > new benchmark > preserved
+  stored incumbent > none. Implementation: add a `keep_incumbent: bool` form field to
+  `/api/assemble`; when true AND no new sites_csv AND no benchmark, the endpoint **re-fetches the
+  stored tender by `meta.id` server-side and copies its `incumbent` block into the new version**
+  — do NOT accept a client-sent incumbent block (keeps "code owns the numbers"; a client-facing
+  doc's baseline rates must never be injectable from the browser). UI on the review screen:
+  "Current: <supplier> (kept from saved tender)" with Keep / Replace with sites.csv / Use
+  benchmark.
+- **Save:** `doAssemble()` essentially unchanged — flags featured, POSTs `extracts + meta`
+  (+ `keep_incumbent` or a new sites_csv/benchmark). Version bumps; re-publish as normal (the
+  live `/d/` link renders the latest published version, so it updates on re-publish).
+- **Tests:** `GET /api/tenders/{id}`; the `keep_incumbent` assemble path (`test_assemble_api`);
+  a `dom_smoke` walk register → Edit → prefilled assemble → save.
+
+**Tier 2 — replace / re-map a single quote (later, bigger).** To fix a mis-mapped rate or add a
+supplier, that one file must be re-uploaded (we don't keep it) → map → extract → join the
+existing extracts, other quotes untouched. Reintroduces the upload→map→extract path inside an
+edit session; defer until Tier 1 is in use.
+
+**Build-once primitive:** a proper wizard **state-reset** helper is needed by BOTH the broken
+"New tender" button (backlog item 2) and entering Edit (reset, then hydrate). Write it once and
+reuse. Editing always creates a new version, so the audit trail is preserved.
 
 ## Client dashboard — tabs + Market Review (done 2026-07-20, renamed + trimmed 2026-08-06)
 
