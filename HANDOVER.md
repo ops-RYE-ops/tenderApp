@@ -34,7 +34,77 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-08-20 — client-dashboard polish + contract dates, both merged &
+**Latest session (2026-08-27 — branch `feat/live-link-edits`, all suites green, NOT yet
+merged or preview-tested):** four things Rory asked for.
+(1) **`Current` renamed `Incumbent` across the client dashboard** — the badge on the bars,
+breakdown and rate books, the comparison-table column header, the `vs incumbent` delta column
+and the Portfolio efficiency header (`incumbent / best`). Done by making `baseLabel` the single
+source and adding module-scope `baseLc` (prose/headers) + `baseChip` (short badge); the three
+hardcoded `"current"` chips now use `baseChip`. Benchmark wording is untouched on purpose —
+a benchmark tender still reads **Market benchmark** / badge `benchmark`, because the two must
+never be conflated. Rationale (Rory): "Incumbent" works for both new tenders and re-tenders of
+existing clients, so one dashboard covers both without a process change.
+(2) **Market snapshot refreshed to 27 Aug 2026.** Power spot 129.37 £/MWh (the top of its
+three-year range, +76.95% 1Y, +4.36% 5Y); NBP front-month 161.85 p/therm; every gas contract transcribed from the
+ICE board including **Summer 27 at 107.00 and Winter 27 at 104.00 against Winter 26 at 164.80**
+— the curve shape that carries the "24-month blends down next winter" argument, and the gas
+cards are now a tidy 3×3 (Feb 27 dropped to make room).
+**Three of Rory's corrections are baked in — do not re-learn them the hard way:**
+(a) **The long-window chart is THREE years, not five.** A five-year view puts the 2022
+Russia-Ukraine spikes (~£585) on the same axis as today, which dwarfs a genuinely severe market
+and undersells it. Three years starts after the crisis unwound, so £129.37 reads as **the top of
+the range** (£56–130) rather than a footnote to 2022. The template no longer hardcodes the
+window: it reads `power.rangeLong.years` + `.axisLabels`, so changing it again is a JSON edit
+only. The key was renamed `range5y` → `rangeLong` for exactly that reason. Don't widen it back
+without a reason.
+(b) **The far gas curve is NOT thin.** An earlier draft caveated Summer 27 / Winter 27 as
+illiquid and indicative on the strength of their 15-lot volumes. Wrong read: the screenshot was
+taken early in the session, and both have held at or above those levels for the preceding
+fortnight. They are a settled view of the curve, and caveating them understated the 24-month
+argument. Volume alone is not evidence of a stale mark — check whether the level has held.
+(c) **Trading Economics' spot index and the N2EX day-ahead view are different measures** — one
+daily index vs every HH delivery period — so the commentary quotes the N2EX daily averages and
+intraday spread separately rather than implying one series eased off the other's high.
+(3) **A published client link now survives an edit** (the actual fix for "we have to send a new
+link each time"). Two bugs, both invisible until you tried to edit: `/api/assemble` did not
+carry `slug`/`url_uuid`/`dashboard_url` forward on a version bump, so a re-save **re-minted the
+uuid and killed the live link**; and `/d/<slug>/<uuid>` required the LATEST version to be
+published, so the client's link would have **404'd the instant an edit was saved**. Now:
+assemble re-reads the link identity from the stored tender **server-side** (a `url_uuid` sent
+from the browser is ignored — a client-facing URL must not be settable from a page, and there is
+a test for it), and the public route answers two separate questions — *is this link alive*
+(latest version must still carry the uuid, so **Revoke is still a kill switch**) and *what
+should it show* (`_get_published_tender_by_uuid`, the latest version actually published under
+that uuid). Net effect — **staged publish**, Rory's choice over instant-live: the client keeps
+seeing the last published version while you edit, and Publish flips it on the same URL. Saving
+an edit to a published tender now returns a warning saying exactly that.
+(4) **Edit a saved tender from the register — Tier 1 BUILT** (the design below, now implemented).
+New `GET /api/tenders/{id}` (team-gated, optional `?version=`) returns the full stored payload;
+a per-row **Edit** action hydrates the wizard and jumps to step 5. New `resetWizard()` is the
+build-once primitive the design called for, which also **fixes the dead "New tender" button**.
+Hydration rebuilds ONE synthetic extract from the stored `sites`+`quotes` (marked `fromSaved`),
+prefills client/label/utility, fee↔commission, expiry, notes and a stored benchmark, and
+**restores the previously-featured offers instead of the "two cheapest" default** — otherwise a
+re-save silently swaps what the client was shown. Incumbent handling is Rory's "let me choose
+per edit": a `keep_incumbent` form field on `/api/assemble` makes the endpoint re-fetch the
+stored incumbent **server-side**, with precedence new sites.csv > new benchmark > kept > none.
+**Gotcha found and fixed while building:** the synthetic row has no `File` behind it, so stepping
+back to the extract step and hitting "Extract confirmed files" would have POSTed a null — saved
+rows are now read-only (no map/remove) and skipped by `runExtractAll`.
+Also shipped: **confirming a mapping now closes the panel** and returns to the file list (the
+notice moved from `map-msg` to `step2-msg`).
+Tests: 6 new checks in `test_publish.py` (staged publish serves the published version not the
+draft; never-published draft 404s; revoke kills the link through both old and new uuid), 13 in
+`test_assemble_api.py` (link identity carried forward, browser-supplied uuid/slug ignored,
+unknown id still mints fresh, `keep_incumbent` preserved / beaten by a new sites.csv / nothing
+to keep), 6 in `test_ui.py` (`/api/tenders/{id}`), and `dom_smoke` is up to **78 checks** with a
+full register → Edit → prefilled assemble → save walk plus the New-tender reset. All 13 Python
+suites + dom_smoke green.
+**STILL TO VERIFY on a preview deploy** (neither tests nor jsdom can prove it): a real publish →
+edit → re-publish round trip against the live DB, confirming the URL does not change and the
+link stays up while the edit sits in draft.
+
+**Session (2026-08-20 — client-dashboard polish + contract dates, both merged &
 tested e2e on the preview):** two branches shipped.
 (1) **Portfolio presentation pass** (`feat/portfolio-efficiency-diff`) — the site-by-site
 table now runs Site · EAC · **Efficiency** · Current · Offer · **Δ**. New per-site
@@ -620,16 +690,16 @@ publish/link/gate above). The build is functionally complete and live on Vercel 
 Current priorities gathered after the dashboard + contract-date work landed. Some expand
 earlier "What's left" items (cross-referenced); none are blocking the live app.
 
-- **Edit steps mid-journey.** Going back to change an earlier wizard step is painful — the
-  flow is effectively forward-only. Make moving back/forward and editing a prior step
-  (re-map, re-tick offers, change fee/commission) easy. *Expands "What's left" item 8
-  (navigate/edit an existing tender); this is the higher-priority half of it.*
-- **"New tender" button does nothing.** Clicking it is a no-op today — the only way to start
-  a fresh tender is to refresh the page, which is clunky. Wire it to reset wizard state and
-  return to step 1. *Small bug/UX fix, `web/app.js` (state reset + screen switch).*
-- **Confirm-mapping / save-to-cache should close the mapping panel.** After confirming a
-  mapping you currently have to click Back manually; confirming should auto-close/advance.
-  *Small UX fix, `web/app.js` (the map review/confirm handler around the `#map-rows` flow).*
+- **Edit steps mid-journey.** *Half done 2026-08-27:* editing a SAVED tender from the register
+  is built (Tier 1 — see the design section below, now implemented), so re-ticking offers and
+  changing fee/commission no longer means rebuilding. What remains is free back/forward movement
+  WITHIN a fresh wizard run before the first save, and Tier 2 (re-uploading/re-mapping one quote
+  inside an edit session).
+- ~~**"New tender" button does nothing.**~~ **DONE 2026-08-27** — `resetWizard()` + `newTender()`
+  in `web/app.js`, wired to both `nav-new` and `btn-register-new`. The same reset primitive is
+  reused when entering Edit.
+- ~~**Confirm-mapping / save-to-cache should close the mapping panel.**~~ **DONE 2026-08-27** —
+  `confirmMap()` now calls `showStep(2)` and puts its success notice on `step2-msg`.
 - **Delete tenders from the register (incl. the DB row).** Testing leaves lots of draft
   tenders cluttering the register with no way to remove them. Rory specifically wants a real
   delete (hard purge of test/draft rows), not only a soft-archive. *Expands "What's left"
@@ -647,7 +717,15 @@ earlier "What's left" items (cross-referenced); none are blocking the live app.
   in one place, no handover). The longer-term direction beyond the current publish-webhook
   tie-in ("Path A"). *See "Publish webhook → RYE tendering workflow".*
 
-## Design: edit a tender from the register (scoped 2026-08-20, NOT built)
+## Design: edit a tender from the register (scoped 2026-08-20, Tier 1 BUILT 2026-08-27)
+
+**Tier 1 is now implemented on `feat/live-link-edits`** — the section below is the design as
+scoped, kept because Tier 2 is still open and the reasoning still applies. Deltas from the plan
+as built: the register row's Edit action sits beside Preview as designed; `keep_incumbent` is a
+plain bool form field and the kept block is re-fetched server-side as specified; hydration also
+**restores the previously-featured offers** (not in the original scope — without it a re-save
+silently reverts to the two cheapest); and saved rows are marked `fromSaved` so the extract step
+cannot try to re-extract a file that was never uploaded.
 
 The top UX ask (expands "UX / feature backlog" item 1). Goal: stop rebuilding a tender from
 scratch to change small things — load a saved tender from the register and edit it.
@@ -1017,6 +1095,14 @@ function, so the endpoints stay thin wrappers.
 
 - macOS Python is externally-managed: use the venv locally. Claude's sandbox is
   Linux and shares the working folder, but not the macOS venv.
+- **Running the suites from Claude's side (2026-08-27):** the whole suite runs natively in the
+  Linux VM the device bridge shells into — `pip3 install --break-system-packages fastapi
+  openpyxl jsonschema psycopg2-binary python-multipart httpx`, and `node tests/dom_smoke.js`
+  works from the repo root because `node_modules/` is in the mounted folder. **Trap:** the VM
+  ships an ancient system `jsonschema` in `/usr/lib/python3/dist-packages` that pip reports as
+  "already satisfied", so `Draft202012Validator` fails to import and half the suites die at the
+  import line. Force it: `pip3 install --break-system-packages --upgrade --ignore-installed
+  jsonschema`. None of this touches the macOS `.venv`.
 - Run scripts from repo root so same-dir imports resolve.
 - `.git/index.lock: File exists` with no git running → `rm -f .git/index.lock`.
   (Claude's file tooling touching the repo can leave one behind.)
