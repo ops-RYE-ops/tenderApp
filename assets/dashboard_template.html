@@ -123,7 +123,7 @@ td.total { color: var(--t1); }
 tr.incumbent-row td { color: var(--t3); }
 tr.incumbent-row td.name { color: var(--t2); }
 
-/* Effective-rate pair (current / offered) + inline deltas — site-by-site table */
+/* Effective-rate pair (incumbent / offered) + inline deltas — site-by-site table */
 .effrate .cur { color: var(--t3); }
 .effrate .sep { color: var(--t4); margin: 0 3px; }
 .effrate .off { color: var(--t1); }
@@ -253,12 +253,17 @@ const commission = TENDER.commission;
 const inc = TENDER.incumbent;
 const savings = inc ? inc.total - rec.total : null;
 /* Is the baseline the client's real contract, or a typed market average? Every
-   label that says "current" has to soften to "benchmark" when it's the latter —
+   label that says "incumbent" has to soften to "benchmark" when it's the latter —
    a benchmark saving presented as a contract saving is a promise we can't keep.
    Absent baseline means a tender assembled before benchmarks existed: incumbent. */
 const baseline = TENDER.baseline || { kind: "incumbent" };
 const isBenchmark = baseline.kind === "benchmark";
-const baseLabel = isBenchmark ? "Market benchmark" : "Current";
+const baseLabel = isBenchmark ? "Market benchmark" : "Incumbent";
+/* Lowercase forms: baseLc for prose/column headers ("vs incumbent"), baseChip for
+   the short badge on bars / breakdown / rate books. They differ on purpose for a
+   benchmark: the header reads "market benchmark", the badge just "benchmark". */
+const baseLc = baseLabel.toLowerCase();
+const baseChip = isBenchmark ? "benchmark" : "incumbent";
 const totalEac = TENDER.sites.reduce((a, s) => a + (s.eac || 0), 0);
 const comps = TENDER.components;
 
@@ -414,7 +419,7 @@ function buildBars() {
     allOffers.slice().sort((a, b) => a.total - b.total).map((o, i) => {
       const fill = o.isIncumbent ? "var(--rye-amber-fill)"
         : o.id === rec.id ? "var(--rye-green-fill)" : "rgba(237,237,237,0.7)";
-      const chip = o.isIncumbent ? `<span class="chip warning">${isBenchmark ? "benchmark" : "current"}</span>`
+      const chip = o.isIncumbent ? `<span class="chip warning">${baseChip}</span>`
         : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
       return `<div class="bar-row" data-cat="${esc(o.category || 'other')}">
         <div class="bar-name">${esc(o.supplier)}${o.isIncumbent && isBenchmark ? "" : `<span class="term">${esc(o.term)}</span>`}</div>
@@ -431,12 +436,12 @@ function buildBreakdown() {
     <div class="table-wrap"><table>
       <thead><tr><th>Offer</th>` +
       comps.map(c => `<th>${esc(c.label)}</th>`).join("") +
-      `<th>Eff. p/kWh</th><th>Total</th>${inc ? "<th>vs current</th>" : ""}<th></th></tr></thead><tbody>` +
+      `<th>Eff. p/kWh</th><th>Total</th>${inc ? `<th>vs ${baseLc}</th>` : ""}<th></th></tr></thead><tbody>` +
     allOffers.slice().sort((a, b) => (a.isIncumbent ? -1 : b.isIncumbent ? 1 : a.total - b.total)).map(o => {
       const delta = (inc && !o.isIncumbent)
         ? `<td class="${o.deltaVsIncumbent <= 0 ? "best" : ""}">${gbpSigned(o.deltaVsIncumbent)}</td>`
         : (inc ? "<td>—</td>" : "");
-      const chip = o.isIncumbent ? `<span class="chip warning">${isBenchmark ? "benchmark" : "current"}</span>`
+      const chip = o.isIncumbent ? `<span class="chip warning">${baseChip}</span>`
         : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
       return `<tr class="${o.isIncumbent ? "incumbent-row" : ""}">
         <td class="name">${esc(o.supplier)}<span class="sub">${esc(o.term)}</span></td>` +
@@ -458,14 +463,13 @@ function buildSiteMatrix() {
   const singleOffer = TENDER.offers.length === 1;
   // Efficiency = each meter's all-in effective rate (£/yr ÷ EAC × 100), i.e. the
   // p/kWh that meter is actually running at once every charge is standardised.
-  // Shown as a "current / offered" pair. The offered side ALWAYS uses the BEST
+  // Shown as an "incumbent / offered" pair. The offered side ALWAYS uses the BEST
   // (cheapest) quote, so with several offers on the page the column still reads
   // against one clear number rather than an ambiguous average — the header says so.
   const bestOffer = allOffers.find(o => !o.isIncumbent && o.id === TENDER.bestId)
     || allOffers.find(o => !o.isIncumbent) || rec;
   const eff = (cell, eac) => (cell && eac) ? (cell.total / eac * 100) : null;
   const p1 = v => v == null ? "—" : v.toFixed(1) + "p";
-  const baseLc = baseLabel.toLowerCase();
   const offeredLbl = singleOffer ? "offered" : "best";
   return `<section>
     <div class="section-label">Site-by-site annual cost (£/year)</div>
@@ -524,7 +528,7 @@ function buildRateBooks() {
           o.warnings.map(w => `<div><span class="chip warning">note</span>${esc(w)}</div>`).join("") + `</div>` : "";
       return `<details>
         <summary><span class="caret">▶</span>${esc(o.supplier)}
-          <span class="chip ${o.isIncumbent ? "warning" : "neutral"}">${esc(o.isIncumbent ? (isBenchmark ? "benchmark" : "current") : o.term)}</span>
+          <span class="chip ${o.isIncumbent ? "warning" : "neutral"}">${esc(o.isIncumbent ? baseChip : o.term)}</span>
           <span style="margin-left:auto" class="chip neutral">${gbp(o.total)}/yr</span></summary>
         ${warn}
         <div class="table-wrap"><table>
@@ -575,9 +579,9 @@ function buildMarketPane() {
     </section>` : ""}
     <section>
       <div class="split2">
-        ${(m.power && m.power.range5y && m.power.range5y.series) ? `<div class="chartcard">
-          <div class="section-label">Five-year context</div>
-          <div class="subtitle" style="margin-bottom:12px">Power range over five years (£/MWh) — the band stays wide year on year.</div>
+        ${(m.power && m.power.rangeLong && m.power.rangeLong.series) ? `<div class="chartcard">
+          <div class="section-label">${m.power.rangeLong.years ? esc(String(m.power.rangeLong.years)) + "-year context" : "Longer-term context"}</div>
+          <div class="subtitle" style="margin-bottom:12px">Power price over the last ${m.power.rangeLong.years ? esc(String(m.power.rangeLong.years)) + " years" : "few years"} (£/MWh) — where today sits against the recent baseline.</div>
           <svg id="ychart" class="mchart" viewBox="0 0 520 200"></svg>
         </div>` : ""}
         ${(m.gas) ? `<div class="chartcard">
@@ -753,13 +757,14 @@ function renderMarket() {
   if (!m) return;
   const power = m.power || {}, gas = m.gas || {};
   const spot = power.spotNow;
-  const r5 = power.range5y || {};
+  const r5 = power.rangeLong || {};
+  const r5yrs = r5.years ? String(r5.years) : "";
 
   // KPI cards
   const cards = [];
   if (spot != null) cards.push({ t: "Power spot", k: (spot / 10).toFixed(2), lab: `p/kWh · £${spot.toFixed(2)}/MWh today`, cls: "accent-amber" });
   if (gas.spotNow != null) cards.push({ t: "Gas spot", k: gas.spotNow.toFixed(2), lab: "p/therm · NBP", cls: "accent-purple" });
-  if (r5.min != null && r5.max != null) cards.push({ t: "5-yr power range", k: `${(r5.min / 10).toFixed(1)}–${(r5.max / 10).toFixed(1)}`, lab: `p/kWh · £${r5.min}–${r5.max}/MWh`, cls: "accent-blue" });
+  if (r5.min != null && r5.max != null) cards.push({ t: (r5yrs ? r5yrs + "-yr" : "Recent") + " power range", k: `${(r5.min / 10).toFixed(1)}–${(r5.max / 10).toFixed(1)}`, lab: `p/kWh · £${r5.min}–${r5.max}/MWh`, cls: "accent-blue" });
   if (power.series && power.series.length > 1) {
     const first = power.series[0], last = power.series[power.series.length - 1];
     const chg = (last - first) / first * 100;
@@ -785,7 +790,7 @@ function renderMarket() {
     const lo = Math.min(...r5.series), hi = Math.max(...r5.series);
     mLineChart("ychart", r5.series, 520, 200, {
       min: Math.floor((lo - 5) / 10) * 10, max: Math.ceil((hi + 5) / 10) * 10,
-      color: CHART.blue, months: r5.yearLabels, markLast: true,
+      color: CHART.blue, months: r5.axisLabels, markLast: true,
     });
   }
 
