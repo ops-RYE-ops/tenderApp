@@ -153,6 +153,50 @@ def test_tenders_register():
         main._list_tenders = orig
 
 
+def test_tender_detail():
+    print("detail: /api/tenders/{id} returns the full stored payload for Edit")
+    client = TestClient(main.app)
+    tid = "11111111-1111-4111-8111-111111111111"
+    payload = {
+        "id": tid, "client_name": "Amorino UK", "tender_label": "Electricity tender",
+        "status": "published", "version": 3, "url_uuid": "u-live", "slug": "amorino-uk",
+        "sites": [{"mpxn": "1200000000001", "site_name": "A", "eac": 1000.0, "eac_source": "db"}],
+        "quotes": [{"supplier": "Octopus", "term": "12m", "featured": True,
+                    "lines": [{"mpxn": "1200000000001", "unitRate": 22.0}]}],
+        "incumbent": {"supplier": "British Gas", "lines": [{"mpxn": "1200000000001", "unitRate": 27.4}]},
+    }
+    orig = main._get_tender
+    seen = {}
+
+    def fake_get(t, v=None):
+        seen["args"] = (t, v)
+        return payload if t == tid else None
+
+    main._get_tender = fake_get  # type: ignore
+    try:
+        r = client.get(f"/api/tenders/{tid}")
+        check("detail -> 200", r.status_code == 200)
+        body = r.json()
+        # The whole payload, not the register's denormalised columns: the sites and
+        # quotes in it ARE the extract the edit re-costs, so anything trimmed here is
+        # something the wizard cannot rebuild (the quote files are not kept).
+        check("returns the full payload", body.get("tender", {}).get("id") == tid)
+        check("sites carried with provenance",
+              body["tender"]["sites"][0]["eac_source"] == "db")
+        check("quotes carried with the featured flag",
+              body["tender"]["quotes"][0]["featured"] is True)
+        check("incumbent block carried", body["tender"]["incumbent"]["supplier"] == "British Gas")
+        check("latest version by default", seen["args"] == (tid, None))
+
+        r = client.get(f"/api/tenders/{tid}?version=2")
+        check("?version= is passed through", seen["args"] == (tid, 2))
+
+        r = client.get("/api/tenders/does-not-exist")
+        check("unknown id -> 404", r.status_code == 404)
+    finally:
+        main._get_tender = orig
+
+
 def test_confirm_normalises_supplier():
     print("confirm: supplier whitespace is normalised before the cache write")
     client = TestClient(main.app)
@@ -187,6 +231,7 @@ if __name__ == "__main__":
     test_static_app_served()
     test_suppliers_endpoint()
     test_tenders_register()
+    test_tender_detail()
     test_confirm_normalises_supplier()
     if FAILURES:
         print(f"\n{len(FAILURES)} CHECK(S) FAILED")

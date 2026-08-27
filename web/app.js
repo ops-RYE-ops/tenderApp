@@ -27,6 +27,7 @@ const state = {
   offers: [],       // /api/cost ranking rows (one per extracted offer)
   featured: new Set(), // offer indices ticked to show the client (max 2)
   saved: null,      // last /api/assemble response (id, slug, url_uuid, version) for preview/publish
+  editing: null,    // { version, status, incumbent } when hydrated from the register; null for a new tender
 };
 
 const MAX_FEATURED = 2;
@@ -71,6 +72,63 @@ function escapeHtml(s) {
 function showScreen(name) {
   $("screen-wizard").classList.toggle("hidden", name !== "wizard");
   $("screen-register").classList.toggle("hidden", name !== "register");
+}
+
+// Wizard state reset. Needed in two places — the "New tender" button and entering
+// an Edit (reset, then hydrate) — so it lives here once rather than being open-coded
+// twice and drifting. Clears the model AND the form fields; a stale value left in an
+// input is the same bug as a stale value left in state.
+function resetWizard() {
+  state.meta = { client_name: "", tender_label: "", utility: "electricity", supplier: "", id: null };
+  state.files = [];
+  state.activeIdx = null;
+  state.sitesCsv = null;
+  state.offers = [];
+  state.featured = new Set();
+  state.saved = null;
+  state.editing = null;
+
+  const setVal = (id, v) => { const el = $(id); if (el) el.value = v; };
+  const setChk = (id, v) => { const el = $(id); if (el) el.checked = v; };
+  setVal("in-client", "");
+  setVal("in-label", "");
+  setVal("in-utility", "electricity");
+  setVal("in-new-supplier", "");
+  const sup = $("in-supplier");
+  if (sup) sup.selectedIndex = 0;
+  setVal("in-charge-model", "fee");
+  setVal("in-fee-list", "90");
+  setVal("in-fee-discount", "80");
+  setVal("in-commission-uplift", "0.30");
+  setChk("in-commission-included", false);
+  setChk("in-benchmark-on", false);
+  setVal("in-benchmark-unit", "");
+  setVal("in-benchmark-standing", "");
+  setVal("in-expires", "");
+  setVal("in-notes", "");
+  setChk("in-keep-incumbent", true);
+
+  onSupplierChange();
+  onChargeModelChange();
+  onBenchmarkToggle();
+  renderFiles();
+  renderSiteref();
+  renderEditBanner();
+  renderKeepIncumbent();
+  for (const id of ["step1-msg", "map-msg", "extract-msg", "assemble-msg", "preview-msg"]) {
+    const el = $(id); if (el) notice(el, "");
+  }
+  const ar = $("assemble-result"); if (ar) ar.classList.add("hidden");
+  const pr = $("publish-result"); if (pr) pr.classList.add("hidden");
+}
+
+// "New tender": reset, then back to step 1. Previously this button only switched
+// screens, so it looked like a no-op when you were already on the wizard and left
+// the previous tender's state in place — a refresh was the only way to start clean.
+function newTender() {
+  resetWizard();
+  showScreen("wizard");
+  showStep(1);
 }
 
 function showStep(n) {
@@ -161,7 +219,13 @@ function renderFiles() {
   state.files.forEach((f, i) => {
     const div = document.createElement("div");
     div.className = "filecard";
-    div.innerHTML = `<span class="name">${escapeHtml(f.name)}</span>
+    // A row hydrated from a saved tender has no uploaded file behind it — there is
+    // nothing to map or re-extract, and removing it would leave the edit with no
+    // offers at all. Show it as read-only rather than offering actions that break.
+    div.innerHTML = f.fromSaved
+      ? `<span class="name">${escapeHtml(f.name)}</span>
+      <div class="right"><span class="chip info">FROM SAVED TENDER</span></div>`
+      : `<span class="name">${escapeHtml(f.name)}</span>
       <div class="right">${statusChip(f)}
         <button class="btn-secondary" data-map="${i}">${f.status === "pending" ? "Map columns" : "Review mapping"}</button>
         <button class="btn-ghost" data-del="${i}">Remove</button>
@@ -344,10 +408,13 @@ async function confirmMap() {
       }),
     });
     f.status = "confirmed";
+    // Confirming is the end of the job on this panel, so close it and go back to the
+    // file list rather than leaving the operator to find the Back button themselves.
+    showStep(2);
     renderFiles();
-    notice($("map-msg"),
-      "Saved — the next " + state.meta.supplier + " quote with this layout skips Claude entirely. " +
-      "Head back to files, then Continue to extract.",
+    notice($("step2-msg") || $("map-msg"),
+      "Mapping saved for " + state.meta.supplier + " — the next quote with this layout skips Claude entirely. "
+      + "Confirm any remaining files, then Continue to extract.",
       "success");
   } catch (e) {
     if (e.message !== "unauthorised") notice($("map-msg"), "Save failed: " + e.message, "error");
@@ -397,7 +464,11 @@ function renderExtractList() {
     const div = document.createElement("div");
     div.className = "filecard";
     let detail = "";
-    if (f.extractStatus === "done" && f.extractResp) {
+    if (f.fromSaved && f.extract) {
+      const sites = (f.extract.sites || []).length, quotes = (f.extract.quotes || []).length;
+      detail = `<div class="sub2">${sites} site(s) · ${quotes} offer(s) · loaded from the saved tender`
+        + ", nothing to re-extract</div>";
+    } else if (f.extractStatus === "done" && f.extractResp) {
       const c = f.extractResp.counts || {};
       const ref = f.extractResp.site_reference_used ? " · site-ref applied" : "";
       const unmatched = f.extractResp.unmatched_mpxn || [];
@@ -416,8 +487,18 @@ function renderExtractList() {
 }
 
 async function runExtractAll() {
-  const files = confirmedFiles();
-  if (!files.length) { notice($("extract-msg"), "Confirm at least one mapping first.", "error"); return; }
+  // Only files that were actually uploaded can be extracted. A saved-tender row
+  // already carries its extract (and has no File object), so it is skipped rather
+  // than POSTed as a null file.
+  const files = confirmedFiles().filter((f) => !f.fromSaved && f.file);
+  if (!files.length) {
+    notice($("extract-msg"),
+      confirmedFiles().length
+        ? "Nothing new to extract — the offers came from the saved tender. Add a quote file to bring in more."
+        : "Confirm at least one mapping first.",
+      confirmedFiles().length ? "success" : "error");
+    return;
+  }
   const btn = $("btn-extract-all");
   btn.disabled = true;
   notice($("extract-msg"), "");
@@ -471,6 +552,8 @@ async function openAssemble() {
   showStep(5);
   notice($("assemble-msg"), "");
   $("assemble-result").classList.add("hidden");
+  renderEditBanner();
+  renderKeepIncumbent();
   await loadOffers();
 }
 
@@ -493,6 +576,16 @@ async function loadOffers() {
     state.offers = r.offers || [];
     // Pre-tick the two cheapest (offers arrive full-coverage-first, cheapest-first).
     state.featured = new Set(state.offers.slice(0, MAX_FEATURED).map((o) => o.index));
+    // Editing: restore what was actually shown to the client last time instead, so a
+    // re-save doesn't silently swap the featured offers under you. flatQuotes() is in
+    // the same order the backend concatenates, so the index lines up with o.index.
+    if (state.editing) {
+      const wasFeatured = flatQuotes()
+        .map((q, i) => (q && q.featured ? i : -1))
+        .filter((i) => i >= 0)
+        .slice(0, MAX_FEATURED);
+      if (wasFeatured.length) state.featured = new Set(wasFeatured);
+    }
     renderOfferList();
   } catch (e) {
     list.innerHTML = "";
@@ -617,6 +710,13 @@ async function doAssemble() {
         const standing = ($("in-benchmark-standing").value || "").trim();
         if (standing) fd.append("benchmark_standing_charge", standing);
       }
+    }
+    // Editing: keep the baseline the saved tender already had. The backend re-reads
+    // it from the DB by id — we only send the intent, never the rates, so a client
+    // -facing baseline can't be set from the browser. A new sites.csv or benchmark
+    // above still takes precedence server-side.
+    if (state.editing && state.editing.incumbent && $("in-keep-incumbent").checked) {
+      fd.append("keep_incumbent", "true");
     }
     const r = await api("/api/assemble", { method: "POST", body: fd });
     state.meta.id = r.id;   // subsequent saves bump the version instead of duplicating
@@ -756,6 +856,137 @@ function fmtDate(s) {
   return isNaN(d.getTime()) ? String(s) : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// --- editing a saved tender (Tier 1: no re-upload) ----------------------------
+//
+// The raw quote files are NOT stored — only the extracted result (sites + quotes
+// with their rates) lives in the saved payload. That is exactly what the assemble
+// step consumes, so an edit can skip upload/map/extract entirely: we rebuild ONE
+// synthetic extract from the stored payload, drop it in as a confirmed file, and
+// jump to step 5. Re-mapping or adding a supplier still needs the file, which is
+// a separate (bigger) job.
+
+function renderEditBanner() {
+  const el = $("edit-banner");
+  if (!el) return;
+  const e = state.editing;
+  if (!e) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  const live = e.status === "published"
+    ? " The client's existing link stays on the published version until you publish again — the link itself does not change."
+    : "";
+  el.innerHTML = `<div class="notice">✎ Editing <b>${escapeHtml(state.meta.client_name || "—")}
+    — ${escapeHtml(state.meta.tender_label || "")}</b> (v${escapeHtml(String(e.version))},
+    ${escapeHtml(e.status || "draft")}). Saving writes a new version.${live}</div>`;
+  el.classList.remove("hidden");
+}
+
+function renderKeepIncumbent() {
+  const wrap = $("keep-incumbent-field");
+  if (!wrap) return;
+  const inc = state.editing && state.editing.incumbent;
+  if (!inc) { wrap.classList.add("hidden"); return; }
+  const kind = inc.kind === "benchmark" ? "market benchmark" : "actual contract";
+  const lines = (inc.lines || []).length;
+  const lbl = $("keep-incumbent-label");
+  if (lbl) {
+    lbl.textContent = `Keep the saved baseline — ${inc.supplier || "unknown"} `
+      + `(${kind}, ${lines} line${lines === 1 ? "" : "s"})`;
+  }
+  wrap.classList.remove("hidden");
+}
+
+function dateInputValue(s) {
+  // <input type="date"> only accepts YYYY-MM-DD; stored expires_at may be a full
+  // timestamp. Anything unparseable is left blank rather than guessed.
+  if (!s) return "";
+  const m = String(s).match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : "";
+}
+
+function hydrateFromTender(p) {
+  state.meta.id = p.id || null;                    // re-save bumps the version
+  state.meta.client_name = p.client_name || "";
+  state.meta.tender_label = p.tender_label || "";
+  state.meta.utility = p.utility || "electricity";
+  // Supplier is only used as the mapping-cache key on upload; an edit re-uploads
+  // nothing, so take it from the stored quotes purely so the screen reads right.
+  state.meta.supplier = ((p.quotes || [])[0] || {}).supplier || "";
+
+  $("in-client").value = state.meta.client_name;
+  $("in-label").value = state.meta.tender_label;
+  $("in-utility").value = state.meta.utility;
+
+  // ONE synthetic extract standing in for the original uploads. Marked confirmed so
+  // the existing openAssemble() -> /api/cost path re-ranks from stored data; the
+  // stored sites already carry authoritative EAC (eac_source "db"), so the ranking
+  // matches what /render will show without re-uploading a sites.csv.
+  state.files = [{
+    file: null,
+    name: `saved tender v${p.version} (${(p.sites || []).length} site(s), ${(p.quotes || []).length} offer(s))`,
+    status: "confirmed",
+    fromSaved: true,
+    mapResp: null,
+    mapping: null,
+    inspection: null,
+    extract: { sites: p.sites || [], quotes: p.quotes || [] },
+    extractResp: null,
+    extractStatus: "done",
+    extractError: null,
+  }];
+
+  // How RYE is paid.
+  if (p.rye_commission) {
+    $("in-charge-model").value = "commission";
+    if (p.rye_commission.p_kwh_uplift != null) $("in-commission-uplift").value = p.rye_commission.p_kwh_uplift;
+    $("in-commission-included").checked = !!p.rye_commission.included;
+  } else {
+    $("in-charge-model").value = "fee";
+    const f = p.rye_fee || {};
+    if (f.list_price_site_month != null) $("in-fee-list").value = f.list_price_site_month;
+    if (f.discount_pct != null) $("in-fee-discount").value = f.discount_pct;
+  }
+  onChargeModelChange();
+
+  $("in-expires").value = dateInputValue(p.expires_at);
+  $("in-notes").value = (p.notes || []).join("\n");
+
+  // Baseline. A stored benchmark prefills the benchmark fields so the operator can
+  // adjust the rate; a real incumbent came from a sites.csv we no longer hold, so it
+  // can only be kept as-is or replaced.
+  const inc = p.incumbent || null;
+  if (inc && inc.kind === "benchmark") {
+    const first = (inc.lines || [])[0] || {};
+    $("in-benchmark-on").checked = true;
+    if (first.unitRate != null) $("in-benchmark-unit").value = first.unitRate;
+    if (first.standingCharge != null) $("in-benchmark-standing").value = first.standingCharge;
+  }
+  onBenchmarkToggle();
+
+  state.editing = { version: p.version, status: p.status || "draft", incumbent: inc };
+  state.saved = {
+    id: p.id, version: p.version, status: p.status,
+    slug: p.slug, url_uuid: p.url_uuid, dashboard_url: p.dashboard_url,
+  };
+  $("in-keep-incumbent").checked = !!inc;
+}
+
+async function editTender(tenderId) {
+  notice($("register-msg"), "");
+  try {
+    const r = await api(`/api/tenders/${encodeURIComponent(tenderId)}`);
+    resetWizard();
+    hydrateFromTender(r.tender || {});
+    renderEditBanner();
+    renderKeepIncumbent();
+    showScreen("wizard");
+    renderFiles();
+    // Straight to assemble/review: everything the previous save produced is already
+    // in state, so there is nothing to re-upload or re-map.
+    await openAssemble();
+  } catch (e) {
+    notice($("register-msg"), "Could not open that tender for editing: " + e.message, "error");
+  }
+}
+
 async function showRegister() {
   showScreen("register");
   await loadRegister();
@@ -796,6 +1027,7 @@ function renderRegister(rows, note) {
       <div class="right">
         <span class="chip status-${escapeHtml(status)}">${escapeHtml(status.toUpperCase())}</span>
         <button class="btn-secondary" data-preview="${escapeHtml(t.id)}" data-title="${escapeHtml(t.client_name || "")}">Preview</button>
+        <button class="btn-secondary" data-edit="${escapeHtml(t.id)}">Edit</button>
         ${status === "published" && t.dashboard_url
           ? `<a class="btn-secondary" href="${escapeHtml(t.dashboard_url)}" target="_blank" rel="noopener">Open link</a>
              <button class="btn-ghost" data-revoke="${escapeHtml(t.id)}">Revoke</button>`
@@ -808,6 +1040,8 @@ function renderRegister(rows, note) {
       tender_id: b.dataset.preview,
       title: (b.dataset.title || "Client") + " — dashboard preview",
     })));
+  list.querySelectorAll("[data-edit]").forEach((b) =>
+    b.addEventListener("click", () => editTender(b.dataset.edit)));
   list.querySelectorAll("[data-revoke]").forEach((b) =>
     b.addEventListener("click", () => revokeTender(b.dataset.revoke)));
 }
@@ -867,9 +1101,9 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-close-preview").addEventListener("click", closePreview);
 
   // nav + register
-  $("nav-new").addEventListener("click", () => showScreen("wizard"));
+  $("nav-new").addEventListener("click", newTender);
   $("nav-register").addEventListener("click", showRegister);
-  $("btn-register-new").addEventListener("click", () => showScreen("wizard"));
+  $("btn-register-new").addEventListener("click", newTender);
   $("btn-refresh-register").addEventListener("click", loadRegister);
 
   const dz = $("dropzone");
@@ -898,4 +1132,6 @@ window.__rye_debug = {
   openExtract, runExtractAll, renderExtractList,
   openAssemble, loadOffers, renderOfferList, flatQuotes, doAssemble, assembleMeta,
   openPublishStep, openPreview, closePreview, showRegister, loadRegister, renderRegister, showScreen,
+  resetWizard, newTender, editTender, hydrateFromTender, renderEditBanner, renderKeepIncumbent,
+  showStep,
 };
