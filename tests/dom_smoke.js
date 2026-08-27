@@ -74,6 +74,34 @@ const ASSEMBLE_RESP = {
   incumbent_supplier: null, warnings: [], tender: {},
 };
 
+// A stored tender as GET /api/tenders/{id} returns it — the payload the register's
+// Edit action hydrates from. Deliberately awkward in three ways, so the hydration is
+// actually proven rather than coincidentally right: it is PUBLISHED (so the link
+// warning shows), it is on COMMISSION not the flat fee, and the featured offer is
+// UrbanChain — the DEARER one — so restoring it has to beat the "pre-tick the two
+// cheapest" default.
+const STORED_TENDER = {
+  id: TENDER_ID, client_name: 'Amorino UK', tender_label: 'Electricity tender — July 2026',
+  utility: 'electricity', status: 'published', version: 3,
+  created_at: '2026-07-17T10:00:00Z', created_by: 'x@rye.energy',
+  expires_at: '2026-09-30T00:00:00Z',
+  slug: 'amorino-uk', url_uuid: '22222222-2222-4222-8222-222222222222',
+  dashboard_url: 'http://localhost/d/amorino-uk/22222222-2222-4222-8222-222222222222',
+  day_split: 0.7, weekend_split: 2 / 7,
+  sites: [{ mpxn: '1200098765432', site_name: 'Dalston Lane', eac: 45210, kva: null, eac_source: 'db' }],
+  quotes: [
+    { supplier: 'UrbanChain', term: '24 months', category: 'fixed', featured: true,
+      lines: [{ mpxn: '1200098765432', unitRate: 24.51, standingCharge: 48.0 }] },
+    { supplier: 'Octopus', term: '12 months', category: 'fixed', featured: false,
+      lines: [{ mpxn: '1200098765432', unitRate: 22.0, standingCharge: 45.0 }] },
+  ],
+  incumbent: { supplier: 'British Gas', kind: 'incumbent',
+    lines: [{ mpxn: '1200098765432', unitRate: 27.4, standingCharge: 55.0 }] },
+  rye_commission: { p_kwh_uplift: 0.45, included: true },
+  recommended: { supplier: 'UrbanChain', term: '24 months' },
+  notes: ['Offer valid until 10 Aug 2026'],
+};
+
 const routes = {
   '/api/suppliers': { suppliers: ['Octopus', 'UrbanChain'] },
   '/api/map': MAP_RESP,
@@ -98,6 +126,7 @@ const routes = {
       sites: 1, quotes: 2, recommended_supplier: 'Octopus',
     }],
   },
+  ['/api/tenders/' + TENDER_ID]: { ok: true, tender: STORED_TENDER },
 };
 
 const failures = [];
@@ -109,9 +138,11 @@ const check = (name, cond) => {
 (async () => {
   const dom = new JSDOM(html, { url: 'http://localhost/app/', runScripts: 'dangerously' });
   const { window } = dom;
-  window.fetch = async (url) => {
+  const sent = {};
+  window.fetch = async (url, opts) => {
     const p = new URL(url, 'http://localhost').pathname;
     if (!(p in routes)) throw new Error('unstubbed fetch: ' + p);
+    sent[p] = (opts && opts.body) || null;
     return {
       ok: true, status: 200,
       json: async () => routes[p],
@@ -171,7 +202,11 @@ const check = (name, cond) => {
   $('btn-confirm-map').click();
   await new Promise((r) => setTimeout(r, 50));
   check('confirm marks file confirmed', state.files[0].status === 'confirmed');
-  check('success notice shown', $('map-msg').textContent.includes('Saved'));
+  // Confirming closes the mapping panel and returns to the file list, rather than
+  // leaving the operator to find Back — so the notice lands on step 2, not step 3.
+  check('confirm closes the mapping panel', $('step-3').classList.contains('hidden'));
+  check('confirm returns to the file list', !$('step-2').classList.contains('hidden'));
+  check('success notice shown on the file list', $('step2-msg').textContent.includes('Mapping saved'));
   check('continue-to-extract enabled once a file is confirmed', !$('btn-to-extract').disabled);
 
   // --- step 4: extract ---
@@ -251,6 +286,85 @@ const check = (name, cond) => {
     window.document.querySelector('#register-list .tender-title').textContent.includes('Amorino UK'));
   check('register row has a preview action',
     !!window.document.querySelector('#register-list [data-preview]'));
+  check('register row has an edit action',
+    !!window.document.querySelector('#register-list [data-edit]'));
+
+  // --- edit a saved tender from the register (no re-upload) ---
+  window.document.querySelector('#register-list [data-edit]').click();
+  await new Promise((r) => setTimeout(r, 80));
+  const st = window.__rye_debug.state;
+  check('edit opens the wizard', !$('screen-wizard').classList.contains('hidden'));
+  check('edit jumps straight to assemble (step 5)', !$('step-5').classList.contains('hidden'));
+  check('edit skips upload/map/extract', $('step-2').classList.contains('hidden') &&
+    $('step-3').classList.contains('hidden') && $('step-4').classList.contains('hidden'));
+  check('tender id carried so a re-save bumps the version', st.meta.id === TENDER_ID);
+  check('client + label prefilled', $('in-client').value === 'Amorino UK' &&
+    $('in-label').value === 'Electricity tender — July 2026');
+  check('one synthetic extract stands in for the original uploads',
+    st.files.length === 1 && st.files[0].fromSaved === true && !!st.files[0].extract);
+  check('stored sites + quotes came through the synthetic extract',
+    st.files[0].extract.sites.length === 1 && st.files[0].extract.quotes.length === 2);
+  check('commission model prefilled (not the flat fee)',
+    $('in-charge-model').value === 'commission' &&
+    Number($('in-commission-uplift').value) === 0.45 &&
+    $('in-commission-included').checked === true);
+  check('expiry prefilled as a date-input value', $('in-expires').value === '2026-09-30');
+  check('notes prefilled', $('in-notes').value.includes('Offer valid until'));
+  check('edit banner names the version and status',
+    !$('edit-banner').classList.contains('hidden') &&
+    $('edit-banner').textContent.includes('v3') &&
+    $('edit-banner').textContent.includes('published'));
+  check('published edit warns the live link stays on the published version',
+    $('edit-banner').textContent.includes('does not change'));
+  check('keep-baseline choice shown, naming the saved incumbent',
+    !$('keep-incumbent-field').classList.contains('hidden') &&
+    $('keep-incumbent-label').textContent.includes('British Gas') &&
+    $('in-keep-incumbent').checked === true);
+  // The stored featured offer is the DEARER one, so this fails if the default
+  // "two cheapest" pre-tick were left in place.
+  check('previously-featured offer restored, not the cheapest default',
+    st.featured.size === 1 && st.featured.has(0));
+  check('recommendation follows the restored tick',
+    window.__rye_debug.assembleMeta().recommended_supplier === 'UrbanChain');
+
+  $('btn-assemble').click();
+  await new Promise((r) => setTimeout(r, 80));
+  const editBody = sent['/api/assemble'];
+  check('re-save sends keep_incumbent so the baseline is preserved server-side',
+    !!editBody && editBody.get('keep_incumbent') === 'true');
+  check('re-save sends the stored id so the version bumps',
+    JSON.parse(editBody.get('meta')).id === TENDER_ID);
+  check('re-save never sends incumbent rates from the browser',
+    editBody.get('incumbent') === null && editBody.get('benchmark_unit_rate') === null);
+
+  // The saved-tender row has no File behind it: stepping back to extract must not
+  // offer to re-map it, and "Extract confirmed files" must not POST a null file.
+  window.__rye_debug.openExtract();
+  await new Promise((r) => setTimeout(r, 20));
+  check('extract step lists the saved row as loaded, not re-extractable',
+    ($('extract-list').textContent || '').includes('loaded from the saved tender'));
+  window.__rye_debug.renderFiles();
+  check('saved row offers no map/remove actions',
+    !window.document.querySelector('#filelist [data-map]') &&
+    !window.document.querySelector('#filelist [data-del]'));
+  await window.__rye_debug.runExtractAll();
+  await new Promise((r) => setTimeout(r, 20));
+  check('re-extract is a no-op on a saved tender, not a crash',
+    st.files.length === 1 && !!st.files[0].extract && failures.length === 0);
+
+  // --- New tender clears it all down (was a no-op before) ---
+  window.__rye_debug.newTender();
+  await new Promise((r) => setTimeout(r, 20));
+  check('New tender returns to step 1', !$('step-1').classList.contains('hidden'));
+  check('New tender clears the tender id', st.meta.id === null);
+  check('New tender clears the files', st.files.length === 0);
+  check('New tender leaves edit mode', st.editing === null &&
+    $('edit-banner').classList.contains('hidden'));
+  check('New tender clears the form fields',
+    $('in-client').value === '' && $('in-label').value === '' &&
+    $('in-notes').value === '' && $('in-charge-model').value === 'fee');
+  check('New tender hides the keep-baseline choice',
+    $('keep-incumbent-field').classList.contains('hidden'));
 
   if (failures.length) { console.log(`\n${failures.length} CHECK(S) FAILED`); process.exit(1); }
   console.log('\nALL DOM SMOKE CHECKS PASSED');

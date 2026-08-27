@@ -107,9 +107,10 @@ def test_incumbent_builder():
     os.unlink(p)
 
 
-def _post_assemble(client, extracts, meta, sites_path=None, persist=False):
+def _post_assemble(client, extracts, meta, sites_path=None, persist=False, **extra):
     files = {}
     data = {"extracts": json.dumps(extracts), "meta": json.dumps(meta), "persist": str(persist).lower()}
+    data.update(extra)
     if sites_path:
         files["sites_csv"] = (os.path.basename(sites_path), open(sites_path, "rb").read(), "text/csv")
     if not files:
@@ -166,16 +167,48 @@ def test_endpoint():
     check("tender embeds the incumbent block", body["tender"]["incumbent"]["supplier"] == "British Gas")
 
     # --- persist=true: DB mocked, versioning honoured ---
+    # Re-saving an existing id is an EDIT, so the endpoint reads the stored
+    # version's link identity back out of the DB and carries it forward. Without
+    # a stored tender to read, assemble() would mint a fresh url_uuid and the
+    # client's live link would die — see the link-continuity checks below.
+    TID = "11111111-1111-1111-1111-111111111111"
+    STORED = {"id": TID, "status": "published", "slug": "amorino-uk",
+              "url_uuid": "keep-this-uuid",
+              "dashboard_url": "https://tender.rye.energy/d/amorino-uk/keep-this-uuid"}
     writes = {}
     main._next_version = lambda tid: 4                       # type: ignore
     main._write_tender = lambda t: writes.update(t=t)        # type: ignore
-    meta_v = dict(meta, id="11111111-1111-1111-1111-111111111111")
+    main._get_tender = lambda tid, v=None: dict(STORED) if tid == TID else None  # type: ignore
+    meta_v = dict(meta, id=TID)
     r = _post_assemble(client, extract, meta_v, sites_path=sites, persist=True)
     body = r.json()
     check("persist=true returns 200", r.status_code == 200)
     check("reported as persisted", body["persisted"] is True)
     check("version bumped to next (4)", body["version"] == 4)
     check("the written tender matches the returned id", writes["t"]["id"] == body["id"])
+
+    # --- link continuity: an edit must not re-mint the client's live link ---
+    check("url_uuid carried forward from the stored tender", body["url_uuid"] == "keep-this-uuid")
+    check("slug carried forward", body["slug"] == "amorino-uk")
+    check("dashboard_url carried forward", body["dashboard_url"] == STORED["dashboard_url"])
+    check("the written version carries the same url_uuid", writes["t"]["url_uuid"] == "keep-this-uuid")
+    check("editing a published tender warns that it stays on the last published version",
+          any("until you press Publish again" in w for w in body["warnings"]))
+
+    # The URL is a client-facing secret: the browser must never be able to set it.
+    meta_spoof = dict(meta, id=TID, url_uuid="spoofed-by-the-browser", slug="spoofed")
+    r = _post_assemble(client, extract, meta_spoof, sites_path=sites, persist=True)
+    body = r.json()
+    check("a url_uuid sent by the client is ignored in favour of the stored one",
+          body["url_uuid"] == "keep-this-uuid")
+    check("a slug sent by the client is ignored too", body["slug"] == "amorino-uk")
+
+    # A brand-new id (nothing stored) still mints its own link identity.
+    main._get_tender = lambda tid, v=None: None              # type: ignore
+    r = _post_assemble(client, extract, dict(meta, id="22222222-2222-2222-2222-222222222222"),
+                       sites_path=sites, persist=True)
+    body = r.json()
+    check("an unknown id still gets a freshly minted url_uuid", len(body["url_uuid"]) == 36)
 
     # --- Various supplier raises a warning ---
     sites_mixed = _sites_csv([
@@ -187,6 +220,48 @@ def test_endpoint():
     check("mixed incumbents -> Various", body["incumbent_supplier"] == "Various")
     check("a warning is surfaced for Various", any("Various" in w for w in body["warnings"]))
     os.unlink(sites_mixed)
+
+    # --- keep_incumbent: editing a saved tender preserves its baseline ---
+    print("/api/assemble — keep_incumbent preserves the saved baseline (read server-side)")
+    KEPT = {"supplier": "British Gas", "kind": "incumbent",
+            "lines": [{"mpxn": MPAN_A, "unitRate": 27.4, "standingCharge": 55.0},
+                      {"mpxn": MPAN_B, "unitRate": 26.8}]}
+    stored_with_inc = dict(STORED, incumbent=KEPT)
+    main._get_tender = lambda tid, v=None: dict(stored_with_inc) if tid == TID else None  # type: ignore
+
+    # No sites.csv, no benchmark: the stored incumbent is re-read and carried over,
+    # so an edit doesn't silently drop the client's baseline (and the saving with it).
+    r = _post_assemble(client, extract, dict(meta, id=TID), persist=True, keep_incumbent="true")
+    body = r.json()
+    check("keep_incumbent -> 200", r.status_code == 200)
+    check("stored incumbent preserved", body["incumbent_supplier"] == "British Gas")
+    check("its lines came with it", body["counts"]["incumbent_lines"] == 2)
+    check("the tender embeds the kept baseline",
+          body["tender"]["incumbent"]["lines"][0]["unitRate"] == 27.4)
+    check("a warning names what was kept", any("kept from the saved tender" in w for w in body["warnings"]))
+
+    # A new sites.csv must WIN over the preserved block — an explicit replacement is
+    # never silently ignored in favour of stale rates.
+    r = _post_assemble(client, extract, dict(meta, id=TID), sites_path=sites, persist=True,
+                       keep_incumbent="true")
+    body = r.json()
+    check("a new sites.csv beats the kept baseline", body["incumbent_supplier"] == "British Gas"
+          and body["tender"]["incumbent"]["lines"][0]["unitRate"] == 22.5)
+    check("and says the saved one was replaced", any("replaced rather than kept" in w for w in body["warnings"]))
+
+    # An incumbent block posted from the browser is ignored: baseline rates on a
+    # client-facing document must come from code, never from the page.
+    main._get_tender = lambda tid, v=None: dict(STORED) if tid == TID else None  # type: ignore
+    spoof = {"supplier": "Spoofed Energy", "lines": [{"mpxn": MPAN_A, "unitRate": 99.0}]}
+    r = _post_assemble(client, extract, dict(meta, id=TID, incumbent=spoof), persist=True)
+    body = r.json()
+    check("an incumbent sent in meta is not used", body["incumbent_supplier"] != "Spoofed Energy")
+
+    # keep_incumbent with nothing stored to keep -> no baseline, said out loud.
+    r = _post_assemble(client, extract, dict(meta, id=TID), persist=True, keep_incumbent="true")
+    body = r.json()
+    check("nothing to keep -> no baseline", body["incumbent_supplier"] is None)
+    check("and it is surfaced as a warning", any("no incumbent to keep" in w for w in body["warnings"]))
 
     # --- validation errors ---
     r = client.post("/api/assemble", data={"extracts": "[]", "meta": json.dumps(meta)})

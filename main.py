@@ -305,6 +305,33 @@ def _get_tender_by_uuid(url_uuid: str) -> Optional[dict]:
         conn.close()
 
 
+def _get_published_tender_by_uuid(url_uuid: str) -> Optional[dict]:
+    """Latest PUBLISHED version carrying this url_uuid — what a live link serves.
+
+    Staged publish: editing a published tender writes a new DRAFT version that
+    keeps the same url_uuid (see /api/assemble), so the client's link must keep
+    serving the last version that was actually published instead of 404ing until
+    the operator re-publishes. Requiring url_uuid here as well as status is what
+    keeps Revoke a kill switch: after a rotation the old uuid matches no row, and
+    the pre-rotation published version can't be reached through the new uuid
+    either. Returns None if this uuid has never been published (or no DB).
+    """
+    conn = _db_connect()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select payload from tenders where url_uuid = %s and status = 'published' "
+                "order by version desc limit 1;",
+                (url_uuid,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        conn.close()
+
+
 def _list_tenders() -> Optional[list]:
     """Latest version per tender (the `tenders_latest` view), for the team register.
 
@@ -349,6 +376,26 @@ def tenders():
     if rows is None:
         return {"tenders": [], "note": "RETOOL_DATABASE_URL is not set — no register available."}
     return {"ok": True, "tenders": rows}
+
+
+@app.get("/api/tenders/{tender_id}")
+def tender_detail(tender_id: str, version: Optional[int] = None):
+    """One stored tender's full payload — what the register's Edit action loads.
+
+    Team-gated like every other /api route. The register listing (/api/tenders)
+    carries only the denormalised columns; editing needs the whole payload, since
+    the sites + quotes in it ARE the extract that the assemble step re-costs (the
+    raw uploaded quote files are not kept). Latest version unless ?version= is
+    given. Read-only: nothing here writes, and the payload is returned verbatim
+    so the browser never has to reconstruct a number.
+    """
+    tender = _get_tender(tender_id, version)
+    if not tender:
+        detail = f"No tender found for id={tender_id}"
+        if version is not None:
+            detail += f" version={version}"
+        raise HTTPException(status_code=404, detail=detail)
+    return {"ok": True, "tender": tender}
 
 
 @app.get("/api/db-check")
@@ -688,6 +735,7 @@ async def assemble_endpoint(
     benchmark_standing_charge: Optional[str] = Form(None),
     benchmark_as_at: Optional[str] = Form(None),
     benchmark_source: Optional[str] = Form(None),
+    keep_incumbent: bool = Form(False),
 ):
     """Stitch extractResults + incumbent + meta into a canonical tender, and save it.
 
@@ -702,6 +750,14 @@ async def assemble_endpoint(
     stands a market average in as the baseline so the client still sees a saving.
     A real incumbent always wins — the benchmark is only used when sites.csv yields
     nothing, so a stray benchmark field can never displace actual contract rates.
+
+    `keep_incumbent` is for editing a saved tender: with it set, and no new
+    sites_csv or benchmark supplied, the endpoint re-reads the stored tender by
+    `meta.id` and copies its incumbent block into the new version. The block is
+    fetched SERVER-SIDE and never accepted from the request body — the baseline
+    rates on a client-facing document must not be injectable from a browser.
+    Precedence, highest first: new sites.csv > new benchmark > kept stored
+    incumbent > none.
 
     Assembles via assemble_tender.assemble (moves NO values; stamps meta), validates
     against the canonical schema, then writes a new versioned row to the Retool
@@ -799,11 +855,59 @@ async def assemble_endpoint(
                         "contract — the dashboard labels the saving as indicative."
                     )
 
+        # Editing a saved tender: keep the baseline it already had. Only reached
+        # when neither a new sites.csv nor a benchmark produced one, so an explicit
+        # replacement always wins over the preserved block. Read from the DB by id,
+        # never from the request — see the docstring.
+        if keep_incumbent and incumbent is None:
+            if not meta_obj.get("id"):
+                warnings.append(
+                    "keep_incumbent was set but this tender has no id to read a stored "
+                    "incumbent from — assembling with no baseline."
+                )
+            else:
+                stored_for_inc = _get_tender(meta_obj["id"])
+                kept = (stored_for_inc or {}).get("incumbent")
+                if kept:
+                    incumbent = kept
+                    kind = kept.get("kind", "incumbent")
+                    warnings.append(
+                        f"Baseline kept from the saved tender: {kept.get('supplier', 'unknown')} "
+                        f"({'market benchmark' if kind == 'benchmark' else 'actual contract'}, "
+                        f"{len(kept.get('lines', []))} line(s))."
+                    )
+                else:
+                    warnings.append(
+                        "keep_incumbent was set but the saved tender has no incumbent to keep — "
+                        "assembling with no baseline. Upload a sites.csv or tick the benchmark option."
+                    )
+        elif keep_incumbent and incumbent is not None:
+            warnings.append(
+                "A new baseline was supplied, so the saved tender's incumbent was replaced rather than kept."
+            )
+
         # Version, never overwrite: bump to the next version for an existing id.
+        # An existing id also means this is an EDIT of a saved tender, so the link
+        # identity (slug / url_uuid / dashboard_url) has to be carried forward from
+        # the stored version — re-minting it would silently kill the client's live
+        # link, which is the whole point of being able to edit in place. Read it
+        # from the DB, NEVER from the request: a client-facing URL must not be
+        # settable from the browser.
         if meta_obj.get("id") and persist:
             nv = _next_version(meta_obj["id"])
             if nv is not None:
                 meta_obj["version"] = nv
+                stored = _get_tender(meta_obj["id"])
+                if stored:
+                    for _link_field in ("slug", "url_uuid", "dashboard_url"):
+                        if stored.get(_link_field):
+                            meta_obj[_link_field] = stored[_link_field]
+                    if stored.get("status") == "published":
+                        warnings.append(
+                            "This tender is already published — the saved edit is a new DRAFT version. "
+                            "The client's existing link keeps showing the last published version until you "
+                            "press Publish again; the link itself does not change."
+                        )
 
         try:
             tender = at.assemble(extracts_obj, meta_obj, incumbent=incumbent)
@@ -1256,15 +1360,27 @@ def _client_message_html(title: str, body: str) -> str:
 def public_dashboard(slug: str, url_uuid: str):
     """The public client dashboard, reached by the unguessable link. No auth.
 
-    Serves the rendered dashboard only when the LATEST version of the tender still
-    carries this url_uuid AND is published AND not past expires_at. Otherwise a
-    plain expired / not-found page. Always noindex. `slug` is cosmetic — the uuid
-    is the secret.
+    Two-step, because these answer different questions:
+      1. Is this link still alive? The LATEST version of the tender must still
+         carry this url_uuid. A revoke rotates the uuid, so an old link fails here
+         — that is the kill switch, and it is checked before anything is served.
+      2. What should it show? The latest version that was actually PUBLISHED with
+         this uuid. Staged publish: saving an edit to a published tender writes a
+         new draft version carrying the same uuid, and the client keeps seeing the
+         last published version until the operator presses Publish again. Without
+         this the client's live link would 404 the moment an edit was saved.
+    Then the expiry check, against the version being served. Otherwise a plain
+    expired / not-found page. Always noindex. `slug` is cosmetic — the uuid is the
+    secret.
     """
     import build_dashboard as bd
 
-    tender = _get_tender_by_uuid(url_uuid)
-    if not tender or tender.get("url_uuid") != url_uuid or tender.get("status") != "published":
+    latest = _get_tender_by_uuid(url_uuid)
+    link_alive = bool(latest) and latest.get("url_uuid") == url_uuid
+    tender = None
+    if link_alive:
+        tender = latest if latest.get("status") == "published" else _get_published_tender_by_uuid(url_uuid)
+    if not tender:
         return HTMLResponse(
             _client_message_html("Link unavailable",
                                  "This tender link is no longer active. Please contact RYE for an up-to-date link."),

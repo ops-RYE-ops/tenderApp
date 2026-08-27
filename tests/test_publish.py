@@ -5,8 +5,10 @@ test_publish.py — Phase 3: publish, the public client link, and revoke.
 Headless (DB helpers monkeypatched). Proves: /api/publish mints an unguessable
 link + bumps the version + marks published; the public /d/<slug>/<uuid> route
 serves the dashboard (noindex) only when the LATEST version still carries that
-uuid and is published; expired tenders show the expired page; and /api/revoke
-rotates the uuid so the old link stops resolving. Run from the repo root:
+uuid; the STAGED-PUBLISH rule that a draft edit keeps the link on the last
+published version (and that revoke still kills the link either way); expired
+tenders show the expired page; and /api/revoke rotates the uuid so the old link
+stops resolving. Run from the repo root:
 
     python3 tests/test_publish.py
 
@@ -95,6 +97,40 @@ def main_test():
     main._get_tender_by_uuid = lambda u: revoked_latest  # type: ignore  (id lookup returns latest)
     rold = client.get(f"/d/amorino-uk/{published['url_uuid']}")
     check("old link -> 404 after revoke", rold.status_code == 404)
+
+    print("6) staged publish: a draft EDIT keeps the live link on the last published version")
+    # The operator edits a published tender. /api/assemble writes a new DRAFT
+    # version that carries the SAME url_uuid forward, so the latest version is a
+    # draft. The client's link must keep serving the published version rather than
+    # 404ing until Publish is pressed again.
+    live_uuid = "u-live"
+    pub_v2 = _tender(status="published", version=2, url_uuid=live_uuid, tender_label="Electricity — published")
+    draft_v3 = _tender(status="draft", version=3, url_uuid=live_uuid, tender_label="Electricity — edited draft")
+    main._get_tender_by_uuid = lambda u: draft_v3 if u == live_uuid else None          # type: ignore
+    main._get_published_tender_by_uuid = lambda u: pub_v2 if u == live_uuid else None  # type: ignore
+    rs = client.get(f"/d/amorino-uk/{live_uuid}")
+    check("link still live while an edit sits in draft", rs.status_code == 200)
+    check("serves the PUBLISHED version, not the draft",
+          "published" in rs.text and "edited draft" not in rs.text)
+
+    print("7) a tender that has never been published is not served")
+    main._get_tender_by_uuid = lambda u: _tender(status="draft", url_uuid="u-new")  # type: ignore
+    main._get_published_tender_by_uuid = lambda u: None                             # type: ignore
+    rnp = client.get("/d/amorino-uk/u-new")
+    check("never-published draft -> 404", rnp.status_code == 404)
+
+    print("8) revoke still kills the link even though a published version exists")
+    # Regression guard for the staged-publish fallback: after a revoke the latest
+    # version carries a NEW uuid, and the old published version must not be
+    # reachable through either uuid. The fallback is scoped by url_uuid for this.
+    rotated = _tender(status="draft", version=4, url_uuid="u-rotated")
+    main._get_tender_by_uuid = lambda u: rotated                                      # type: ignore
+    # the published version behind the OLD uuid still exists in the table
+    main._get_published_tender_by_uuid = lambda u: pub_v2 if u == live_uuid else None  # type: ignore
+    check("old uuid -> 404 (latest version no longer carries it)",
+          client.get(f"/d/amorino-uk/{live_uuid}").status_code == 404)
+    check("new uuid -> 404 (nothing published under it)",
+          client.get("/d/amorino-uk/u-rotated").status_code == 404)
 
     if FAILURES:
         print(f"\n{len(FAILURES)} CHECK(S) FAILED")

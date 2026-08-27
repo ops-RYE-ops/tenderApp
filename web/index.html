@@ -25,6 +25,10 @@
   <h1>New tender</h1>
   <p class="sub">Supplier quotes in, client-ready comparison out. AI maps, code moves numbers.</p>
 
+  <!-- Shown only when the wizard was hydrated from the register's Edit action, so
+       it is always obvious you are editing an existing tender, not starting one. -->
+  <div id="edit-banner" class="hidden"></div>
+
   <div class="stepper" id="stepper">
     <span class="step" data-step="1"><span class="n">1</span> Tender</span>
     <span class="step" data-step="2"><span class="n">2</span> Upload</span>
@@ -188,6 +192,18 @@
         </label>
         <div class="siteref-sub">Tick if the supplier baked commission into the quoted rate — it's then shown as included, not added, so it isn't double-counted.</div>
       </div>
+    </div>
+
+    <!-- Only shown when editing a saved tender that already has a baseline. The
+         original sites.csv is not kept, so a real incumbent can either be preserved
+         as-is or replaced by uploading a new site reference / typing a benchmark.
+         The rates themselves are re-read server-side from the stored tender. -->
+    <div class="field hidden" id="keep-incumbent-field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="in-keep-incumbent" checked>
+        <span class="label" style="margin:0" id="keep-incumbent-label">Keep the saved baseline</span>
+      </label>
+      <div class="siteref-sub">Untick to replace it — then upload a new site reference at the extract step, or tick the market benchmark below. A new baseline always wins over the saved one.</div>
     </div>
 
     <div class="field">
