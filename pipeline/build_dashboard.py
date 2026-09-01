@@ -255,6 +255,7 @@ def compute_offer(entry, tender, incumbent=False):
             "eac": eac,
             "kva": kva,
             "splitUsed": split_used,
+            "supplier": (row.get("supplier") or "").strip() or entry.get("supplier") or "",
             "rates": {k: parse_num(row.get(k)) for k in
                       ("unitRate", "dayRate", "nightRate", "weekendRate", "standingCharge",
                        "capacityCharge", "networkCharge", "meterCharge")},
@@ -304,7 +305,7 @@ def _write_offer_csv(path, lines, sites):
     rate_fields = ("unitRate", "dayRate", "nightRate", "weekendRate",
                    "standingCharge", "capacityCharge", "networkCharge", "meterCharge")
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=TARGET_FIELDS)
+        w = csv.DictWriter(f, fieldnames=list(TARGET_FIELDS) + ["supplier"])
         w.writeheader()
         for ln in lines:
             m = ln.get("mpxn") or ""
@@ -320,6 +321,7 @@ def _write_offer_csv(path, lines, sites):
             for fld in rate_fields:
                 v = ln.get(fld)
                 row[fld] = "" if v is None else v
+            row["supplier"] = ln.get("supplier") or ""
             w.writerow(row)
 
 
@@ -743,6 +745,8 @@ def build_render_payload(tender, template_path=None):
     fee, commission = _tender_level_charge(tender, fuel_payloads)
     return {
         "multiFuel": True,
+        "primaryIndex": next((i for i, pf in enumerate(fuel_payloads)
+                              if pf["fuel"] == "electricity"), 0),
         "client": tender.get("client_name", "Client"),
         "label": tender.get("tender_label", "Tender comparison"),
         "utility": " + ".join(p["fuelLabel"] for p in fuel_payloads),

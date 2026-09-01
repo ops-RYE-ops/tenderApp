@@ -182,7 +182,8 @@ def test_combined_render_payload():
     check("one shared market snapshot at top level", "market" in payload)
     html = bd.render_tender(tender)
     check("combined HTML fully injected (no placeholder)", "__TENDER_DATA__" not in html)
-    check("combined HTML carries the fuel toggle", "switchFuel(" in html and "MULTI" in html)
+    check("combined HTML carries the in-Portfolio fuel switch", "switchPortfolioFuel(" in html and "MULTI" in html)
+    check("combined HTML has the include-gas Summary toggle", "inc-gas" in html and "buildSummaryMulti" in html)
     check("combined HTML names both fuel sections", "Electricity" in html and "Gas" in html)
 
 
