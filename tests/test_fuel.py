@@ -157,12 +157,42 @@ def test_single_fuel_unaffected_and_valid():
     check("tender with line fuel/supplier validates against schema", True)
 
 
+def test_combined_render_payload():
+    print("6) combined render payload — per-fuel isolation + one tender-level fee")
+    import build_dashboard as bd
+    tender = at.assemble([_mixed_extract(explicit=True)],
+                         {"client_name": "Mixed Co", "tender_label": "Combined tender",
+                          "rye_fee": {"per_site_month": 90}})
+    payload = bd.build_render_payload(tender)
+    check("multiFuel flag set", payload.get("multiFuel") is True)
+    check("two fuel sections in order [electricity, gas]",
+          [f["fuel"] for f in payload["fuels"]] == ["electricity", "gas"])
+    elec = next(f for f in payload["fuels"] if f["fuel"] == "electricity")
+    gas = next(f for f in payload["fuels"] if f["fuel"] == "gas")
+    e_eff = elec["offers"][0]["perKwh"]["effective"]
+    g_eff = gas["offers"][0]["perKwh"]["effective"]
+    check(f"electricity effective ~ elec band ({e_eff}p > 15)", e_eff > 15)
+    check(f"gas effective ~ gas band ({g_eff}p < 12) — NOT blended", g_eff < 12)
+    check("each fuel costs only its own meters",
+          len(elec["sites"]) == 1 and len(gas["sites"]) == 1)
+    check("RYE fee computed ONCE at tender level (2 meters x 90 x 12 = 2160)",
+          payload["fee"] and abs(payload["fee"]["annual"] - 2160) < 1)
+    check("per-fuel sections carry no fee block",
+          elec.get("fee") is None and gas.get("fee") is None)
+    check("one shared market snapshot at top level", "market" in payload)
+    html = bd.render_tender(tender)
+    check("combined HTML fully injected (no placeholder)", "__TENDER_DATA__" not in html)
+    check("combined HTML carries the fuel toggle", "switchFuel(" in html and "MULTI" in html)
+    check("combined HTML names both fuel sections", "Electricity" in html and "Gas" in html)
+
+
 def run():
     test_helpers()
     test_extractor_reads_fuel_and_supplier()
     test_distinct_fuels()
     test_endpoint_guards()
     test_single_fuel_unaffected_and_valid()
+    test_combined_render_payload()
     if FAILURES:
         print(f"\n{len(FAILURES)} FUEL CHECK(S) FAILED")
         return 1

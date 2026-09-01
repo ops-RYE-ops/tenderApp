@@ -54,7 +54,7 @@ def test_adapter():
 
 def _rendered_offers(html):
     """Pull the injected TENDER.offers out of the rendered HTML (non-incumbent)."""
-    m = re.search(r"const TENDER = (\{.*\});", html)
+    m = re.search(r"const RAW = (\{.*\});", html)
     data = json.loads(m.group(1))
     return [o for o in data.get("offers", []) if not o.get("isIncumbent")]
 

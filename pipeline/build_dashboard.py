@@ -33,6 +33,7 @@ from pathlib import Path
 # Shared with the extractor so the two never diverge on schema or parsing.
 from rye_quote_core import (
     DAY_SPLIT_DEFAULT, WEEKEND_SPLIT_DEFAULT, TARGET_FIELDS, parse_num,
+    normalise_fuel, infer_fuel_from_mpxn,
 )
 
 # Default annualisation basis for each charge. Override per tender (or per
@@ -322,102 +323,121 @@ def _write_offer_csv(path, lines, sites):
             w.writerow(row)
 
 
-def render_tender(tender, template_path=None):
-    """Render a canonical tender (schema/tender.schema.json) to dashboard HTML.
+def _default_template_path():
+    return Path(__file__).resolve().parent.parent / "assets" / "dashboard_template.html"
 
-    The /render entry point. Bridges the canonical shape to build_dashboard's
-    CSV-per-offer config — writes a CSV per quote (and the incumbent) via the
-    line→site join above, builds the legacy config, and calls the existing
-    renderer UNCHANGED (the cost logic lives in one place). Returns the HTML
-    string. No files persist: everything is written to a temp dir and removed.
-    """
-    sites = {s.get("mpxn"): s for s in tender.get("sites", [])}
-    work = tempfile.mkdtemp(prefix="rye-render-")
+
+def _load_market(template_path):
+    """Load the static market snapshot next to the template (shared, app-wide)."""
+    market_data = None
+    market_path = Path(template_path).parent / "market_snapshot.json"
     try:
-        cfg = {k: tender[k] for k in (
-            "client_name", "tender_label", "utility", "day_split", "weekend_split",
-            "charge_basis", "rye_fee", "rye_commission", "recommended", "notes", "expires_at",
-        ) if k in tender}
-
-        # The client dashboard shows only the FEATURED offers (up to 2, chosen at
-        # assemble). All offers are kept on the tender for the record; if none are
-        # flagged (older tenders), fall back to showing them all.
-        all_quotes = tender.get("quotes", [])
-        shown_quotes = [q for q in all_quotes if q.get("featured")] or all_quotes
-
-        cfg_quotes = []
-        for i, q in enumerate(shown_quotes):
-            csv_path = os.path.join(work, f"quote-{i}.csv")
-            _write_offer_csv(csv_path, q.get("lines", []), sites)
-            entry = {"supplier": q.get("supplier"), "term": q.get("term", ""), "csv": csv_path}
-            if q.get("category"):
-                entry["category"] = q["category"]
-            if q.get("charge_basis"):
-                entry["charge_basis"] = q["charge_basis"]
-            cfg_quotes.append(entry)
-        cfg["quotes"] = cfg_quotes
-
-        inc = tender.get("incumbent")
-        if inc and inc.get("lines"):
-            inc_csv = os.path.join(work, "incumbent.csv")
-            _write_offer_csv(inc_csv, inc.get("lines", []), sites)
-            inc_entry = {"supplier": inc.get("supplier", "Current contract"),
-                         "term": inc.get("term", "current"), "csv": inc_csv}
-            if inc.get("charge_basis"):
-                inc_entry["charge_basis"] = inc["charge_basis"]
-            # Carry baseline provenance through so a benchmark baseline is never
-            # presented to the client as a real current contract.
-            for k in ("kind", "as_at", "source"):
-                if inc.get(k):
-                    inc_entry[k] = inc[k]
-            cfg["incumbent"] = inc_entry
-
-        cfg_path = os.path.join(work, "tender.json")
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            json.dump(cfg, f)
-        out_html = os.path.join(work, "dashboard.html")
-        argv = [cfg_path, out_html]
-        if template_path:
-            argv += ["--template", str(template_path)]
-        main(argv)
-        with open(out_html, encoding="utf-8") as f:
-            return f.read()
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
+        if market_path.exists():
+            market_data = json.loads(market_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        market_data = None
+    return market_data
 
 
-def main(argv):
-    # Parse positionals while consuming the value that follows --template,
-    # so a template PATH is not mistaken for a positional argument.
-    template_path = None
-    args = []
-    skip = False
-    for i, a in enumerate(argv):
-        if skip:
-            skip = False
-            continue
-        if a == "--template":
-            if i + 1 < len(argv):
-                template_path = Path(argv[i + 1])
-                skip = True
-            continue
-        if a.startswith("--"):
-            continue
-        args.append(a)
-    if len(args) != 2:
-        print(__doc__)
-        raise SystemExit(1)
-    config_path, out_path = Path(args[0]), Path(args[1])
-    if template_path is None:
-        template_path = Path(__file__).resolve().parent.parent / "assets" / "dashboard_template.html"
+# --- Fuel partitioning (combined gas + electricity tenders) -----------------
+# A tender that mixes fuels is rendered as one section PER FUEL: the untouched
+# cost engine runs once per fuel over only that fuel's meters and offers, so a
+# gas section is benchmarked to gas and an electricity section to electricity,
+# and the two never blend into a meaningless combined rate. A single-fuel tender
+# is unaffected (one payload, exactly as before).
+_FUEL_ORDER = ["electricity", "gas"]
+_FUEL_LABEL = {"electricity": "Electricity", "gas": "Gas"}
 
-    tender = json.loads(config_path.read_text(encoding="utf-8"))
-    base = config_path.resolve().parent
 
-    def resolve(p):
-        q = Path(p)
-        return q if q.is_absolute() else (base / q)
+def _line_fuel(entry, sites_fuel):
+    """Fuel of a line: explicit `fuel`, else the meter's site fuel, else inferred."""
+    return (normalise_fuel(entry.get("fuel")) or sites_fuel.get(entry.get("mpxn"))
+            or infer_fuel_from_mpxn(entry.get("mpxn")))
 
+
+def _sites_fuel_map(tender):
+    out = {}
+    for site in tender.get("sites", []):
+        out[site.get("mpxn")] = (normalise_fuel(site.get("fuel"))
+                                 or infer_fuel_from_mpxn(site.get("mpxn")))
+    return out
+
+
+def canonical_fuels(tender):
+    """Ordered list of fuels present in a canonical tender (electricity first)."""
+    sites_fuel = _sites_fuel_map(tender)
+    found = set(f for f in sites_fuel.values() if f)
+    for q in tender.get("quotes", []):
+        for ln in q.get("lines", []):
+            f = _line_fuel(ln, sites_fuel)
+            if f:
+                found.add(f)
+    return [f for f in _FUEL_ORDER if f in found] + sorted(found - set(_FUEL_ORDER))
+
+
+def _sub_tender_for_fuel(tender, fuel):
+    """A shallow copy of `tender` restricted to one fuel's sites, lines and incumbent."""
+    sites_fuel = _sites_fuel_map(tender)
+    sub = dict(tender)
+    sub["sites"] = [s for s in tender.get("sites", []) if sites_fuel.get(s.get("mpxn")) == fuel]
+    quotes = []
+    for q in tender.get("quotes", []):
+        lines = [ln for ln in q.get("lines", []) if _line_fuel(ln, sites_fuel) == fuel]
+        if lines:
+            nq = dict(q)
+            nq["lines"] = lines
+            quotes.append(nq)
+    sub["quotes"] = quotes
+    inc = tender.get("incumbent")
+    if inc and inc.get("lines"):
+        ilines = [ln for ln in inc["lines"] if _line_fuel(ln, sites_fuel) == fuel]
+        sub["incumbent"] = ({**inc, "lines": ilines} if ilines else None)
+    return sub
+
+
+def _build_cfg(tender, work, tag="", include_charge=True):
+    """Canonical tender -> the legacy per-offer-CSV config the cost engine reads.
+
+    Writes one CSV per FEATURED offer (and the incumbent) by joining each line to
+    its meter facts on MPAN, then returns the config dict with absolute CSV paths.
+    include_charge=False drops rye_fee/rye_commission (used for a per-fuel section,
+    where RYE's charge is applied once at tender level, not per fuel)."""
+    sites = {s.get("mpxn"): s for s in tender.get("sites", [])}
+    keys = ("client_name", "tender_label", "utility", "day_split", "weekend_split",
+            "charge_basis", "rye_fee", "rye_commission", "recommended", "notes", "expires_at")
+    cfg = {k: tender[k] for k in keys if k in tender}
+    if not include_charge:
+        cfg.pop("rye_fee", None)
+        cfg.pop("rye_commission", None)
+    all_quotes = tender.get("quotes", [])
+    shown = [q for q in all_quotes if q.get("featured")] or all_quotes
+    cfg_quotes = []
+    for i, q in enumerate(shown):
+        csv_path = os.path.join(work, f"{tag}quote-{i}.csv")
+        _write_offer_csv(csv_path, q.get("lines", []), sites)
+        entry = {"supplier": q.get("supplier"), "term": q.get("term", ""), "csv": csv_path}
+        if q.get("category"):
+            entry["category"] = q["category"]
+        if q.get("charge_basis"):
+            entry["charge_basis"] = q["charge_basis"]
+        cfg_quotes.append(entry)
+    cfg["quotes"] = cfg_quotes
+    inc = tender.get("incumbent")
+    if inc and inc.get("lines"):
+        inc_csv = os.path.join(work, f"{tag}incumbent.csv")
+        _write_offer_csv(inc_csv, inc.get("lines", []), sites)
+        inc_entry = {"supplier": inc.get("supplier", "Current contract"),
+                     "term": inc.get("term", "current"), "csv": inc_csv}
+        if inc.get("charge_basis"):
+            inc_entry["charge_basis"] = inc["charge_basis"]
+        for k in ("kind", "as_at", "source"):
+            if inc.get(k):
+                inc_entry[k] = inc[k]
+        cfg["incumbent"] = inc_entry
+    return cfg
+
+
+def _compute_payload(tender, resolve, market_data):
     if not tender.get("quotes"):
         raise SystemExit("ERROR: tender config has no 'quotes' entries")
 
@@ -607,17 +627,6 @@ def main(argv):
     )
     assumptions.extend(tender.get("notes", []))
 
-    # Static market-context dataset (assets/market_snapshot.json, next to the
-    # template). App-wide, not client-specific; injected so the dashboard's
-    # Market context tab can render offline. Absent/invalid -> None -> tab hidden.
-    market_data = None
-    market_path = template_path.parent / "market_snapshot.json"
-    try:
-        if market_path.exists():
-            market_data = json.loads(market_path.read_text(encoding="utf-8"))
-    except (ValueError, OSError):
-        market_data = None
-
     payload = {
         "client": tender.get("client_name", "Client"),
         "label": tender.get("tender_label", "Tender comparison"),
@@ -640,6 +649,156 @@ def main(argv):
         "commission": commission,
         "baseline": baseline,
     }
+    return payload
+
+
+def _rec_offer(pf):
+    return next((o for o in pf["offers"] if o["id"] == pf.get("recommendedId")), None)
+
+
+def _tender_level_charge(tender, fuel_payloads):
+    """RYE's fee OR commission for a COMBINED tender, computed once across all fuels.
+
+    RYE charges one flat SaaS fee (or, rarely, one commission) for the whole client,
+    never per fuel. Fee uses total meters across fuels and the combined gross saving;
+    the per-fuel sections carry no fee block. Commission's per-fuel rate display isn't
+    meaningful across fuels, so only its annual figure + net saving are combined.
+    Returns (fee, commission) with at most one set."""
+    n = sum(len(p["sites"]) for p in fuel_payloads) or 1
+    gross_parts = [p["incumbent"]["total"] - _rec_offer(p)["total"]
+                   for p in fuel_payloads if p.get("incumbent") and _rec_offer(p)]
+    gross = round(sum(gross_parts), 2) if gross_parts else None
+    rec_eac = sum((s.get("eac") or 0) for p in fuel_payloads
+                  for s in (_rec_offer(p) or {"sites": []})["sites"])
+
+    if tender.get("rye_commission"):
+        rc = tender["rye_commission"]
+        uplift = float(rc.get("p_kwh_uplift") or 0)
+        included = bool(rc.get("included"))
+        annual = round(uplift * rec_eac / 100, 2)
+        net = None if gross is None else round(gross - (0 if included else annual), 2)
+        return None, {
+            "label": rc.get("label", "RYE commission"), "pKwhUplift": uplift,
+            "included": included, "annual": annual,
+            "rateExclCommission": None, "rateInclCommission": None,
+            "netSaving": net,
+            "netSavingPerSite": (round(net / n, 2) if net is not None else None),
+            "perFuel": True,
+        }
+    if tender.get("rye_fee"):
+        rf = tender["rye_fee"]
+        list_price = rf.get("list_price_site_month", 90.0)
+        if rf.get("annual"):
+            annual = rf["annual"]
+            psm = round(annual / (12 * n), 2)
+        else:
+            psm = rf.get("per_site_month")
+            if psm is None:
+                psm = round(list_price * (1 - rf.get("discount_pct", 0) / 100), 2)
+            annual = psm * n * 12
+        return {
+            "label": rf.get("label", "RYE fee"), "listPerSiteMonth": list_price,
+            "perSiteMonth": psm,
+            "discountPct": round((1 - psm / list_price) * 100) if list_price else 0,
+            "annual": round(annual, 2),
+            "netSaving": round(gross - annual, 2) if gross is not None else None,
+            "netSavingPerSite": round((gross - annual) / n, 2) if gross is not None else None,
+        }, None
+    return None, None
+
+
+def build_render_payload(tender, template_path=None):
+    """Canonical tender -> the dashboard payload (single-fuel, or multiFuel combined).
+
+    Single fuel: exactly today's payload. Mixed fuels: {multiFuel, fuels:[...]} where
+    each entry is a full per-fuel payload from the UNCHANGED cost engine, plus one
+    tender-level fee/commission and one shared market snapshot."""
+    template_path = Path(template_path) if template_path else _default_template_path()
+    market_data = _load_market(template_path)
+    fuels = canonical_fuels(tender)
+    ident = lambda x: x
+
+    if len(fuels) <= 1:
+        work = tempfile.mkdtemp(prefix="rye-render-")
+        try:
+            return _compute_payload(_build_cfg(tender, work), ident, market_data)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    fuel_payloads = []
+    work = tempfile.mkdtemp(prefix="rye-render-")
+    try:
+        for fuel in fuels:
+            sub = _sub_tender_for_fuel(tender, fuel)
+            if not sub.get("quotes"):
+                continue
+            cfg = _build_cfg(sub, work, tag=f"{fuel}-", include_charge=False)
+            pf = _compute_payload(cfg, ident, None)
+            pf["fuel"] = fuel
+            pf["fuelLabel"] = _FUEL_LABEL.get(fuel, fuel.title())
+            fuel_payloads.append(pf)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    fee, commission = _tender_level_charge(tender, fuel_payloads)
+    return {
+        "multiFuel": True,
+        "client": tender.get("client_name", "Client"),
+        "label": tender.get("tender_label", "Tender comparison"),
+        "utility": " + ".join(p["fuelLabel"] for p in fuel_payloads),
+        "generated": date.today().isoformat(),
+        "market": market_data,
+        "fee": fee,
+        "commission": commission,
+        "fuels": fuel_payloads,
+    }
+
+
+def render_tender(tender, template_path=None):
+    """Render a canonical tender to dashboard HTML (single-fuel or combined).
+
+    The /render entry point. Builds the payload via build_render_payload (which runs
+    the untouched cost engine once per fuel) and injects it into the template."""
+    tp = Path(template_path) if template_path else _default_template_path()
+    payload = build_render_payload(tender, tp)
+    template = tp.read_text(encoding="utf-8")
+    if "__TENDER_DATA__" not in template:
+        raise SystemExit(f"ERROR: template {tp} has no __TENDER_DATA__ placeholder")
+    return template.replace("__TENDER_DATA__", json.dumps(payload))
+
+
+def main(argv):
+    template_path = None
+    args = []
+    skip = False
+    for i, a in enumerate(argv):
+        if skip:
+            skip = False
+            continue
+        if a == "--template":
+            if i + 1 < len(argv):
+                template_path = Path(argv[i + 1])
+                skip = True
+            continue
+        if a.startswith("--"):
+            continue
+        args.append(a)
+    if len(args) != 2:
+        print(__doc__)
+        raise SystemExit(1)
+    config_path, out_path = Path(args[0]), Path(args[1])
+    if template_path is None:
+        template_path = _default_template_path()
+
+    tender = json.loads(config_path.read_text(encoding="utf-8"))
+    base = config_path.resolve().parent
+
+    def resolve(p):
+        q = Path(p)
+        return q if q.is_absolute() else (base / q)
+
+    market_data = _load_market(template_path)
+    payload = _compute_payload(tender, resolve, market_data)
 
     template = template_path.read_text(encoding="utf-8")
     if "__TENDER_DATA__" not in template:
@@ -647,26 +806,22 @@ def main(argv):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(template.replace("__TENDER_DATA__", json.dumps(payload)), encoding="utf-8")
 
-    # --- Verification summary (for the operator, not the client) ------------
+    # Operator verification summary (from the computed payload; not client-facing).
+    offers = payload["offers"]
+    incumbent = payload["incumbent"]
+    n_sites = len(payload["sites"])
+    rec = next((o for o in offers if o["id"] == payload["recommendedId"]), offers[0] if offers else None)
+    fee = payload["fee"]
     print(f"Dashboard written: {out_path}")
-    print(f"Sites: {len(all_mpxns)}   Offers: {len(offers)}"
+    print(f"Sites: {n_sites}   Offers: {len(offers)}"
           + (f"   Incumbent: {incumbent['supplier']}" if incumbent else "   Incumbent: none"))
-    print(f"{'OFFER':<38}{'TOTAL £/yr':>12}{'eff p/kWh':>11}{'vs current':>13}")
     rows = ([incumbent] if incumbent else []) + sorted(offers, key=lambda o: o["total"])
     for o in rows:
-        delta = "" if o["deltaVsIncumbent"] is None or o["isIncumbent"] else f"{o['deltaVsIncumbent']:+,.0f}"
-        tag = "  <- recommended" if o["id"] == rec["id"] else (" (current)" if o["isIncumbent"] else "")
+        tag = "  <- recommended" if (rec and o["id"] == rec["id"]) else (" (current)" if o["isIncumbent"] else "")
         eff = o["perKwh"]["effective"]
-        print(f"{(o['supplier'] + ' ' + o['term']):<38}{o['total']:>12,.0f}{(f'{eff:.2f}' if eff else '—'):>11}{delta:>13}{tag}")
-    if fee and fee["netSaving"] is not None:
-        print(f"Net saving after {fee['label']} (£{fee['annual']:,.0f}/yr): £{fee['netSaving']:,.0f}"
-              f"  (£{fee['netSavingPerSite']:,.0f}/site)")
-    elif fee:
-        print(f"RYE fee {fee['label']} (no incumbent baseline): "
-              f"£{fee['perSiteMonth']:,.2f}/site/month = £{fee['annual']:,.0f}/yr")
-    for o in rows:
-        for w in o["warnings"]:
-            print(f"WARNING [{o['supplier']} {o['term']}]: {w}")
+        print(f"{(o['supplier'] + ' ' + o['term']):<38}{o['total']:>12,.0f}{(f'{eff:.2f}' if eff else '-'):>11}{tag}")
+    if fee and fee.get("netSaving") is not None:
+        print(f"Net saving after {fee['label']} (GBP {fee['annual']:,.0f}/yr): GBP {fee['netSaving']:,.0f}")
     print("\nSpot-check at least 2 site costs against the source CSVs before sending to the client.")
 
 

@@ -225,7 +225,21 @@ footer { margin-top: 40px; border-top: 1px solid var(--border); padding-top: 20p
 <main id="app"></main>
 
 <script>
-const TENDER = __TENDER_DATA__;
+const RAW = __TENDER_DATA__;
+const MULTI = !!RAW.multiFuel;
+/* A combined gas+electricity tender arrives as {multiFuel, fuels:[...]}, one full
+   single-fuel payload per fuel. Overlay the shared header + market, and null the
+   per-fuel fee (RYE's flat fee is applied ONCE at tender level, shown by the strip
+   above the toggle). A single-fuel tender is just [RAW], so nothing else changes. */
+const FUELS = MULTI
+  ? RAW.fuels.map(f => Object.assign({}, f, {
+      client: RAW.client, label: RAW.label, generated: RAW.generated,
+      market: RAW.market, fee: null, commission: null }))
+  : [RAW];
+let activeFuel = 0;
+/* Module state for the ACTIVE fuel view, (re)assigned by setState() on every render. */
+let TENDER, allOffers, rec, fee, commission, inc, savings, baseline,
+    isBenchmark, baseLabel, baseLc, baseChip, totalEac, comps, hasInc, hasMarket;
 
 const gbp = v => "£" + Math.round(v).toLocaleString("en-GB");
 const gbpSigned = v => (v > 0 ? "+" : v < 0 ? "−" : "") + "£" + Math.round(Math.abs(v)).toLocaleString("en-GB");
@@ -246,30 +260,28 @@ const fmtDate = iso => {
   return m ? `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}` : esc(iso);
 };
 
-const allOffers = (TENDER.incumbent ? [TENDER.incumbent] : []).concat(TENDER.offers);
-const rec = TENDER.offers.find(o => o.id === (TENDER.recommendedId || TENDER.bestId)) || TENDER.offers[0];
-const fee = TENDER.fee;
-const commission = TENDER.commission;
-const inc = TENDER.incumbent;
-const savings = inc ? inc.total - rec.total : null;
-/* Is the baseline the client's real contract, or a typed market average? Every
-   label that says "incumbent" has to soften to "benchmark" when it's the latter —
-   a benchmark saving presented as a contract saving is a promise we can't keep.
-   Absent baseline means a tender assembled before benchmarks existed: incumbent. */
-const baseline = TENDER.baseline || { kind: "incumbent" };
-const isBenchmark = baseline.kind === "benchmark";
-const baseLabel = isBenchmark ? "Market benchmark" : "Incumbent";
-/* Lowercase forms: baseLc for prose/column headers ("vs incumbent"), baseChip for
-   the short badge on bars / breakdown / rate books. They differ on purpose for a
-   benchmark: the header reads "market benchmark", the badge just "benchmark". */
-const baseLc = baseLabel.toLowerCase();
-const baseChip = isBenchmark ? "benchmark" : "incumbent";
-const totalEac = TENDER.sites.reduce((a, s) => a + (s.eac || 0), 0);
-const comps = TENDER.components;
+function setState(view) {
+  TENDER = view;
+  allOffers = (TENDER.incumbent ? [TENDER.incumbent] : []).concat(TENDER.offers);
+  rec = TENDER.offers.find(o => o.id === (TENDER.recommendedId || TENDER.bestId)) || TENDER.offers[0];
+  fee = TENDER.fee;
+  commission = TENDER.commission;
+  inc = TENDER.incumbent;
+  savings = inc ? inc.total - rec.total : null;
+  baseline = TENDER.baseline || { kind: "incumbent" };
+  isBenchmark = baseline.kind === "benchmark";
+  baseLabel = isBenchmark ? "Market benchmark" : "Incumbent";
+  baseLc = baseLabel.toLowerCase();
+  baseChip = isBenchmark ? "benchmark" : "incumbent";
+  totalEac = TENDER.sites.reduce((a, s) => a + (s.eac || 0), 0);
+  comps = TENDER.components;
+  hasInc = !!inc;
+  hasMarket = !!(TENDER.market && (TENDER.market.power || TENDER.market.gas));
+}
 
-document.title = `${TENDER.client} — ${TENDER.label} — RYE`;
+document.title = `${RAW.client} \u2014 ${RAW.label} \u2014 RYE`;
 document.getElementById("nav-meta").textContent =
-  `${TENDER.client} · prepared ${TENDER.generated}`;
+  `${RAW.client} \u00b7 prepared ${RAW.generated}`;
 
 const CHART = { red: "#ee0000", amber: "#f5a623", green: "#0cce6b", blue: "#0070f3", purple: "#7928ca", t1: "#ededed" };
 
@@ -600,41 +612,32 @@ function buildMarketPane() {
     </section>` : ""}`;
 }
 
-/* ================= compose ================= */
-
-const hasInc = !!inc;
-const hasMarket = !!(TENDER.market && (TENDER.market.power || TENDER.market.gas));
-
-const savingsPane = hasInc ? (buildBenchmarkNotice() + buildRecVsInc() + buildBars()) : "";
-const portfolioPane =
-  (!hasInc ? (commission ? buildCommission() : (fee ? buildFeeStandalone() : "")) : "")
-  + (!hasInc ? buildBars() : "")
-  + buildBreakdown()
-  + buildSiteMatrix()
-  + buildRateBooks();
-const marketPane = hasMarket ? buildMarketPane() : "";
-
-const tabs = [];
-if (hasInc) tabs.push(["savings", "Summary"]);
-tabs.push(["portfolio", "Portfolio"]);
-if (hasMarket) tabs.push(["market", "Market Review"]);
-const defaultTab = hasInc ? "savings" : "portfolio";
-
-let html = buildHero() + buildWarnings();
-if (tabs.length > 1) {
-  html += `<div class="tabbar" role="tablist">` + tabs.map(([id, label]) =>
-    `<div class="tab ${id === defaultTab ? "active" : ""}" data-tab="${id}" onclick="showTab('${id}')">${esc(label)}</div>`).join("") + `</div>`;
+/* ================= compose + fuel toggle ================= */
+function fuelToggleHtml() {
+  if (!MULTI) return "";
+  return `<div style="display:flex;gap:8px;margin:0 0 18px;flex-wrap:wrap">` + FUELS.map((f, i) =>
+    `<button onclick="switchFuel(${i})" style="padding:8px 20px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid ${i === activeFuel ? '#0cce6b' : 'rgba(237,237,237,0.18)'};background:${i === activeFuel ? '#0cce6b' : 'rgba(255,255,255,0.04)'};color:${i === activeFuel ? '#04110a' : '#ededed'}">${esc(f.fuelLabel || f.utility || ('Fuel ' + (i + 1)))}</button>`).join("") + `</div>`;
 }
-if (hasInc) html += `<div id="tab-savings" class="tabpane"${defaultTab === "savings" ? "" : " hidden"}>${savingsPane}</div>`;
-html += `<div id="tab-portfolio" class="tabpane"${defaultTab === "portfolio" ? "" : " hidden"}>${portfolioPane}</div>`;
-if (hasMarket) html += `<div id="tab-market" class="tabpane" hidden>${marketPane}</div>`;
-html += buildFooter();
+
+/* RYE's flat fee (or commission) is charged ONCE for the whole client, not per
+   fuel, so a combined tender shows it here, above the toggle, constant across
+   fuels. Per-fuel sections carry no fee block (view.fee is null). */
+function buildTenderCharge() {
+  if (!MULTI) return "";
+  const meters = FUELS.reduce((a, f) => a + f.sites.length, 0);
+  const f = RAW.fee, c = RAW.commission;
+  if (f) {
+    const net = f.netSaving != null ? ` · net saving after fee ${gbp(f.netSaving)}/yr` : "";
+    return `<section><div class="notice"><span class="chip success">RYE</span> ${esc(f.label)}: ${gbp(f.annual)}/yr across the whole tender (${meters} meter${meters === 1 ? "" : "s"}, both fuels). Flat fee, no commission.${net}</div></section>`;
+  }
+  if (c) {
+    const net = c.netSaving != null ? ` · net saving after commission ${gbp(c.netSaving)}/yr` : "";
+    return `<section><div class="notice"><span class="chip success">RYE</span> ${esc(c.label)}: ${c.pKwhUplift} p/kWh · ${gbp(c.annual)}/yr across the whole tender${net}.</div></section>`;
+  }
+  return "";
+}
 
 function buildFooter() {
-  const minDaysNote = "";
-  /* The small print has to match how RYE is actually charging on this tender.
-     The flat-fee / no-commission claim is false on a commission tender, and it
-     would sit directly under a Basis of comparison line stating the commission. */
   const chargingNote = fee
     ? "independent, flat-fee energy brokerage — we take no supplier commission"
     : "independent energy brokerage · we work for you, not the supplier";
@@ -646,7 +649,32 @@ function buildFooter() {
   </footer>`;
 }
 
-document.getElementById("app").innerHTML = html;
+function render() {
+  setState(FUELS[activeFuel]);
+  const savingsPane = hasInc ? (buildBenchmarkNotice() + buildRecVsInc() + buildBars()) : "";
+  const portfolioPane =
+    (!hasInc ? (commission ? buildCommission() : (fee ? buildFeeStandalone() : "")) : "")
+    + (!hasInc ? buildBars() : "")
+    + buildBreakdown() + buildSiteMatrix() + buildRateBooks();
+  const marketPane = hasMarket ? buildMarketPane() : "";
+  const tabs = [];
+  if (hasInc) tabs.push(["savings", "Summary"]);
+  tabs.push(["portfolio", "Portfolio"]);
+  if (hasMarket) tabs.push(["market", "Market Review"]);
+  const defaultTab = hasInc ? "savings" : "portfolio";
+  let html = fuelToggleHtml() + buildTenderCharge() + buildHero() + buildWarnings();
+  if (tabs.length > 1) {
+    html += `<div class="tabbar" role="tablist">` + tabs.map(([id, label]) =>
+      `<div class="tab ${id === defaultTab ? "active" : ""}" data-tab="${id}" onclick="showTab('${id}')">${esc(label)}</div>`).join("") + `</div>`;
+  }
+  if (hasInc) html += `<div id="tab-savings" class="tabpane"${defaultTab === "savings" ? "" : " hidden"}>${savingsPane}</div>`;
+  html += `<div id="tab-portfolio" class="tabpane"${defaultTab === "portfolio" ? "" : " hidden"}>${portfolioPane}</div>`;
+  if (hasMarket) html += `<div id="tab-market" class="tabpane" hidden>${marketPane}</div>`;
+  html += buildFooter();
+  document.getElementById("app").innerHTML = html;
+  wireEvents();
+  if (hasMarket) renderMarket();
+}
 
 /* ---- Tab switching ---- */
 function showTab(t) {
@@ -655,19 +683,24 @@ function showTab(t) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-/* ---- Offer filter interactivity ---- */
-(function () {
-  const fw = document.getElementById("offer-filter");
-  if (!fw) return;
-  const rows = Array.from(document.querySelectorAll(".bars .bar-row"));
-  fw.addEventListener("click", e => {
-    const b = e.target.closest("button"); if (!b) return;
-    const f = b.dataset.f;
-    rows.forEach(r => { r.style.display = (f === "all" || r.dataset.cat === f) ? "" : "none"; });
-    fw.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
-  });
-})();
+function switchFuel(i) {
+  activeFuel = i;
+  render();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 
+/* Re-attach the offer filter + live fee control after every (re)render. */
+function wireEvents() {
+  const fw = document.getElementById("offer-filter");
+  if (fw) {
+    const rows = Array.from(document.querySelectorAll(".bars .bar-row"));
+    fw.addEventListener("click", e => {
+      const b = e.target.closest("button"); if (!b) return;
+      const f = b.dataset.f;
+      rows.forEach(r => { r.style.display = (f === "all" || r.dataset.cat === f) ? "" : "none"; });
+      fw.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    });
+  }
 /* ---- Live fee control: net saving recalculates as the fee moves ---- */
 if (fee) {
   const sites = TENDER.sites.length || 1;
@@ -713,6 +746,7 @@ if (fee) {
     apply(psm);
   });
   apply(fee.perSiteMonth);
+}
 }
 
 /* ================= Market context charts ================= */
@@ -815,7 +849,7 @@ function renderMarket() {
   if (tk && m.commentary) tk.textContent = m.commentary;
 }
 
-if (hasMarket) renderMarket();
+render();
 </script>
 </body>
 </html>
