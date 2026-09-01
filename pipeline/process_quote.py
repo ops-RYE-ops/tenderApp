@@ -233,10 +233,15 @@ def process_rows(records, mapping, name_lookup=None, constants=None):
     unmatched = []
     for rec in records:
         # Determine rate mode for this row: split (day/night/weekend) vs single.
+        # A band counts as present only if it holds a real NUMBER — parse_num treats
+        # blanks, whitespace and a non-breaking space (\xa0, common in Excel exports)
+        # and n/a markers as empty. Using a raw "not in (None, '')" check here misread
+        # a single-rate row whose day/night cells were \xa0 as two-rate, which blanked
+        # its unitRate and left it with no energy rate at all (only standing costed).
         day_val, _ = resolve(cols.get("dayRate"), rec)
         night_val, _ = resolve(cols.get("nightRate"), rec)
         weekend_val, _ = resolve(cols.get("weekendRate"), rec)
-        is_split = any(v not in (None, "") for v in (day_val, night_val, weekend_val))
+        is_split = any(parse_num(v) is not None for v in (day_val, night_val, weekend_val))
 
         row = {}
         for target in TARGET_HEADERS:

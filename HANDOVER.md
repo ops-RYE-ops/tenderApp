@@ -34,8 +34,9 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-08-27 — branch `feat/live-link-edits`, all suites green, NOT yet
-merged or preview-tested):** four things Rory asked for.
+**Latest session (2026-08-27 — branch `feat/live-link-edits`, all suites green, **loaded and
+tested e2e on the preview with a real tender by Rory**, not yet merged):** four things Rory
+asked for.
 (1) **`Current` renamed `Incumbent` across the client dashboard** — the badge on the bars,
 breakdown and rate books, the comparison-table column header, the `vs incumbent` delta column
 and the Portfolio efficiency header (`incumbent / best`). Done by making `baseLabel` the single
@@ -100,9 +101,19 @@ unknown id still mints fresh, `keep_incumbent` preserved / beaten by a new sites
 to keep), 6 in `test_ui.py` (`/api/tenders/{id}`), and `dom_smoke` is up to **78 checks** with a
 full register → Edit → prefilled assemble → save walk plus the New-tender reset. All 13 Python
 suites + dom_smoke green.
-**STILL TO VERIFY on a preview deploy** (neither tests nor jsdom can prove it): a real publish →
-edit → re-publish round trip against the live DB, confirming the URL does not change and the
-link stays up while the edit sits in draft.
+**VERIFIED e2e on the preview deploy, 2026-08-27 (Rory, real tender, live DB).** The register
+Edit hydration, the renamed Incumbent labels and the refreshed Market Review tab all loaded
+correctly on real data. Critically, the **full publish → edit → save → re-publish round trip was
+run on the same tender and behaved exactly as designed**: the client link kept working throughout
+the edit, it did **not** show the changes until Publish was pressed, and the **URL stayed the
+same** across the whole cycle. That confirms the two fixes the suites could not prove — the link
+identity carried forward by `/api/assemble`, and the `_get_published_tender_by_uuid` fallback in
+the public route. Staged publish is proven end to end; no open verification remains on this work.
+
+**Operational consequence of that design, worth knowing before editing a live tender:** a saved
+edit is invisible to the client until you press Publish, and Publish is what makes it live on the
+existing URL. There is no separate "send a new link" step any more, and there is no window where
+the client sees a broken link or a half-finished dashboard.
 
 **Session (2026-08-20 — client-dashboard polish + contract dates, both merged &
 tested e2e on the preview):** two branches shipped.
