@@ -78,7 +78,7 @@ import re
 import sys
 
 import map_headers as mh
-from rye_quote_core import TARGET_FIELDS as TARGET_HEADERS, parse_num
+from rye_quote_core import TARGET_FIELDS as TARGET_HEADERS, parse_num, normalise_fuel
 
 # Fields that live on a canonical quote LINE (rates/charges), in schema order.
 LINE_RATE_FIELDS = [
@@ -253,6 +253,19 @@ def process_rows(records, mapping, name_lookup=None, constants=None):
             if kind == "split" and not is_split:
                 val = None            # single row -> leave day/night blank
             row[target] = clean_id(val) if target == "mpxn" else clean_val(val)
+        # Per-row fuel + supplier, present only when the file carries those
+        # columns. Stashed under underscore keys so they never reach the rate
+        # CSV (write_csv ignores extras); read onto the line/site below. Fuel
+        # lets a mixed gas+electricity tender be detected/partitioned; a per-row
+        # supplier lets one sheet carry several suppliers (a packaged deal).
+        fuel_raw, _ = resolve(cols.get("fuel"), rec)
+        nf = normalise_fuel(fuel_raw)
+        if nf:
+            row["_fuel"] = nf
+        sup_raw, _ = resolve(cols.get("supplier"), rec)
+        sup = clean_val(sup_raw)
+        if sup:
+            row["_supplier"] = sup
         # Apply fixed constants (e.g. a global start date from the summary block)
         # to any target the per-row table didn't fill.
         for target, cval in constants.items():
@@ -285,7 +298,7 @@ def write_csv(rows, path, overwrite=False):
     if not overwrite:
         path = unique_path(path)
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=TARGET_HEADERS)
+        w = csv.DictWriter(f, fieldnames=TARGET_HEADERS, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
     return path
@@ -312,18 +325,25 @@ def row_to_line(row):
     line["supplyEndDate"] = ed or None
     for f in LINE_RATE_FIELDS:
         line[f] = parse_num(row.get(f))
+    if row.get("_fuel"):
+        line["fuel"] = row["_fuel"]
+    if row.get("_supplier"):
+        line["supplier"] = row["_supplier"]
     return line
 
 
 def row_to_site(row, eac_source):
     """One TARGET-schema row -> a canonical site entry (the meter facts)."""
-    return {
+    site = {
         "mpxn": row.get("mpxn", ""),
         "site_name": (row.get("siteName") or "").strip() or row.get("mpxn", ""),
         "eac": parse_num(row.get("updatedEac")),
         "kva": parse_num(row.get("kva")),
         "eac_source": eac_source,
     }
+    if row.get("_fuel"):
+        site["fuel"] = row["_fuel"]
+    return site
 
 
 def rows_to_quote(rows, supplier, term, category=None, charge_basis=None):

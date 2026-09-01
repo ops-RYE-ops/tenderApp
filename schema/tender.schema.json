@@ -161,6 +161,10 @@
           "type": "string",
           "enum": ["db", "quote", "manual"],
           "description": "Provenance of the EAC/kVA figures for auditability. 'db' = RYE reference data (preferred); 'quote' = taken from the supplier file; 'manual' = operator-entered."
+        },
+        "fuel": {
+          "type": ["string", "null"],
+          "description": "Fuel of this meter point: 'electricity' or 'gas'. Absent when unspecified. Set when a tender mixes fuels so sites can be partitioned by fuel."
         }
       }
     },
@@ -186,7 +190,15 @@
         "standingCharge": { "$ref": "#/$defs/value", "description": "Standing charge (default basis p/day)." },
         "capacityCharge": { "$ref": "#/$defs/value", "description": "Capacity charge (default basis p/kVA/day)." },
         "networkCharge": { "$ref": "#/$defs/value", "description": "Network / DUoS charge (default basis p/day)." },
-        "meterCharge": { "$ref": "#/$defs/value", "description": "Meter charge (default basis p/day)." }
+        "meterCharge": { "$ref": "#/$defs/value", "description": "Meter charge (default basis p/day)." },
+        "fuel": {
+          "type": ["string", "null"],
+          "description": "Fuel for this line's meter: 'electricity' or 'gas'. Absent on single-fuel tenders (the whole tender is `utility`); set per line only when a tender mixes fuels, so each fuel is costed and benchmarked on its own."
+        },
+        "supplier": {
+          "type": ["string", "null"],
+          "description": "Per-line supplier, for a packaged multi-supplier deal where different meters are won by different suppliers. Absent when the quote's single `supplier` covers all its lines."
+        }
       }
     },
     "charge_basis": {

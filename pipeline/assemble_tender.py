@@ -65,7 +65,10 @@ import re
 import sys
 import uuid
 
-from rye_quote_core import DAY_SPLIT_DEFAULT, WEEKEND_SPLIT_DEFAULT, parse_num
+from rye_quote_core import (
+    DAY_SPLIT_DEFAULT, WEEKEND_SPLIT_DEFAULT, parse_num,
+    normalise_fuel, infer_fuel_from_mpxn,
+)
 
 # Provenance ranking for site facts: prefer RYE reference data, then an operator
 # figure, then whatever the supplier stated. Higher wins on conflict.
@@ -85,6 +88,38 @@ def _norm_mpxn(v):
     if s.endswith(".0") and s[:-2].isdigit():
         s = s[:-2]
     return s
+
+
+def distinct_fuels(tender):
+    """Canonical fuels present in a tender ('electricity'/'gas'), for the mixed-fuel guard.
+
+    Reads the explicit per-line/site `fuel` first; where absent, infers from the
+    meter-point format (MPAN vs MPRN) so a mixed tender is caught even when no Fuel
+    column was mapped. len(result) > 1 means gas and electricity share one tender,
+    which cannot be costed together.
+    """
+    fuels = set()
+    for site in tender.get("sites", []):
+        f = normalise_fuel(site.get("fuel")) or infer_fuel_from_mpxn(site.get("mpxn"))
+        if f:
+            fuels.add(f)
+    for q in tender.get("quotes", []):
+        for ln in q.get("lines", []):
+            f = normalise_fuel(ln.get("fuel")) or infer_fuel_from_mpxn(ln.get("mpxn"))
+            if f:
+                fuels.add(f)
+    return fuels
+
+
+def mixed_fuel_detail(fuels):
+    """Client-safe refusal message for a tender that mixes fuels (the step-one guard)."""
+    listed = " and ".join(sorted(fuels)) or "more than one fuel"
+    return (
+        f"This tender mixes {listed}. Electricity and gas can't be compared in one "
+        "tender -- gas unit rates are far lower, so a blended rate and saving would be "
+        "meaningless. Put each fuel in its own tender for now (combined gas + "
+        "electricity tenders are coming)."
+    )
 
 
 def incumbent_from_sites_csv(path, client_name=None, mpxns=None, dbl=None):

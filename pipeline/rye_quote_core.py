@@ -58,3 +58,55 @@ def parse_num(raw):
         return float(s)
     except ValueError:
         return None
+
+
+# --- Fuel helpers ---------------------------------------------------------
+# Fuel is a per-meter fact (electricity or gas). A single-fuel tender doesn't
+# carry it (the whole tender is `utility`); it only matters when one tender mixes
+# fuels, where each fuel must be costed and benchmarked on its own -- gas unit
+# rates are far lower, so a blended rate/saving across fuels is meaningless.
+_FUEL_CANON = {
+    "electricity": "electricity", "elec": "electricity", "electric": "electricity",
+    "power": "electricity", "e": "electricity", "ele": "electricity",
+    "gas": "gas", "g": "gas", "natural gas": "gas", "ng": "gas",
+}
+
+
+def normalise_fuel(raw):
+    """Canonicalise a fuel label to 'electricity' | 'gas' | None.
+
+    Tolerant of the common spellings/abbreviations suppliers use. Returns None for
+    blanks and anything unrecognised (RYE only tenders electricity and gas), so an
+    odd label is dropped rather than mistaken for a third fuel.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if not s:
+        return None
+    if s in _FUEL_CANON:
+        return _FUEL_CANON[s]
+    if s.startswith("elec"):
+        return "electricity"
+    if s.startswith("gas"):
+        return "gas"
+    return None
+
+
+def infer_fuel_from_mpxn(mpxn):
+    """Best-effort fuel from the meter-point format, or None when unsure.
+
+    A safety net for detecting a mixed gas+electricity tender even when no Fuel
+    column was mapped: an electricity MPAN core is 13 digits; a gas MPRN is a
+    shorter all-digit id (6-10). Only trusts a purely numeric id -- a header label
+    or placeholder returns None rather than a guess.
+    """
+    s = str(mpxn or "").strip()
+    if not s.isdigit():
+        return None
+    n = len(s)
+    if n == 13:
+        return "electricity"
+    if 6 <= n <= 10:
+        return "gas"
+    return None

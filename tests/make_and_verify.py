@@ -177,8 +177,10 @@ def main():
     # The payload must carry headers + a few samples, and must NOT be the whole table.
     check("meter point" in blob and "standing charge" in blob, "payload carries the header labels")
     check(len(payload["sheets"][0]["sample_data_rows"]) <= 3, "payload capped at sample_rows")
-    check(mh.mapping_tool_schema()["properties"]["columns"]["properties"].keys()
-          == {f: 0 for f in mh.TARGET_FIELDS}.keys(), "tool schema covers all target fields")
+    _cols = set(mh.mapping_tool_schema()["properties"]["columns"]["properties"].keys())
+    check(set(mh.TARGET_FIELDS).issubset(_cols), "tool schema covers all target fields")
+    check(_cols - set(mh.TARGET_FIELDS) == {"fuel", "supplier"},
+          "tool schema also carries the fuel + supplier columns (non-rate metadata)")
 
     print("6) shared core — no drift possible")
     check(pq.parse_num is core.parse_num, "process_quote uses the shared parse_num")

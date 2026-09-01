@@ -377,7 +377,9 @@ def mapping_tool_schema():
             "columns": {
                 "type": "object",
                 "additionalProperties": False,
-                "properties": {f: _column_spec_schema() for f in TARGET_FIELDS},
+                "properties": {**{f: _column_spec_schema() for f in TARGET_FIELDS},
+                               "fuel": _column_spec_schema(),
+                               "supplier": _column_spec_schema()},
             },
             "charge_basis": {"type": "object", "additionalProperties": {"type": "string"}},
             "db_lookup": {"type": "object"},
@@ -412,7 +414,7 @@ SYSTEM_PROMPT = (
     "(the end date is otherwise derived from the term downstream). Both are plain string "
     "columns (use \"Header\", not single/split). "
     "Set a field to null if the supplier does not provide it. Gas is single-rate: map its "
-    "standard rate to unitRate. Pick the header_row that actually holds MPAN/EAC/rate "
+    "standard rate to unitRate. If a per-row Fuel column is present (values like Electricity/Gas/Power), map it to the fuel field; a tender may mix electricity and gas meters. If a per-row Supplier column names each row's own supplier, map it to the supplier field -- one tender can carry several suppliers, one per meter (a packaged deal). Pick the header_row that actually holds MPAN/EAC/rate "
     "labels, not a metadata/branding row. If the term is encoded in sheet names, list them "
     "in 'sheets' with split_output_by_sheet true and give client-facing term_labels."
 )

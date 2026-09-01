@@ -922,6 +922,13 @@ async def assemble_endpoint(
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"Assembly/validation failed: {type(e).__name__}: {e}")
 
+        # Mixed-fuel guard (step one): refuse to SAVE a tender that mixes gas and
+        # electricity. Combined tenders route to the per-fuel path once built;
+        # until then a mixed tender would blend fuels into a meaningless saving.
+        _fuels = at.distinct_fuels(tender)
+        if len(_fuels) > 1:
+            raise HTTPException(status_code=422, detail=at.mixed_fuel_detail(_fuels))
+
         persisted = False
         if persist:
             _write_tender(tender)
@@ -1010,6 +1017,12 @@ async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File
                 os.unlink(ref_path)
             except OSError:
                 pass
+
+    # Mixed-fuel guard (step one): gas and electricity can't be costed in one
+    # comparison. Refuse rather than emit a meaningless blended ranking.
+    _fuels = at.distinct_fuels(tender)
+    if len(_fuels) > 1:
+        raise HTTPException(status_code=422, detail=at.mixed_fuel_detail(_fuels))
 
     sites = {s.get("mpxn"): s for s in tender.get("sites", [])}
     site_mpxns = {m for m in sites if m}
