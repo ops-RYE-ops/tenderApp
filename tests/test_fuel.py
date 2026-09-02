@@ -121,6 +121,24 @@ def _mixed_extract(explicit=True):
             "quotes": [{"supplier": "EDF", "term": "24 months", "lines": [el, ga]}]}
 
 
+def test_benchmark_per_fuel():
+    print("6) market benchmark applies the right rate to each fuel")
+    A, Bb, Gg = "1200000000001", "1200000000002", "9106810506"
+    fmap = {A: "electricity", Bb: "electricity", Gg: "gas"}
+    blk = at.incumbent_from_benchmark([A, Bb, Gg], 27.7, standing_charge=450,
+        gas_unit_rate=7.0, gas_standing_charge=120, fuel_of=fmap)
+    by = {ln["mpxn"]: ln for ln in blk["lines"]}
+    check("electricity meter benchmarked at electricity rate", by[A]["unitRate"] == 27.7)
+    check("gas meter benchmarked at gas rate, not electricity", by[Gg]["unitRate"] == 7.0)
+    # combined tender, gas rate omitted -> gas gets NO benchmark line (never the elec rate)
+    blk2 = at.incumbent_from_benchmark([A, Gg], 27.7, gas_unit_rate=None, fuel_of={A: "electricity", Gg: "gas"})
+    mpxns2 = {ln["mpxn"] for ln in blk2["lines"]}
+    check("combined + no gas rate -> gas meter has no benchmark line", Gg not in mpxns2 and A in mpxns2)
+    # single-fuel gas tender: the electricity field alone still benchmarks the gas meters
+    blk3 = at.incumbent_from_benchmark([Gg], 7.0, fuel_of={Gg: "gas"})
+    check("gas-only tender: single field applies to gas", blk3["lines"][0]["unitRate"] == 7.0)
+
+
 def test_endpoint_guards():
     print("4) /api/cost + /api/assemble route a combined tender per fuel")
     client = TestClient(main.app)
@@ -200,6 +218,7 @@ def run():
     test_helpers()
     test_extractor_reads_fuel_and_supplier()
     test_distinct_fuels()
+    test_benchmark_per_fuel()
     test_endpoint_guards()
     test_single_fuel_unaffected_and_valid()
     test_combined_render_payload()

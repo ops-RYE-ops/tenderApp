@@ -711,6 +711,20 @@ async def extract(
 
 # --- /assemble -------------------------------------------------------------
 
+def _extract_fuel_map(extracts: list) -> dict:
+    """mpxn -> declared fuel across the extracts (for the per-fuel benchmark)."""
+    out = {}
+    for e in extracts:
+        for s in e.get("sites", []):
+            if s.get("mpxn") and s.get("fuel"):
+                out[str(s["mpxn"])] = s["fuel"]
+        for q in e.get("quotes", []):
+            for ln in q.get("lines", []):
+                if ln.get("mpxn") and ln.get("fuel"):
+                    out.setdefault(str(ln["mpxn"]), ln["fuel"])
+    return out
+
+
 def _extract_mpxns(extracts: list) -> set:
     """Every meter point mentioned across the extracts (for incumbent filtering)."""
     out = set()
@@ -733,6 +747,8 @@ async def assemble_endpoint(
     persist: bool = Form(True),
     benchmark_unit_rate: Optional[str] = Form(None),
     benchmark_standing_charge: Optional[str] = Form(None),
+    gas_benchmark_unit_rate: Optional[str] = Form(None),
+    gas_benchmark_standing_charge: Optional[str] = Form(None),
     benchmark_as_at: Optional[str] = Form(None),
     benchmark_source: Optional[str] = Form(None),
     keep_incumbent: bool = Form(False),
@@ -830,7 +846,7 @@ async def assemble_endpoint(
 
         # Benchmark baseline: only when there's no real incumbent to compare against.
         # Actual contract rates always take precedence over a typed market average.
-        if (benchmark_unit_rate or "").strip():
+        if (benchmark_unit_rate or "").strip() or (gas_benchmark_unit_rate or "").strip():
             if incumbent is not None:
                 warnings.append(
                     "Benchmark rates were supplied but sites.csv provided a real incumbent — "
@@ -841,6 +857,9 @@ async def assemble_endpoint(
                     _extract_mpxns(extracts_obj),
                     benchmark_unit_rate,
                     standing_charge=benchmark_standing_charge,
+                    gas_unit_rate=gas_benchmark_unit_rate,
+                    gas_standing_charge=gas_benchmark_standing_charge,
+                    fuel_of=_extract_fuel_map(extracts_obj),
                     as_at=benchmark_as_at,
                     source=benchmark_source,
                 )

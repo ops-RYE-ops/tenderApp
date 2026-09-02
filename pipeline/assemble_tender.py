@@ -238,7 +238,9 @@ BENCHMARK_SUPPLIER = "Market benchmark"
 
 
 def incumbent_from_benchmark(mpxns, unit_rate, standing_charge=None,
-                             as_at=None, source=None, supplier=None):
+                             as_at=None, source=None, supplier=None,
+                             gas_unit_rate=None, gas_standing_charge=None,
+                             fuel_of=None):
     """Build a BENCHMARK baseline block from one operator-entered rate card.
 
     For the common-enough case where RYE has no incumbent rates for a client but
@@ -259,24 +261,44 @@ def incumbent_from_benchmark(mpxns, unit_rate, standing_charge=None,
     incumbent_from_sites_csv returning None for an unknown incumbent).
     """
     ur = parse_num(unit_rate)
-    if ur is None:
-        return None
     sc = parse_num(standing_charge)
+    gur = parse_num(gas_unit_rate)
+    gsc = parse_num(gas_standing_charge)
 
     keys = sorted({_norm_mpxn(m) for m in (mpxns or []) if _norm_mpxn(m)})
     if not keys:
         return None
 
+    # Each meter is benchmarked at its OWN fuel's rate: electricity meters take the
+    # electricity rate, gas meters the gas rate. In a single-fuel tender either
+    # field applies to that fuel. In a combined tender a fuel with no rate gets no
+    # benchmark line at all (better than benchmarking gas at an electricity rate).
+    fmap = {_norm_mpxn(k): v for k, v in (fuel_of or {}).items() if _norm_mpxn(k)}
+
+    def _fuel(m):
+        return fmap.get(m) or infer_fuel_from_mpxn(m) or "electricity"
+
+    single_fuel = len({_fuel(m) for m in keys}) == 1
+
     lines = []
     for m in keys:
-        # Every rate field present (null where unset) so a benchmark line is
-        # shaped exactly like a sites.csv line — one line contract, no drift.
+        if _fuel(m) == "gas":
+            u = gur if gur is not None else (ur if single_fuel else None)
+            sch = gsc if gsc is not None else (sc if single_fuel else None)
+        else:
+            u = ur if ur is not None else (gur if single_fuel else None)
+            sch = sc if sc is not None else (gsc if single_fuel else None)
+        if u is None:
+            continue
         line = {"mpxn": m}
         line.update({f: None for f in _INCUMBENT_RATE_FIELDS})
-        line["unitRate"] = ur
-        if sc is not None:
-            line["standingCharge"] = sc
+        line["unitRate"] = u
+        if sch is not None:
+            line["standingCharge"] = sch
         lines.append(line)
+
+    if not lines:
+        return None
 
     block = {
         "supplier": (supplier or "").strip() or BENCHMARK_SUPPLIER,

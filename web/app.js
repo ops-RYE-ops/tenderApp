@@ -105,6 +105,8 @@ function resetWizard() {
   setChk("in-benchmark-on", false);
   setVal("in-benchmark-unit", "");
   setVal("in-benchmark-standing", "");
+  setVal("in-benchmark-gas-unit", "");
+  setVal("in-benchmark-gas-standing", "");
   setVal("in-expires", "");
   setVal("in-notes", "");
   setChk("in-keep-incumbent", true);
@@ -727,8 +729,10 @@ async function doAssemble() {
       }
     }
   }
-  if ($("in-benchmark-on").checked && !($("in-benchmark-unit").value || "").trim()) {
-    notice($("assemble-msg"), "Enter a benchmark unit rate (p/kWh), or untick the benchmark baseline.", "error");
+  if ($("in-benchmark-on").checked
+      && !($("in-benchmark-unit").value || "").trim()
+      && !($("in-benchmark-gas-unit").value || "").trim()) {
+    notice($("assemble-msg"), "Enter a benchmark unit rate for electricity or gas, or untick the benchmark baseline.", "error");
     return;
   }
   // Flag the featured offers on the quote objects - this rides through /assemble
@@ -755,6 +759,12 @@ async function doAssemble() {
         fd.append("benchmark_unit_rate", unit);
         const standing = ($("in-benchmark-standing").value || "").trim();
         if (standing) fd.append("benchmark_standing_charge", standing);
+      }
+      const gasUnit = ($("in-benchmark-gas-unit").value || "").trim();
+      if (gasUnit) {
+        fd.append("gas_benchmark_unit_rate", gasUnit);
+        const gasStanding = ($("in-benchmark-gas-standing").value || "").trim();
+        if (gasStanding) fd.append("gas_benchmark_standing_charge", gasStanding);
       }
     }
     // Editing: keep the baseline the saved tender already had. The backend re-reads
