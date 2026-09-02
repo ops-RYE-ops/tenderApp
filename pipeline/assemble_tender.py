@@ -489,6 +489,12 @@ def assemble(extracts, meta, incumbent=None):
     quotes = merge_quotes(extracts)
     if not quotes:
         raise ValueError("no quotes found across the supplied extracts")
+    # Every offer carries when its rates were added (stamped at extract). Any
+    # quote still missing it (a legacy tender re-opened for edit) falls back to
+    # the tender's creation time, so the picker always has a date to rank on.
+    _created = meta.get("created_at") or _now_rfc3339_z()
+    for _q in quotes:
+        _q.setdefault("added_at", _created)
 
     slug = meta.get("slug")
     if slug is None and meta.get("client_name"):

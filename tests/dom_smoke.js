@@ -369,6 +369,29 @@ const check = (name, cond) => {
   check('New tender hides the keep-baseline choice',
     $('keep-incumbent-field').classList.contains('hidden'));
 
+  // --- Supersede-by-recency: a re-uploaded rate beats the saved one ---
+  window.__rye_debug.newTender();
+  const D = window.__rye_debug;
+  D.state.files = [
+    { fromSaved: true, name: 'saved', extract: { quotes: [{ supplier: 'Yu Energy', term: '24 Month', added_at: '2026-07-01T00:00:00Z' }] } },
+    { fromSaved: false, name: 'yu_sep.csv', extract: { quotes: [{ supplier: 'Yu Energy', term: '24 Month', added_at: '2026-08-15T00:00:00Z' }] } },
+  ];
+  D.state.offers = [
+    { index: 0, supplier: 'Yu Energy', term: '24 Month', fuel: 'electricity', annual_cost: 53154, effective_pkwh: 25.72, added_at: '2026-07-01T00:00:00Z', covers_all_sites: true, cheapest: true },
+    { index: 1, supplier: 'Yu Energy', term: '24 Month', fuel: 'electricity', annual_cost: 53774, effective_pkwh: 26.02, added_at: '2026-08-15T00:00:00Z', covers_all_sites: true, cheapest: false },
+  ];
+  D.state.featured = new Set([1]);
+  D.annotateOffers();
+  const oldO = D.state.offers[0], newO = D.state.offers[1];
+  check('newer upload is current (not superseded)', newO._superseded === false);
+  check('older saved rate is superseded', oldO._superseded === true && oldO._supersededBy === newO);
+  check('cheapest-current is the newer rate, not the cheaper stale one', newO._cheapestCurrent === true && oldO._cheapestCurrent === false);
+  D.renderOfferList();
+  const pickerHtml = $('offer-list').innerHTML;
+  check('picker shows SUPERSEDED + CHEAPEST', /SUPERSEDED/.test(pickerHtml) && /CHEAPEST/.test(pickerHtml));
+  check('superseded row shows the price move', /£53,154/.test(pickerHtml) && /→/.test(pickerHtml) && /\+£620/.test(pickerHtml));
+  check('current row shows source + added date', /yu_sep\.csv/.test(pickerHtml) && /15 Aug 2026/.test(pickerHtml));
+
   if (failures.length) { console.log(`\n${failures.length} CHECK(S) FAILED`); process.exit(1); }
   console.log('\nALL DOM SMOKE CHECKS PASSED');
 })();

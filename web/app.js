@@ -591,20 +591,23 @@ async function loadOffers() {
     if (state.sitesCsv) fd.append("sites_csv", state.sitesCsv);  // authoritative EAC/kVA for the ranking
     const r = await api("/api/cost", { method: "POST", body: fd });
     state.offers = r.offers || [];
-    // Pre-tick the best (up to MAX_FEATURED_PER_FUEL) of EACH fuel. Offers arrive
-    // grouped by fuel, full-coverage-first and cheapest-first, so the first N of a
-    // fuel are the ones to feature. A single-fuel tender ticks its two cheapest.
+    annotateOffers();   // source, added date, supersede-by-recency, cheapest-current
+    // Pre-tick the best (up to MAX_FEATURED_PER_FUEL) of each fuel among CURRENT
+    // (non-superseded) offers. Offers arrive per fuel, cheapest-first, so the first
+    // current N of a fuel are the ones to feature.
     state.featured = new Set();
     const _seen = {};
     for (const o of state.offers) {
+      if (o._superseded) continue;
       const f = o.fuel || "electricity";
       _seen[f] = _seen[f] || 0;
       if (_seen[f] < MAX_FEATURED_PER_FUEL) { state.featured.add(o.index); _seen[f]++; }
     }
-    // Editing: restore what was actually shown to the client last time instead, so a
-    // re-save doesn't silently swap the featured offers under you. flatQuotes() is in
-    // the same order the backend concatenates, so the index lines up with o.index.
-    if (state.editing) {
+    // Editing WITHOUT a new upload = re-saving the same offers: restore exactly what
+    // was shown last time so nothing swaps. Editing WITH a new upload is a rate
+    // refresh, so keep the recency pre-tick above (the new rates win).
+    const hasNewUpload = state.files.some((f) => f.extract && !f.fromSaved);
+    if (state.editing && !hasNewUpload) {
       const wasFeatured = flatQuotes()
         .map((q, i) => (q && q.featured ? i : -1))
         .filter((i) => i >= 0);
@@ -634,6 +637,64 @@ function featuredCountForFuel(f) {
 }
 const FUEL_LABEL = { electricity: "Electricity", gas: "Gas" };
 
+function annotateOffers() {
+  // Walk state.files in the SAME order the extracts were sent, so a flat counter
+  // lines up with offer.index; record each quote's source file + added date.
+  const src = [];
+  for (const f of state.files) {
+    if (!f.extract) continue;
+    const label = f.fromSaved ? "saved" : (f.name || "upload");
+    for (const q of (f.extract.quotes || [])) {
+      src.push({ fromSaved: !!f.fromSaved, source: label, addedAt: q.added_at || null });
+    }
+  }
+  state.offers.forEach((o) => {
+    const s = src[o.index] || {};
+    o._fromSaved = !!s.fromSaved;
+    o._source = s.source || (o._fromSaved ? "saved" : "upload");
+    o.added_at = o.added_at || s.addedAt || null;
+  });
+
+  // Supersede: group by supplier|term|fuel; newest added_at is current, older ones
+  // superseded (tie-break: a new upload beats the saved set, then later flat index).
+  const groups = {};
+  state.offers.forEach((o) => {
+    const k = (o.supplier || "") + "|" + (o.term || "") + "|" + (o.fuel || "electricity");
+    (groups[k] = groups[k] || []).push(o);
+  });
+  Object.values(groups).forEach((list) => {
+    list.forEach((o) => { o._superseded = false; o._supersededBy = null; });
+    if (list.length < 2) return;
+    const sorted = [...list].sort((a, b) => {
+      const ta = Date.parse(a.added_at || "") || 0, tb = Date.parse(b.added_at || "") || 0;
+      if (tb !== ta) return tb - ta;                                    // newest first
+      if (!!a._fromSaved !== !!b._fromSaved) return a._fromSaved ? 1 : -1; // new upload beats saved
+      return b.index - a.index;                                         // later add wins
+    });
+    sorted.forEach((o, i) => { o._superseded = i > 0; o._supersededBy = i > 0 ? sorted[0] : null; });
+  });
+
+  // Cheapest among CURRENT offers, per fuel (drives the badge + the recommendation).
+  const best = {};
+  state.offers.forEach((o) => {
+    if (o._superseded || o.annual_cost == null) return;
+    const f = o.fuel || "electricity";
+    if (!best[f] || o.annual_cost < best[f].annual_cost) best[f] = o;
+  });
+  state.offers.forEach((o) => { o._cheapestCurrent = false; });
+  Object.values(best).forEach((o) => { o._cheapestCurrent = true; });
+}
+
+// Format an ISO added-date for the picker: "today", else "2 Sep 2026".
+function fmtAdded(iso) {
+  if (!iso) return "date unknown";
+  const d = new Date(iso);
+  if (isNaN(d)) return "date unknown";
+  if (d.toDateString() === new Date().toDateString()) return "today";
+  const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${d.getDate()} ${M[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 function renderOfferList() {
   const list = $("offer-list");
   list.innerHTML = "";
@@ -651,16 +712,30 @@ function renderOfferList() {
     for (const o of state.offers.filter((x) => (x.fuel || "electricity") === f)) {
       const ticked = state.featured.has(o.index);
       const disabled = !ticked && featuredCountForFuel(f) >= MAX_FEATURED_PER_FUEL;
-      const eff = o.effective_pkwh != null ? `${o.effective_pkwh.toFixed(2)}p/kWh` : "\u2014";
-      const badges = (o.cheapest ? '<span class="chip success">CHEAPEST</span>' : "")
+      const eff = o.effective_pkwh != null ? `${o.effective_pkwh.toFixed(2)}p/kWh` : "—";
+      const badges = (o._cheapestCurrent ? '<span class="chip success">CHEAPEST</span>' : "")
+        + (o._superseded ? '<span class="chip" style="color:var(--text-3);border-color:rgba(237,237,237,.2)">SUPERSEDED</span>' : "")
         + (o.covers_all_sites ? "" : '<span class="chip danger">PARTIAL COVER</span>');
+      // Provenance line: when the rates were added and from where. A superseded row
+      // instead shows the newer rate it lost to, with the price move.
+      let sub;
+      if (o._superseded && o._supersededBy) {
+        const nw = o._supersededBy;
+        const d = (nw.annual_cost != null && o.annual_cost != null) ? nw.annual_cost - o.annual_cost : null;
+        sub = `superseded by the ${fmtAdded(nw.added_at)} rates · ${money(o.annual_cost)} → ${money(nw.annual_cost)}`
+          + (d != null ? ` (${d >= 0 ? "+" : "−"}${money(Math.abs(d))})` : "");
+      } else {
+        sub = `added ${fmtAdded(o.added_at)}${o._source ? " · " + escapeHtml(o._fromSaved ? "saved" : o._source) : ""}`;
+      }
       const row = document.createElement("label");
       row.className = "offer" + (ticked ? " on" : "") + (disabled ? " off" : "");
+      if (o._superseded) row.style.opacity = "0.62";
       row.innerHTML = `
         <input type="checkbox" data-idx="${o.index}" ${ticked ? "checked" : ""} ${disabled ? "disabled" : ""}>
         <div class="offer-main">
-          <div class="offer-name">${escapeHtml(o.supplier || "\u2014")}${o.term ? " \u00b7 " + escapeHtml(o.term) : ""} ${badges}</div>
-          <div class="offer-cost mono">${money(o.annual_cost)}/yr \u00b7 ${eff}</div>
+          <div class="offer-name">${escapeHtml(o.supplier || "—")}${o.term ? " · " + escapeHtml(o.term) : ""} ${badges}</div>
+          <div class="offer-cost mono">${money(o.annual_cost)}/yr · ${eff}</div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:3px">${sub}</div>
         </div>`;
       list.append(row);
     }
@@ -997,7 +1072,7 @@ function hydrateFromTender(p) {
     mapResp: null,
     mapping: null,
     inspection: null,
-    extract: { sites: p.sites || [], quotes: p.quotes || [] },
+    extract: { sites: p.sites || [], quotes: (p.quotes || []).map((q) => ({ ...q, added_at: q.added_at || p.created_at || p.generated || null })) },
     extractResp: null,
     extractStatus: "done",
     extractError: null,
@@ -1200,7 +1275,7 @@ document.addEventListener("DOMContentLoaded", () => {
 window.__rye_debug = {
   state, addFiles, openMap, renderFiles,
   openExtract, runExtractAll, renderExtractList,
-  openAssemble, loadOffers, renderOfferList, flatQuotes, doAssemble, assembleMeta,
+  openAssemble, loadOffers, renderOfferList, annotateOffers, flatQuotes, doAssemble, assembleMeta,
   openPublishStep, openPreview, closePreview, showRegister, loadRegister, renderRegister, showScreen,
   resetWizard, newTender, editTender, hydrateFromTender, renderEditBanner, renderKeepIncumbent,
   showStep,

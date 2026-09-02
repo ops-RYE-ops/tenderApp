@@ -228,6 +228,7 @@
       "properties": {
         "supplier": { "type": "string", "minLength": 1, "description": "Supplier name, client-facing (e.g. 'EDF')." },
         "term": { "type": "string", "description": "Contract term, client-facing (e.g. '12 months', 'Fixed to 2028-03-31')." },
+        "added_at": { "type": "string", "description": "ISO timestamp of when RYE added these rates (extract time). Drives supersede-by-recency in the assemble picker: for a matching supplier+term, the newest added_at is current and older ones are superseded." },
         "category": {
           "type": "string",
           "description": "Drives the offer-type filter. 'fixed' or 'coterminous', or any custom label. Inferred from the term text when omitted."

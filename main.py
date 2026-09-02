@@ -676,6 +676,7 @@ async def extract(
     rather than it being silently accepted (a spec requirement).
     """
     import process_quote as pq
+    import assemble_tender as at
 
     try:
         mapping_obj = json.loads(mapping)
@@ -706,6 +707,11 @@ async def extract(
         extract_result.pop("_json_path", None)  # a temp path — meaningless to the caller
         sites = extract_result.get("sites", [])
         quotes = extract_result.get("quotes", [])
+        # Stamp when these rates entered the system, so the assemble picker can
+        # show it and supersede older same-supplier/term offers by recency.
+        _added = at._now_rfc3339_z()
+        for _q in quotes:
+            _q.setdefault("added_at", _added)
         return {
             "ok": True,
             "file": filename,
@@ -1109,6 +1115,7 @@ async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File
                 "annual_cost": computed.get("total"),
                 "effective_pkwh": (computed.get("perKwh") or {}).get("effective"),
                 "fuel": ofuel,
+                "added_at": q.get("added_at"),
                 "covers_all_sites": fuel_sites.get(ofuel, site_mpxns).issubset(line_mpxns),
                 "warnings": computed.get("warnings", []),
                 "cheapest": False,
