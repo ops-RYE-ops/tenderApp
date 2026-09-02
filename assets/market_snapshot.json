@@ -1,11 +1,11 @@
 {
-  "_note": "Market snapshot taken 2026-08-27 from Rory's Trading Economics (UK power spot 1Y/5Y), ICE Futures Europe UK NBP gas board (27 Aug 2026 11:29 GMT) and N2EX/Nord Pool UK day-ahead screenshots.\n\nMEASURES ARE DIFFERENT AND MUST NOT BE MERGED: Trading Economics prints a single daily spot index (129.37 GBP/MWh, +76.95% 1Y, +4.36% 5Y); the N2EX view is every half-hourly/hourly delivery period, from which the commentary quotes the daily averages (22-28 Aug: 101.05, 96.09, 124.35, 129.22, 127.77, 113.19, 110.92) and the intraday peak/trough spread.\n\nWINDOW = THREE YEARS, DELIBERATELY (Rory, 2026-08-27). The long chart was a five-year view; the 2022 Russia-Ukraine spikes (to ~585) dwarf today's level and made a severe market look benign. Three years starts after the crisis unwound, so today reads as the top of the range rather than a footnote to 2022 — it captures how high current contracting prices are without underselling them. The template reads `power.rangeLong.years` + `.axisLabels`, so changing the window again is a JSON edit only. Do NOT widen it back without a reason.\n\nGAS FORWARDS ARE REAL, NOT THIN (Rory, 2026-08-27). Summer 27 (107.00) and Winter 27 (104.00) show volumes of 15 lots against 2,945 on Oct 26 only because the screenshot was taken early in the session; both have held at or above these levels for the preceding fortnight. Treat them as a settled view of the curve — an earlier draft caveated them as illiquid and indicative, which understated the 24-month argument. Every gas price is read from the ICE board verbatim.\n\nSHAPE-TRACED, NOT TICK-EXACT: power.series (1Y), power.rangeLong and gas.series (1Y). The rangeLong points from Sep 2025 onward follow the high-resolution 1Y chart; Aug 2023 - Aug 2025 is a coarser monthly trace off the 5Y chart (±10 GBP/MWh) because no 2Y/3Y view was captured — a custom date-range screenshot would firm that half up.\n\nRefresh by hand and redeploy; every already-published client link re-renders from this file, so it is production. Delete it to hide the Market Review tab.",
-  "updated": "2026-08-27",
-  "headline": "spot at the top of its three-year range, up 77% in a year — with next winter, not the whole horizon, the expensive part of the curve",
-  "commentary": "UK power spot has printed £129.37/MWh — the top of its three-year range and up 77% on the £73 of a year ago. On a three-year view the direction is unambiguous: the market spent most of 2024 between £56 and £75, climbed through 2025, and has accelerated since the spring, so anything contracted now is being priced against the highest baseline since the 2022 crisis unwound. Gas is doing the driving: NBP front-month is 161.85 p/therm and the winter curve has kept inflating — Dec 26 at 169.08, Jan 27 at 169.80, Winter 26 at 164.80. Ofgem's 4% domestic price-cap rise for October, announced this week and attributed almost entirely to wholesale gas, is the same pressure surfacing in household bills. The half-hourly day-ahead market shows how uneven the day has become: across 22-28 August the evening peak cleared £136-156/MWh while midday troughs fell to £65-92. What matters most for tender timing is the shape of the forward curve. Summer 27 is priced at 107 p/therm and Winter 27 at 104, against Winter 26 at 164.80 — and both have held at or above those levels for the past fortnight, so this is a settled view of the curve rather than a one-day quirk. The expensive period is next winter, not the years beyond it. A 12-month term starting this October sits squarely on that winter; a 24-month term blends it with a materially cheaper 2027/28, which is why the longer terms are currently pricing better per kWh than the 12-month. The read: at these levels the question is term length, not whether to wait for a lower entry.",
+  "_note": "Market snapshot taken 2026-09-02 from Rory's Trading Economics (UK power spot 137.72 GBP/MWh, +85.01% 1Y), ICE Futures Europe UK NBP gas forward board (2 Sep 2026, Oct 26 the front-month at 180.78) and N2EX/Nord Pool UK day-ahead screenshots (delivery dates 28 Aug - 3 Sep). Narrative driver (renewed US-Iran hostilities lifting Brent to ~97 dollars and European TTF gas above 75 euros/MWh, its highest since early 2023) is from an FT market report dated 2 Sep 2026; the oil, TTF and bond-yield moves are cited as context and are NOT plotted here.\n\nMEASURES ARE DIFFERENT AND MUST NOT BE MERGED: Trading Economics prints a single daily spot index (137.72 GBP/MWh, +85.01% 1Y); the N2EX view is every hourly delivery period, from which the commentary quotes the daily averages (28 Aug - 3 Sep: 110.92, 90.43, 96.87, 119.85, 119.22, 125.16, 119.18) and the intraday peak/trough spread.\n\nWINDOW = THREE YEARS, DELIBERATELY (Rory, 2026-08-27). The long chart was a five-year view; the 2022 Russia-Ukraine spikes (to ~585) dwarf today's level and made a severe market look benign. Three years starts after the crisis unwound, so today reads as the top of the range rather than a footnote to 2022. The template reads power.rangeLong.years + .axisLabels, so changing the window again is a JSON edit only. Do NOT widen it back without a reason.\n\nGAS FORWARDS ARE REAL, NOT THIN (Rory, 2026-08-27). Summer 27 (119.75) and Winter 27 (116.60) sit far below the winter-26 strip and have held there; treat them as a settled view of the curve, not illiquid indications. Every gas price is read from the ICE board verbatim.\n\nSHAPE-TRACED, NOT TICK-EXACT: power.series (1Y), power.rangeLong and gas.series (1Y). The tails were re-pointed to the 2 Sep high; the earlier trace is unchanged (rangeLong 2023-2025 is a coarse monthly trace off the 5Y chart, +/-10 GBP/MWh).\n\nRefresh by hand and redeploy; every already-published client link re-renders from this file, so it is production. Delete it to hide the Market Review tab.",
+  "updated": "2026-09-02",
+  "headline": "gas-led spot at a fresh three-year high, up 85% in a year, as renewed US-Iran tension lifts European gas; next winter is the expensive part of the curve",
+  "commentary": "UK power spot has hit 137.72 GBP/MWh, a fresh three-year high and up 85% on a year ago. The driver this week is geopolitical: renewed US-Iran hostilities have pushed European TTF gas above 75 euros/MWh, its highest since early 2023, and that feeds straight into the UK gas and power curves. The NBP forward strip has moved up across the board, with Winter 26 around 181 p/therm. What matters for tender timing is the curve's shape: next winter is the expensive part, with Summer 27 (119.75) and Winter 27 (116.60) priced roughly a third below Winter 26. A 12-month term starting this October sits on that winter; a 24-month blends it with a cheaper 2027/28, so the longer terms are pricing better per kWh. With the near-term move driven by a geopolitical risk that can't be timed, the question is term length, not waiting for a lower entry.",
   "power": {
     "unit": "£/MWh",
-    "spotNow": 129.37,
+    "spotNow": 137.72,
     "series": [
       73,
       76,
@@ -39,10 +39,10 @@
       93,
       90,
       96,
-      106,
-      121,
       118,
-      129.37
+      128,
+      112,
+      137.72
     ],
     "seriesLabels": [
       "Sep",
@@ -61,7 +61,7 @@
     "rangeLong": {
       "years": 3,
       "min": 56,
-      "max": 130,
+      "max": 138,
       "series": [
         85,
         78,
@@ -98,8 +98,8 @@
         95,
         94,
         101,
-        95,
-        129.37
+        120,
+        137.72
       ],
       "axisLabels": [
         "Aug 23",
@@ -108,14 +108,14 @@
         "Feb 25",
         "Aug 25",
         "Feb 26",
-        "Aug 26"
+        "Sep 26"
       ]
     }
   },
   "gas": {
     "unit": "p/therm",
-    "spotNow": 161.85,
-    "note": "NBP front-month (Sep 26) is 161.85 p/therm, up 0.5% on the day. The winter curve has kept inflating — Dec 26 at 169.08, Jan 27 at 169.80, Winter 26 at 164.80 — while Summer 27 (107.00) and Winter 27 (104.00) sit far lower and have held there for the past fortnight.",
+    "spotNow": 180.78,
+    "note": "NBP front-month (Oct 26) is 180.78 p/therm and the winter strip is higher still (Winter 26 at 181.25). This week's leg up tracks European TTF gas breaking above 75 euros/MWh on the renewed US-Iran conflict. Summer 27 (119.75) and Winter 27 (116.60) sit roughly a third lower, so next winter is the expensive part of the curve.",
     "series": [
       76,
       77,
@@ -145,47 +145,43 @@
       100,
       112,
       130,
-      148,
-      138,
-      158,
-      161.85
+      150,
+      160,
+      170,
+      180.78
     ],
     "contracts": [
       [
-        "SEP 26",
-        161.85
-      ],
-      [
         "OCT 26",
-        163.4
+        180.78
       ],
       [
         "NOV 26",
-        167.22
+        184.08
       ],
       [
         "DEC 26",
-        169.08
+        185.5
       ],
       [
         "JAN 27",
-        169.8
+        185.25
       ],
       [
         "Q1 27",
-        163.49
+        178.19
       ],
       [
         "WINTER 26",
-        164.8
+        181.25
       ],
       [
         "SUMMER 27",
-        107.0
+        119.75
       ],
       [
         "WINTER 27",
-        104.0
+        116.6
       ]
     ]
   }
