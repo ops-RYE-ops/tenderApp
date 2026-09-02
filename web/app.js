@@ -17,6 +17,10 @@ const TARGET_FIELDS = [
   "unitRate", "dayRate", "nightRate", "weekendRate", "standingCharge",
   "capacityCharge", "networkCharge", "meterCharge", "kva",
 ];
+// Optional per-row fields, not part of the rate CSV: `fuel` is the reliable
+// per-meter fuel signal for a combined gas + electricity tender (else inferred
+// from the meter-point number), `supplier` lets one sheet carry several suppliers.
+const EXTRA_FIELDS = ["fuel", "supplier"];
 const NEW_SUPPLIER = "__new__";
 
 const state = {
@@ -350,7 +354,17 @@ function renderMap() {
 
   const headers = allHeaders(f);
   const cols = f.mapping.columns || {};
-  const fields = TARGET_FIELDS.concat(Object.keys(cols).filter((k) => !TARGET_FIELDS.includes(k)));
+  // Auto-detect a Fuel / Supplier column by name on first render (the operator can
+  // override or clear it; a cleared field is null, not undefined, so it stays clear).
+  for (const field of EXTRA_FIELDS) {
+    if (cols[field] === undefined) {
+      const match = headers.find((h) => String(h).trim().toLowerCase() === field);
+      if (match) cols[field] = match;
+    }
+  }
+  f.mapping.columns = cols;
+  const known = TARGET_FIELDS.concat(EXTRA_FIELDS);
+  const fields = known.concat(Object.keys(cols).filter((k) => !known.includes(k)));
 
   const tbody = $("map-rows");
   tbody.innerHTML = "";

@@ -184,7 +184,10 @@ const check = (name, cond) => {
   check('map screen visible', !$('step-3').classList.contains('hidden'));
   check('map result rendered', !$('map-result').classList.contains('hidden'));
   const rows = [...window.document.querySelectorAll('#map-rows tr')];
-  check('all 14 target fields rendered', rows.length === 14);
+  check('all 14 target fields + fuel + supplier rendered', rows.length === 16);
+  const fieldNames = rows.map((r) => r.querySelector('.fieldname').textContent);
+  check('fuel is a mappable field', fieldNames.includes('fuel'));
+  check('supplier is a mappable field', fieldNames.includes('supplier'));
   const unitRow = rows.find((r) => r.querySelector('.fieldname').textContent === 'unitRate');
   check('unitRate select shows the proposed header',
     unitRow.querySelector('select').value === 'Unit Rate (p/kWh)');

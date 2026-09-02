@@ -97,7 +97,7 @@
   <!-- step 3: mapping review -->
   <div id="step-3" class="card hidden">
     <h2>Column mapping <span id="map-file" class="mono" style="color:var(--text-3); font-size:12px;"></span></h2>
-    <p class="sub">Claude proposed which column feeds each field — the values shown were read directly from the file and never went to the model. Check the samples look right, fix anything wrong, then confirm.</p>
+    <p class="sub">Claude proposed which column feeds each field — the values shown were read directly from the file and never went to the model. Check the samples look right, fix anything wrong, then confirm. Map <b>fuel</b> for a combined gas + electricity tender (otherwise fuel is inferred from the meter number), and <b>supplier</b> when one sheet carries several.</p>
     <div id="map-loading" class="hidden"><span class="spinner"></span> <span id="map-loading-text">Mapping…</span></div>
     <div id="map-result" class="hidden">
       <div class="meta-grid" id="map-meta"></div>

@@ -168,6 +168,25 @@ def _db_connect():
     return psycopg2.connect(_with_sslmode(dsn), connect_timeout=10)
 
 
+def _canon_charge_basis(mapping: Optional[dict]) -> Optional[dict]:
+    """Return `mapping` with charge_basis values normalised to lowercase/stripped.
+
+    Charge-basis strings are case- and space-insensitive ('p/kVA/day' ==
+    'p/kva/day'). Canonicalising at the cache boundary stops a non-canonical form
+    (e.g. one a past mapping stored) from being written or served. Everything else
+    in the mapping is left untouched.
+    """
+    if not isinstance(mapping, dict):
+        return mapping
+    cb = mapping.get("charge_basis")
+    if not isinstance(cb, dict):
+        return mapping
+    out = dict(mapping)
+    out["charge_basis"] = {k: (str(v).strip().lower() if v is not None else v)
+                           for k, v in cb.items()}
+    return out
+
+
 def _cache_get(supplier: str, fingerprint: str) -> Optional[dict]:
     """Return a cached mapping for (supplier, fingerprint), or None on a miss."""
     conn = _db_connect()
@@ -181,7 +200,7 @@ def _cache_get(supplier: str, fingerprint: str) -> Optional[dict]:
                 (supplier, fingerprint),
             )
             row = cur.fetchone()
-            return row[0] if row else None  # jsonb comes back as a dict
+            return _canon_charge_basis(row[0]) if row else None  # jsonb comes back as a dict
     finally:
         conn.close()
 
@@ -190,6 +209,7 @@ def _cache_put(supplier: str, fingerprint: str, mapping: dict, confirmed_by: Opt
     """Upsert a confirmed mapping. One row per (supplier, layout_fingerprint)."""
     from psycopg2.extras import Json
 
+    mapping = _canon_charge_basis(mapping)
     conn = _db_connect()
     if conn is None:
         raise HTTPException(

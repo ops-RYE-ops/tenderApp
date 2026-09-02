@@ -178,6 +178,11 @@ def compute_offer(entry, tender, incumbent=False):
     _ws = tender.get("weekend_split", WEEKEND_SPLIT_DEFAULT)
     weekend_split = float(_ws if _ws is not None else WEEKEND_SPLIT_DEFAULT)
     basis = {**DEFAULT_BASIS, **tender.get("charge_basis", {}), **entry.get("charge_basis", {})}
+    # Charge-basis strings are case- and space-insensitive: "p/kVA/day", " P/KWH "
+    # and "p/kva/day" are the same basis. Canonicalise to lowercase before checking
+    # against VALID_BASIS (the map-headers prompt itself suggests the "p/kVA/day"
+    # spelling, so a mapping legitimately carries mixed case).
+    basis = {k: (str(v).strip().lower() if v is not None else v) for k, v in basis.items()}
     for b in basis.values():
         if b not in VALID_BASIS:
             raise SystemExit(f"ERROR: unknown charge basis '{b}' (valid: {sorted(VALID_BASIS)})")

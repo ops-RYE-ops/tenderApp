@@ -354,7 +354,8 @@ def rows_to_quote(rows, supplier, term, category=None, charge_basis=None):
     if category:
         quote["category"] = category
     if charge_basis:
-        quote["charge_basis"] = charge_basis
+        quote["charge_basis"] = {k: (str(v).strip().lower() if v is not None else v)
+                                 for k, v in charge_basis.items()}
     quote["lines"] = [row_to_line(r) for r in rows if r.get("mpxn")]
     return quote
 

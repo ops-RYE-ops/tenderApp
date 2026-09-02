@@ -49,6 +49,29 @@ def main():
     check("costed = value * kva * 365 / 100", abs(cost - (1.5 * 100.0 * 365 / 100)) < 1e-9)
     check("no warning when kVA present", not w)
 
+    print("4) charge_basis is case/space-insensitive (p/kVA/day == p/kva/day)")
+    import tempfile
+    tender = {"client_name": "C", "tender_label": "T", "utility": "electricity",
+              "sites": [{"mpxn": "1200000000001", "eac": 100000.0, "kva": 100.0}],
+              "quotes": [{"supplier": "S", "term": "24 months", "featured": True,
+                          "charge_basis": {"capacityCharge": " P/kVA/Day "},
+                          "lines": [{"mpxn": "1200000000001", "unitRate": 22.0,
+                                     "standingCharge": 2.5, "capacityCharge": 10.0,
+                                     "fuel": "electricity"}]}]}
+    pay = bd.build_render_payload(tender)
+    off = pay["offers"][0]
+    check("mixed-case p/kVA/day accepted and costed as p/kva/day",
+          off["totals"]["capacity"] == round(10.0 * 100.0 * 365 / 100, 2))
+
+    print("5) cache layer canonicalises a stored mapping's charge_basis")
+    sys.path.insert(0, ROOT)
+    import main as _m
+    canon = _m._canon_charge_basis({"columns": {}, "charge_basis": {"capacityCharge": " P/kVA/Day "}})
+    check("cached charge_basis lowercased/stripped on the boundary",
+          canon["charge_basis"]["capacityCharge"] == "p/kva/day")
+    check("mapping with no charge_basis is untouched",
+          _m._canon_charge_basis({"columns": {}}) == {"columns": {}})
+
     if FAILURES:
         print(f"\n{len(FAILURES)} CHECK(S) FAILED")
         return 1
