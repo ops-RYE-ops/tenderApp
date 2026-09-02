@@ -122,23 +122,32 @@ def _mixed_extract(explicit=True):
 
 
 def test_endpoint_guards():
-    print("4) /api/cost + /api/assemble refuse a mixed tender")
+    print("4) /api/cost + /api/assemble route a combined tender per fuel")
     client = TestClient(main.app)
+    extract = {"sites": [
+        {"mpxn": MPAN_A, "site_name": "E1", "eac": 100000.0, "eac_source": "quote", "fuel": "electricity"},
+        {"mpxn": MPRN_G, "site_name": "G1", "eac": 50000.0, "eac_source": "quote", "fuel": "gas"}],
+        "quotes": [
+        {"supplier": "EDF", "term": "24 months", "lines": [
+            {"mpxn": MPAN_A, "unitRate": 25.0, "standingCharge": 40.0, "fuel": "electricity"}]},
+        {"supplier": "British Gas", "term": "24 months", "lines": [
+            {"mpxn": MPRN_G, "unitRate": 6.5, "standingCharge": 30.0, "fuel": "gas"}]}]}
 
-    r = client.post("/api/cost", data={"extracts": json.dumps([_mixed_extract(explicit=True)])})
-    check("cost mixed (explicit) -> 422", r.status_code == 422)
-    check("cost message names both fuels", "electricity" in r.json()["detail"]
-          and "gas" in r.json()["detail"])
-
-    r = client.post("/api/cost", data={"extracts": json.dumps([_mixed_extract(explicit=False)])})
-    check("cost mixed (inferred, no Fuel col) -> 422", r.status_code == 422)
+    r = client.post("/api/cost", data={"extracts": json.dumps([extract])})
+    check("cost combined -> 200 (no longer refused)", r.status_code == 200)
+    j = r.json()
+    check("cost reports both fuels in order", j.get("fuels") == ["electricity", "gas"])
+    byfuel = {o["supplier"]: o["fuel"] for o in j["offers"]}
+    check("electricity offer tagged electricity", byfuel.get("EDF") == "electricity")
+    check("gas offer tagged gas", byfuel.get("British Gas") == "gas")
+    check("cheapest marked once per fuel", sum(1 for o in j["offers"] if o["cheapest"]) == 2)
 
     r = client.post("/api/assemble", data={
-        "extracts": json.dumps([_mixed_extract(explicit=True)]),
+        "extracts": json.dumps([extract]),
         "meta": json.dumps({"client_name": "Mixed Co", "tender_label": "Mixed"}),
         "persist": "false"})
-    check("assemble mixed -> 422", r.status_code == 422)
-    check("assemble not persisted (guard before write)", "mix" in r.json()["detail"].lower())
+    check("assemble combined -> 200 (saved, not refused)", r.status_code == 200)
+    check("assemble ok flag true", r.json().get("ok") is True)
 
 
 def test_single_fuel_unaffected_and_valid():

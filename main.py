@@ -922,12 +922,12 @@ async def assemble_endpoint(
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"Assembly/validation failed: {type(e).__name__}: {e}")
 
-        # Mixed-fuel guard (step one): refuse to SAVE a tender that mixes gas and
-        # electricity. Combined tenders route to the per-fuel path once built;
-        # until then a mixed tender would blend fuels into a meaningless saving.
+        # Combined gas + electricity tenders are saved and rendered per fuel (the
+        # dashboard shows an electricity Summary with an include-gas roll-up and a
+        # fuel switch in the Portfolio). Label the tender with both fuels.
         _fuels = at.distinct_fuels(tender)
         if len(_fuels) > 1:
-            raise HTTPException(status_code=422, detail=at.mixed_fuel_detail(_fuels))
+            tender["utility"] = " + ".join(sorted(_fuels))
 
         persisted = False
         if persist:
@@ -1018,14 +1018,22 @@ async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File
             except OSError:
                 pass
 
-    # Mixed-fuel guard (step one): gas and electricity can't be costed in one
-    # comparison. Refuse rather than emit a meaningless blended ranking.
-    _fuels = at.distinct_fuels(tender)
-    if len(_fuels) > 1:
-        raise HTTPException(status_code=422, detail=at.mixed_fuel_detail(_fuels))
-
+    # Combined gas + electricity tenders cost PER FUEL: a gas offer is ranked only
+    # against gas, an electricity offer only against electricity. A single-fuel
+    # tender behaves exactly as before.
+    sites_fuel = bd._sites_fuel_map(tender)
     sites = {s.get("mpxn"): s for s in tender.get("sites", [])}
     site_mpxns = {m for m in sites if m}
+    fuel_sites = {}
+    for _m in site_mpxns:
+        fuel_sites.setdefault(sites_fuel.get(_m) or "electricity", set()).add(_m)
+
+    def _offer_fuel(lines):
+        for ln in lines:
+            f = bd._line_fuel(ln, sites_fuel)
+            if f:
+                return f
+        return "electricity"
     quotes = tender.get("quotes", [])
     offers = []
     work = tempfile.mkdtemp(prefix="rye-cost-")
@@ -1053,6 +1061,7 @@ async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File
                 raise HTTPException(status_code=422,
                                     detail=f"Costing '{q.get('supplier')}' failed: {type(e).__name__}: {e}")
             line_mpxns = {ln.get("mpxn") for ln in q.get("lines", []) if ln.get("mpxn")}
+            ofuel = _offer_fuel(q.get("lines", []))
             offers.append({
                 "index": i,
                 "supplier": q.get("supplier"),
@@ -1060,20 +1069,24 @@ async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File
                 "category": computed.get("category"),
                 "annual_cost": computed.get("total"),
                 "effective_pkwh": (computed.get("perKwh") or {}).get("effective"),
-                "covers_all_sites": site_mpxns.issubset(line_mpxns),
+                "fuel": ofuel,
+                "covers_all_sites": fuel_sites.get(ofuel, site_mpxns).issubset(line_mpxns),
                 "warnings": computed.get("warnings", []),
                 "cheapest": False,
             })
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
-    # Cheapest among full-coverage offers (fall back to all if none cover every site).
-    pool = [o for o in offers if o["covers_all_sites"]] or offers
-    pool = [o for o in pool if o["annual_cost"] is not None]
-    if pool:
-        cheapest = min(pool, key=lambda o: o["annual_cost"])
-        cheapest["cheapest"] = True
-    offers.sort(key=lambda o: (not o["covers_all_sites"],
+    # Cheapest per fuel among full-coverage offers (fall back to all in that fuel).
+    _ford = {"electricity": 0, "gas": 1}
+    for _f in set(o["fuel"] for o in offers):
+        grp = [o for o in offers if o["fuel"] == _f]
+        pool = [o for o in grp if o["covers_all_sites"]] or grp
+        pool = [o for o in pool if o["annual_cost"] is not None]
+        if pool:
+            min(pool, key=lambda o: o["annual_cost"])["cheapest"] = True
+    offers.sort(key=lambda o: (_ford.get(o["fuel"], 9),
+                               not o["covers_all_sites"],
                                o["annual_cost"] if o["annual_cost"] is not None else float("inf")))
 
     return {
@@ -1082,6 +1095,7 @@ async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File
         "eac_total": round(sum((s.get("eac") or 0) for s in sites.values()), 2),
         "day_split": tender.get("day_split"),
         "weekend_split": tender.get("weekend_split"),
+        "fuels": sorted(fuel_sites, key=lambda f: _ford.get(f, 9)),
         "offers": offers,
     }
 

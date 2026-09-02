@@ -31,6 +31,7 @@ const state = {
 };
 
 const MAX_FEATURED = 2;
+const MAX_FEATURED_PER_FUEL = 2;
 
 const $ = (id) => document.getElementById(id);
 
@@ -574,16 +575,23 @@ async function loadOffers() {
     if (state.sitesCsv) fd.append("sites_csv", state.sitesCsv);  // authoritative EAC/kVA for the ranking
     const r = await api("/api/cost", { method: "POST", body: fd });
     state.offers = r.offers || [];
-    // Pre-tick the two cheapest (offers arrive full-coverage-first, cheapest-first).
-    state.featured = new Set(state.offers.slice(0, MAX_FEATURED).map((o) => o.index));
+    // Pre-tick the best (up to MAX_FEATURED_PER_FUEL) of EACH fuel. Offers arrive
+    // grouped by fuel, full-coverage-first and cheapest-first, so the first N of a
+    // fuel are the ones to feature. A single-fuel tender ticks its two cheapest.
+    state.featured = new Set();
+    const _seen = {};
+    for (const o of state.offers) {
+      const f = o.fuel || "electricity";
+      _seen[f] = _seen[f] || 0;
+      if (_seen[f] < MAX_FEATURED_PER_FUEL) { state.featured.add(o.index); _seen[f]++; }
+    }
     // Editing: restore what was actually shown to the client last time instead, so a
     // re-save doesn't silently swap the featured offers under you. flatQuotes() is in
     // the same order the backend concatenates, so the index lines up with o.index.
     if (state.editing) {
       const wasFeatured = flatQuotes()
         .map((q, i) => (q && q.featured ? i : -1))
-        .filter((i) => i >= 0)
-        .slice(0, MAX_FEATURED);
+        .filter((i) => i >= 0);
       if (wasFeatured.length) state.featured = new Set(wasFeatured);
     }
     renderOfferList();
@@ -599,35 +607,59 @@ function money(n) {
   return n == null ? "—" : "£" + Number(n).toLocaleString("en-GB", { maximumFractionDigits: 0 });
 }
 
+function fuelOf(idx) {
+  const o = state.offers.find((x) => x.index === idx);
+  return (o && o.fuel) || "electricity";
+}
+function featuredCountForFuel(f) {
+  let n = 0;
+  state.featured.forEach((idx) => { if (fuelOf(idx) === f) n++; });
+  return n;
+}
+const FUEL_LABEL = { electricity: "Electricity", gas: "Gas" };
+
 function renderOfferList() {
   const list = $("offer-list");
   list.innerHTML = "";
-  for (const o of state.offers) {
-    const ticked = state.featured.has(o.index);
-    const disabled = !ticked && state.featured.size >= MAX_FEATURED;
-    const eff = o.effective_pkwh != null ? `${o.effective_pkwh.toFixed(2)}p/kWh` : "—";
-    const badges = (o.cheapest ? '<span class="chip success">CHEAPEST</span>' : "")
-      + (o.covers_all_sites ? "" : '<span class="chip danger">PARTIAL COVER</span>');
-    const row = document.createElement("label");
-    row.className = "offer" + (ticked ? " on" : "") + (disabled ? " off" : "");
-    row.innerHTML = `
-      <input type="checkbox" data-idx="${o.index}" ${ticked ? "checked" : ""} ${disabled ? "disabled" : ""}>
-      <div class="offer-main">
-        <div class="offer-name">${escapeHtml(o.supplier || "—")}${o.term ? " · " + escapeHtml(o.term) : ""} ${badges}</div>
-        <div class="offer-cost mono">${money(o.annual_cost)}/yr · ${eff}</div>
-      </div>`;
-    list.append(row);
+  const fuels = [];
+  for (const o of state.offers) { const f = o.fuel || "electricity"; if (!fuels.includes(f)) fuels.push(f); }
+  const multi = fuels.length > 1;
+  for (const f of fuels) {
+    if (multi) {
+      const head = document.createElement("div");
+      head.className = "offer-fuel-head";
+      head.style.cssText = "font:600 11px var(--mono,ui-monospace,monospace);letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin:16px 0 6px";
+      head.textContent = FUEL_LABEL[f] || f;
+      list.append(head);
+    }
+    for (const o of state.offers.filter((x) => (x.fuel || "electricity") === f)) {
+      const ticked = state.featured.has(o.index);
+      const disabled = !ticked && featuredCountForFuel(f) >= MAX_FEATURED_PER_FUEL;
+      const eff = o.effective_pkwh != null ? `${o.effective_pkwh.toFixed(2)}p/kWh` : "\u2014";
+      const badges = (o.cheapest ? '<span class="chip success">CHEAPEST</span>' : "")
+        + (o.covers_all_sites ? "" : '<span class="chip danger">PARTIAL COVER</span>');
+      const row = document.createElement("label");
+      row.className = "offer" + (ticked ? " on" : "") + (disabled ? " off" : "");
+      row.innerHTML = `
+        <input type="checkbox" data-idx="${o.index}" ${ticked ? "checked" : ""} ${disabled ? "disabled" : ""}>
+        <div class="offer-main">
+          <div class="offer-name">${escapeHtml(o.supplier || "\u2014")}${o.term ? " \u00b7 " + escapeHtml(o.term) : ""} ${badges}</div>
+          <div class="offer-cost mono">${money(o.annual_cost)}/yr \u00b7 ${eff}</div>
+        </div>`;
+      list.append(row);
+    }
   }
   list.querySelectorAll("input[type=checkbox]").forEach((cb) =>
     cb.addEventListener("change", () => {
       const idx = Number(cb.dataset.idx);
-      if (cb.checked) { if (state.featured.size < MAX_FEATURED) state.featured.add(idx); }
+      const f = fuelOf(idx);
+      if (cb.checked) { if (featuredCountForFuel(f) < MAX_FEATURED_PER_FUEL) state.featured.add(idx); }
       else state.featured.delete(idx);
       renderOfferList();
     }));
   const hint = document.createElement("div");
   hint.className = "offer-hint";
-  hint.textContent = `Showing ${state.featured.size} of max ${MAX_FEATURED}. Costs use RYE's `
+  hint.textContent = `Tick up to ${MAX_FEATURED_PER_FUEL}${multi ? " per fuel" : ""}. Costs use RYE's `
     + "standard splits - day/night 70/30; weekend 2/7 where a weekend rate is quoted.";
   list.append(hint);
 }
@@ -660,7 +692,11 @@ function assembleMeta() {
   // Recommended = the cheapest of the TICKED offers (price-based; costs come from
   // the backend ranking, never computed here).
   const ticked = state.offers.filter((o) => state.featured.has(o.index) && o.annual_cost != null);
-  if (ticked.length) {
+  const fuelsPresent = new Set(state.offers.map((o) => o.fuel || "electricity"));
+  // Single fuel: name the cheapest ticked as the recommendation. Combined: each
+  // fuel's section recommends its own cheapest featured offer, so we don't pin one
+  // cross-fuel supplier here.
+  if (fuelsPresent.size <= 1 && ticked.length) {
     const rec = ticked.reduce((x, y) => (y.annual_cost < x.annual_cost ? y : x));
     meta.recommended_supplier = rec.supplier;
     if (rec.term) meta.recommended_term = rec.term;
@@ -680,6 +716,16 @@ async function doAssemble() {
   if (!state.featured.size) {
     notice($("assemble-msg"), "Tick at least one offer to show the client.", "error");
     return;
+  }
+  {
+    const present = [];
+    for (const o of state.offers) { const f = o.fuel || "electricity"; if (!present.includes(f)) present.push(f); }
+    for (const f of present) {
+      if (!featuredCountForFuel(f)) {
+        notice($("assemble-msg"), `Tick at least one ${(FUEL_LABEL[f] || f).toLowerCase()} offer to show the client.`, "error");
+        return;
+      }
+    }
   }
   if ($("in-benchmark-on").checked && !($("in-benchmark-unit").value || "").trim()) {
     notice($("assemble-msg"), "Enter a benchmark unit rate (p/kWh), or untick the benchmark baseline.", "error");
