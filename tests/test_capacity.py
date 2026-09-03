@@ -63,14 +63,14 @@ def main():
     check("mixed-case p/kVA/day accepted and costed as p/kva/day",
           off["totals"]["capacity"] == round(10.0 * 100.0 * 365 / 100, 2))
 
-    print("5) cache layer canonicalises a stored mapping's charge_basis")
+    print("5) cache layer STRIPS a stored mapping's charge_basis (units are not the LLM's job)")
     sys.path.insert(0, ROOT)
     import main as _m
-    canon = _m._canon_charge_basis({"columns": {}, "charge_basis": {"capacityCharge": " P/kVA/Day "}})
-    check("cached charge_basis lowercased/stripped on the boundary",
-          canon["charge_basis"]["capacityCharge"] == "p/kva/day")
+    stripped = _m._strip_cache_charge_basis({"columns": {}, "charge_basis": {"capacityCharge": " P/kVA/Day "}})
+    check("cached charge_basis dropped at the boundary", "charge_basis" not in stripped)
+    check("the rest of the mapping is untouched", stripped["columns"] == {})
     check("mapping with no charge_basis is untouched",
-          _m._canon_charge_basis({"columns": {}}) == {"columns": {}})
+          _m._strip_cache_charge_basis({"columns": {}}) == {"columns": {}})
 
     if FAILURES:
         print(f"\n{len(FAILURES)} CHECK(S) FAILED")

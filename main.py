@@ -168,22 +168,22 @@ def _db_connect():
     return psycopg2.connect(_with_sslmode(dsn), connect_timeout=10)
 
 
-def _canon_charge_basis(mapping: Optional[dict]) -> Optional[dict]:
-    """Return `mapping` with charge_basis values normalised to lowercase/stripped.
+def _strip_cache_charge_basis(mapping: Optional[dict]) -> Optional[dict]:
+    """Return `mapping` with any `charge_basis` removed.
 
-    Charge-basis strings are case- and space-insensitive ('p/kVA/day' ==
-    'p/kva/day'). Canonicalising at the cache boundary stops a non-canonical form
-    (e.g. one a past mapping stored) from being written or served. Everything else
-    in the mapping is left untouched.
+    Annualisation units are NOT the LLM's job — they come from DEFAULT_BASIS, with
+    per-quote overrides set only in a hand-authored mapping.json (the CLI/skill
+    path). The learned-mappings cache is written solely from the web review screen,
+    which has no basis control, so any charge_basis on a cached row is a stale
+    LLM-inferred guess (the source of the 'p/kWh network' mis-cost). Dropping it at
+    the cache boundary — on read and write — self-heals existing rows and stops new
+    ones carrying a basis. Hand-authored mapping.json overrides are untouched: they
+    never pass through this cache. Everything else in the mapping is left as-is.
     """
-    if not isinstance(mapping, dict):
-        return mapping
-    cb = mapping.get("charge_basis")
-    if not isinstance(cb, dict):
+    if not isinstance(mapping, dict) or "charge_basis" not in mapping:
         return mapping
     out = dict(mapping)
-    out["charge_basis"] = {k: (str(v).strip().lower() if v is not None else v)
-                           for k, v in cb.items()}
+    out.pop("charge_basis", None)
     return out
 
 
@@ -200,7 +200,7 @@ def _cache_get(supplier: str, fingerprint: str) -> Optional[dict]:
                 (supplier, fingerprint),
             )
             row = cur.fetchone()
-            return _canon_charge_basis(row[0]) if row else None  # jsonb comes back as a dict
+            return _strip_cache_charge_basis(row[0]) if row else None  # jsonb comes back as a dict
     finally:
         conn.close()
 
@@ -209,7 +209,7 @@ def _cache_put(supplier: str, fingerprint: str, mapping: dict, confirmed_by: Opt
     """Upsert a confirmed mapping. One row per (supplier, layout_fingerprint)."""
     from psycopg2.extras import Json
 
-    mapping = _canon_charge_basis(mapping)
+    mapping = _strip_cache_charge_basis(mapping)
     conn = _db_connect()
     if conn is None:
         raise HTTPException(

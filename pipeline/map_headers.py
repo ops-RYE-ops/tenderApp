@@ -381,7 +381,6 @@ def mapping_tool_schema():
                                "fuel": _column_spec_schema(),
                                "supplier": _column_spec_schema()},
             },
-            "charge_basis": {"type": "object", "additionalProperties": {"type": "string"}},
             "db_lookup": {"type": "object"},
         },
     }
