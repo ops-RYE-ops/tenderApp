@@ -34,7 +34,106 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-08-27 — branch `feat/live-link-edits`, all suites green, **loaded and
+**Latest session (2026-09-02 — combined gas+electricity tenders, per-fuel benchmark, rate
+provenance, market refresh. All merged to `main`, deployed, all 13 Python suites + `dom_smoke.js`
+green. Built across two branches, now deleted: `feat/multi-fuel-multi-supplier` and
+`feat/rate-provenance`.)** The tool now handles a single tender that mixes fuels AND suppliers.
+
+**A. Combined gas + electricity tenders (multi-fuel / multi-supplier).**
+- **Fuel is detected PER METER ROW**, three ways in priority: an explicit `fuel` column (now
+  mappable, see below) → the site's fuel → inferred from the meter-point number
+  (`infer_fuel_from_mpxn`: 13-digit MPAN = electricity, 6–10-digit MPRN = gas). `supplier` can
+  also be per-line, so one sheet can carry several suppliers.
+- **Engine (`pipeline/build_dashboard.py`):** `canonical_fuels()`, `_sub_tender_for_fuel()`,
+  `_line_fuel()`, `_sites_fuel_map()` partition a tender by fuel. `build_render_payload()` returns
+  today's single-fuel payload when ≤1 fuel, else `{multiFuel:true, primaryIndex, fuels:[...], fee,
+  commission, market}` — each fuel costed independently by the UNCHANGED cost engine, ONE
+  tender-level fee/commission (`_tender_level_charge`, fee uses total meters across fuels + combined
+  gross saving), one shared market snapshot. `primaryIndex` = electricity (else 0). Per-site
+  supplier is threaded through the render CSV (`_write_offer_csv` writes a `supplier` column;
+  `compute_offer` sets `site.supplier`).
+- **Client template (`assets/dashboard_template.html`) — electricity-anchored, single-fuel path
+  UNCHANGED.** A combined tender takes the `MULTI` branch: the **Summary** tab shows electricity
+  with an **"Include gas in these figures"** tickbox that rolls gas into every £ line and reveals a
+  "Mean effective rate — gas" row (two cells); the **fuel switch (Electricity | Gas) lives inside
+  the Portfolio tab**, not top-level (Rory's call — gas must not read as equal to elec, which we
+  primarily tender). Recommendation names the suppliers, falling back to **"Best of market mix"**
+  past three. Whole-tender charge (fee or commission) recomputes live on the tickbox. Key new JS:
+  `renderMulti()`, `buildSummaryMulti()`, `portfolioBody()`, `switchPortfolioFuel()`,
+  `wireSummaryMulti()`, `wireOfferFilter()`, helpers `recOf/siteSuppliers/supplierLabel`. The old
+  top-level fuel toggle from an earlier draft was removed.
+- **Endpoint guards FLIPPED (main.py).** The increment-A "refuse a mixed tender" 422 in
+  `/api/cost` (~line 1025) and `/api/assemble` (~line 925) is gone. `/api/cost` now ranks **per
+  fuel**: each offer tagged with `fuel`, `covers_all_sites` computed against that fuel's meters,
+  cheapest marked WITHIN each fuel, and a top-level `fuels` list returned. `/api/assemble` saves
+  the mixed tender and sets `utility` = "electricity + gas".
+- **Wizard (`web/app.js`).** Offer picker groups by fuel, pre-ticks + caps `MAX_FEATURED_PER_FUEL`
+  (=2) PER FUEL, and requires ≥1 featured per fuel before saving. Step-1 utility dropdown gained
+  "Electricity + gas (combined)" (label only; fuel is detected per meter regardless).
+  `recommended_supplier` is set only for single-fuel tenders (each fuel section recommends its own
+  cheapest featured).
+- **Fuel + supplier are now mappable in the MAP step** (`EXTRA_FIELDS = ["fuel","supplier"]`),
+  auto-detected by a column literally named fuel/supplier (case-insensitive) and rendered as extra
+  rows. The extractor already read `cols.fuel`/`cols.supplier` (stashed as `_fuel`/`_supplier`) —
+  they just weren't surfaced in the UI.
+- **KNOWN LIMITATION (told to Rory):** a single sheet holding BOTH fuels' rows becomes ONE offer
+  with a blended elec+gas cost in the picker (render still splits it correctly by meter). Rule:
+  keep each supplier's electricity and gas quotes on separate tabs so each is its own offer.
+
+**B. Per-fuel market benchmark (`pipeline/assemble_tender.py`).** `incumbent_from_benchmark()` is
+fuel-aware: `unit_rate`/`standing_charge` apply to electricity meters, NEW `gas_unit_rate`/
+`gas_standing_charge` to gas meters, via a `fuel_of` map (+ `infer_fuel_from_mpxn` fallback). In a
+combined tender a fuel with NO rate given gets **no benchmark line** — it never benchmarks gas at
+an electricity rate (that was the "gas benchmark showed 29p" bug). Single-fuel: either field
+applies to that fuel. `/api/assemble` reads `gas_benchmark_unit_rate`/`gas_benchmark_standing_charge`
+form fields and builds `_extract_fuel_map(extracts)`. Wizard has "Gas benchmark unit rate / standing
+charge" fields (electricity ones relabelled); validation accepts a rate for either fuel.
+
+**C. Charge-basis case bug + mapping-cache self-heal.** `charge_basis` strings are normalised to
+lowercase/stripped at three points: cost time (`compute_offer`), extraction
+(`process_quote.rows_to_quote`), and the mapping cache on **read and write** (`_canon_charge_basis`
+in `main.py`, applied in `_cache_get`/`_cache_put`). This fixes `unknown charge basis 'p/kVA/day'`
+(the valid set is lowercase `p/kva/day`). Root cause: the map-headers LLM prompt itself suggests the
+`p/kVA/day` spelling, and it was baked into a **cached mapping** keyed by supplier + layout
+fingerprint in the `supplier_mappings` table — so a cache hit replayed it verbatim, LLM skipped.
+
+**D. Rate provenance in the assemble picker — supersede-by-recency.** Fixes a real bug: editing a
+tender and re-uploading dearer rates left the picker showing the old and new offers with identical
+labels, and it **pre-ticked/recommended the cheaper STALE one**.
+- **NEW quote field `added_at` (ISO timestamp).** Stamped at `/api/extract`
+  (`at._now_rfc3339_z()`; note `import assemble_tender as at` is LOCAL per-endpoint in main.py —
+  extract needed its own import added). Preserved through `assemble` (falls back to the tender's
+  `created_at`). **NO DB MIGRATION** — the `tenders` table stores the whole tender in a `payload`
+  **jsonb** column (schemaless), so the field just rides inside it. The only "schema" touched is the
+  JSON validation file `schema/tender.schema.json` (quote object gained the optional property).
+- `/api/cost` returns each offer's `added_at`.
+- **Picker (`web/app.js` `annotateOffers()`):** attaches source (`saved` vs filename), added date,
+  and supersede state. For a matching supplier+term+fuel the newest `added_at` is **current**
+  (tie-break: a new upload beats the saved set, then later flat index); older ones get a grey
+  **SUPERSEDED** chip + the price delta (old → new), are dropped from cheapest/recommended/pre-tick,
+  but stay tickable. `_cheapestCurrent` = cheapest among non-superseded per fuel (drives the CHEAPEST
+  badge). Each row shows "added <date> · <source>". On edit, the prior-featured restore is skipped
+  when a new upload is present (a rate refresh should let the new rates win). Legacy tenders (no
+  `added_at`) fall back to the tender's saved date on first edit, then carry a real stamp.
+
+**E. Market snapshot refreshed to 2026-09-02** (`assets/market_snapshot.json`). Power spot **137.72
+£/MWh (+85% 1Y**, fresh 3-year high), NBP **Oct-26 front-month 180.78 p/therm**, winter strip
+~181–185, **Summer 27 119.75 / Winter 27 116.60** (a ~third step-down beyond next winter — the
+24-month argument, now stronger). Driver (from an FT report): renewed **US-Iran hostilities** →
+European TTF gas above €75/MWh, its highest since early 2023 → feeds the UK curve. Commentary kept
+deliberately light (~150 words) at Rory's request. **This file is PRODUCTION**: every already-
+published client link re-renders from it, so a redeploy updates the Market Review on ALL live
+dashboards. Prior-session notes still apply: 3-year window deliberate (`power.rangeLong.years`), gas
+forwards are real not thin, spot index vs N2EX day-ahead are different measures.
+
+**Session gotchas for git (the cloud session has NO git identity or push creds — Rory ran every
+commit/push/merge by hand):** `git add` stages but does not commit; `git merge <branch>` must be run
+FROM `main` (checkout main first — running it while on the branch merges it into itself, a no-op);
+a fresh branch needs `git push -u origin <branch>` or just merge locally into main and push main
+(main has an upstream). A failed commit can leave a stale `.git/index.lock` the sandbox can't delete
+— clear it before the next commit.
+
+**Prior session (2026-08-27 — branch `feat/live-link-edits`, all suites green, **loaded and
 tested e2e on the preview with a real tender by Rory**, not yet merged):** four things Rory
 asked for.
 (1) **`Current` renamed `Incumbent` across the client dashboard** — the badge on the bars,
