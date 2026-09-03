@@ -89,13 +89,25 @@ applies to that fuel. `/api/assemble` reads `gas_benchmark_unit_rate`/`gas_bench
 form fields and builds `_extract_fuel_map(extracts)`. Wizard has "Gas benchmark unit rate / standing
 charge" fields (electricity ones relabelled); validation accepts a rate for either fuel.
 
-**C. Charge-basis case bug + mapping-cache self-heal.** `charge_basis` strings are normalised to
-lowercase/stripped at three points: cost time (`compute_offer`), extraction
-(`process_quote.rows_to_quote`), and the mapping cache on **read and write** (`_canon_charge_basis`
-in `main.py`, applied in `_cache_get`/`_cache_put`). This fixes `unknown charge basis 'p/kVA/day'`
-(the valid set is lowercase `p/kva/day`). Root cause: the map-headers LLM prompt itself suggests the
-`p/kVA/day` spelling, and it was baked into a **cached mapping** keyed by supplier + layout
-fingerprint in the `supplier_mappings` table — so a cache hit replayed it verbatim, LLM skipped.
+**C. Charge-basis is not the LLM's job (root-cause fix for the p/kWh network mis-cost).**
+Annualisation units now come from `DEFAULT_BASIS` (network `p/day`, capacity `p/kVA/day`, etc.),
+overridden ONLY by an explicit `charge_basis` in a **hand-authored `mapping.json`** (the CLI/skill
+path). The header-mapping LLM no longer proposes units at all: `charge_basis` has been removed from
+`mapping_tool_schema` in `map_headers.py`, and with top-level `additionalProperties:false` the model
+cannot emit it. The learned-mappings cache **strips** any `charge_basis` on read and write
+(`_strip_cache_charge_basis` in `main.py`, applied in `_cache_get`/`_cache_put`), which self-heals
+stale rows and stops new ones forming — the cache is only ever written from the web review screen,
+which has no basis control, so any basis on a cached row was a stale LLM guess.
+
+History / why: the LLM's output schema originally mirrored the whole `mapping.json` shape, so it
+inherited `charge_basis` even though the prompt never taught it about units — it began guessing them.
+On one layout it tagged `networkCharge` as `p/kWh`; commit `8cb773e` then made the basis check
+case-insensitive, which removed the loud `unknown charge basis` guard and turned that guess into a
+silent per-kWh network cost (~£1.4M on a client dashboard). Removing units from the LLM's remit
+kills the whole class. Case-normalisation (lowercase/strip) still runs at cost time (`compute_offer`)
+and extraction (`process_quote.rows_to_quote`) so a mixed-case hand-authored override like
+`p/kVA/day` still validates against the lowercase `VALID_BASIS`. NB the one supplier that quotes in
+non-`p/day` units is normalised by hand before the app (PDF/weblink), so nothing lost.
 
 **D. Rate provenance in the assemble picker — supersede-by-recency.** Fixes a real bug: editing a
 tender and re-uploading dearer rates left the picker showing the old and new offers with identical

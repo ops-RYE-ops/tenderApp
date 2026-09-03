@@ -206,8 +206,28 @@ def test_resync_sheets():
     check("mapping with no sheets is returned as-is", "sheets" not in nos)
 
 
+def test_charge_basis_removed_from_schema_and_cache():
+    print("charge_basis — LLM can't emit it; the cache strips it (units are not the LLM's job)")
+    schema = mh.mapping_tool_schema()
+    check("charge_basis is not a mapping tool-schema property",
+          "charge_basis" not in schema["properties"])
+    check("schema still maps columns (its actual job)", "columns" in schema["properties"])
+    check("top-level additionalProperties is False, so the model cannot smuggle it back",
+          schema.get("additionalProperties") is False)
+    # A stale LLM-inferred basis on a cached row is dropped on read/write.
+    stale = {"columns": {"mpxn": {"single": "mpxn"}},
+             "charge_basis": {"networkCharge": "p/kWh"}}
+    cleaned = main._strip_cache_charge_basis(stale)
+    check("cached charge_basis stripped", "charge_basis" not in cleaned)
+    check("the rest of the mapping is untouched", cleaned["columns"] == stale["columns"])
+    check("original not mutated", "charge_basis" in stale)
+    check("a mapping without charge_basis passes through unchanged",
+          main._strip_cache_charge_basis({"columns": {}}) == {"columns": {}})
+
+
 if __name__ == "__main__":
     test_fingerprint_and_samples()
     test_endpoint_paths()
     test_resync_sheets()
+    test_charge_basis_removed_from_schema_and_cache()
     print("ALL MAP CHECKS PASSED")

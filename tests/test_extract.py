@@ -184,9 +184,42 @@ def test_validation():
     os.unlink(f)
 
 
+def test_hand_authored_charge_basis_still_applies():
+    print("/api/extract — a hand-authored charge_basis override is still honoured")
+    # The escape hatch: a mapping.json (CLI/skill path) may override a genuine odd
+    # unit. That path passes the mapping straight to the extractor, so it must still
+    # work even though the LLM no longer proposes charge_basis.
+    client = TestClient(main.app)
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "S"
+    ws.append(["MPAN", "EAC (kWh)", "Unit Rate (p/kWh)", "Meter (GBP/yr)"])
+    ws.append(["1200000000001", "50000", "24.5", "180"])
+    f = tempfile.mktemp(suffix=".xlsx"); wb.save(f)
+    mapping = {
+        "header_row": 1, "output_prefix": "acme", "supplier": "Acme", "term": "12 months",
+        "split_output_by_sheet": False,
+        "columns": {
+            "mpxn": {"single": "MPAN"}, "updatedEac": {"single": "EAC (kWh)"},
+            "unitRate": {"single": "Unit Rate (p/kWh)"},
+            "meterCharge": {"single": "Meter (GBP/yr)"},
+        },
+        "charge_basis": {"meterCharge": "gbp/year"},
+    }
+    with open(f, "rb") as fh:
+        r = client.post("/api/extract",
+                        files={"file": (os.path.basename(f), fh.read(),
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+                        data={"mapping": json.dumps(mapping), "supplier": "Acme"})
+    os.unlink(f)
+    check("returns 200", r.status_code == 200)
+    q = r.json()["extract_result"]["quotes"][0]
+    check("hand-authored charge_basis carried through to the quote",
+          (q.get("charge_basis") or {}).get("meterCharge") == "gbp/year")
+
+
 if __name__ == "__main__":
     test_extract_basic()
     test_site_reference_and_unmatched()
     test_db_eac_kva_override()
     test_validation()
+    test_hand_authored_charge_basis_still_applies()
     print("ALL EXTRACT CHECKS PASSED")
