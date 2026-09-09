@@ -27,16 +27,16 @@ const cls = i => (d.getElementById(i) || {}).className ?? null;
 // commission 0.6 p/kWh on 800 MWh elec / 1.4 GWh combined.
 const sum = d.getElementById('tab-savings');
 ck('Summary pane exists', !!sum);
-ck('Summary renders offer bars, one block per fuel', sum.querySelectorAll('.bars').length === 2,
+ck('Summary renders ONE set of offer bars', sum.querySelectorAll('.bars').length === 1,
   sum.querySelectorAll('.bars').length + ' blocks');
-const labels = [...sum.querySelectorAll('.section-label')].map(e => e.textContent.trim());
-ck('bars are labelled per fuel',
-  labels.some(l => /all offers tendered — electricity/i.test(l)) &&
-  labels.some(l => /all offers tendered — gas/i.test(l)));
-const gasBars = sum.querySelectorAll('.gas-bars');
-ck('gas bars hidden until the tick', gasBars.length === 1 && gasBars[0].hidden);
-ck('electricity block lists incumbent + both offers',
-  sum.querySelectorAll('.bars')[0].querySelectorAll('.bar-row').length === 3);
+ck('labelled electricity while gas is off',
+  /all offers tendered — electricity ·/i.test([...sum.querySelectorAll('.section-label')]
+    .map(e => e.textContent.trim()).find(t => /All offers/.test(t)) || ''));
+ck('bars list incumbent + both electricity offers',
+  sum.querySelectorAll('.bar-row').length === 3);
+ck('no gas segment before the tick', sum.querySelectorAll('.bar-gas').length === 0);
+const elecWidths = [...sum.querySelectorAll('.bar-row')].map(r =>
+  parseFloat(r.querySelector('.bar-fill').style.width));
 ck('offer-filter ids are unique (Summary + Portfolio)',
   new Set([...d.querySelectorAll('.offer-filter')].map(x => x.id)).size ===
   d.querySelectorAll('.offer-filter').length);
@@ -57,7 +57,30 @@ ck('gas rate rows hidden', [...sum.querySelectorAll('.gas-row')].every(r => r.hi
 console.log('-- include gas ticked --');
 const cb = d.getElementById('inc-gas');
 cb.checked = true; cb.dispatchEvent(new dom.window.Event('change'));
-ck('gas bars revealed', !gasBars[0].hidden);
+ck('still ONE set of bars', sum.querySelectorAll('.bars').length === 1);
+ck('every bar gains a gas segment', sum.querySelectorAll('.bar-gas').length === 3,
+  sum.querySelectorAll('.bar-gas').length);
+ck('title now says electricity + gas',
+  /electricity \+ gas/i.test([...sum.querySelectorAll('.section-label')]
+    .map(e => e.textContent.trim()).find(t => /All offers/.test(t)) || ''));
+const rowsNow = [...sum.querySelectorAll('.bar-row')];
+ck('bar values are the COMBINED totals',
+  rowsNow.map(r => r.querySelector('.bar-val').textContent.trim().split(' ')[0])
+    .includes('£227,184'),
+  rowsNow.map(r => r.querySelector('.bar-val').textContent.trim().split(' ')[0]).join(' '));
+ck('segments abut (gas starts where electricity ends)',
+  rowsNow.every(r => {
+    const e = r.querySelector('.bar-fill'), g = r.querySelector('.bar-gas');
+    return Math.abs(parseFloat(g.style.left) - parseFloat(e.style.width)) < 0.15;
+  }));
+ck('longest bar still fills the track (rescaled, not overflowing)',
+  Math.max(...rowsNow.map(r => parseFloat(r.querySelector('.bar-fill').style.width)
+    + parseFloat(r.querySelector('.bar-gas').style.width))) > 99.5);
+ck('a bar is LONGER than it was on electricity alone',
+  Math.max(...rowsNow.map(r => parseFloat(r.querySelector('.bar-fill').style.width)
+    + parseFloat(r.querySelector('.bar-gas').style.width))) > Math.max(...elecWidths) - 0.01);
+ck('footnote explains the gas pairing',
+  /recommended gas offer/.test(sum.querySelector('.bar-legend').textContent));
 ck('gas rate rows revealed', [...sum.querySelectorAll('.gas-row')].every(r => !r.hidden));
 ck('headline flips to a saving', /annual saving/i.test(txt('m-gross-label')) && txt('m-gross') === '£9,015',
   txt('m-gross-label') + ' ' + txt('m-gross'));
@@ -68,6 +91,20 @@ ck('commission rescoped to the whole tender (0.6p x 1.4 GWh)',
 ck('net saving matches the engine (9,015 - 8,400)', txt('m-net') === '£615', txt('m-net'));
 ck('table delta is green', /best/.test(cls('m-savecell')) && txt('m-savecell') === '−£9,015',
   cls('m-savecell') + ' ' + txt('m-savecell'));
+
+// Rate-row tone must be DERIVED from the two numbers in the row, never hardcoded —
+// the gas row shipped with a literal "best", so a dearer gas rate rendered green.
+console.log('-- rate row tones follow the numbers --');
+[...sum.querySelectorAll('tbody tr')].forEach(tr => {
+  const cells = [...tr.querySelectorAll('td')];
+  if (cells.length !== 3 || !/Mean effective rate/.test(cells[0].textContent)) return;
+  const name = cells[0].textContent.trim();
+  const inc = parseFloat(cells[1].textContent), rec = parseFloat(cells[2].textContent);
+  if (!isFinite(inc) || !isFinite(rec)) return;
+  const want = rec <= inc ? 'best' : 'warn';
+  ck(`${name}: ${rec} vs ${inc} -> ${want}`, cells[2].className.includes(want),
+    cells[2].className || '(none)');
+});
 
 console.log(fails ? '\n' + fails + ' SUMMARY-MULTI CHECK(S) FAILED' : '\nALL SUMMARY-MULTI CHECKS PASSED');
 process.exit(fails ? 1 : 0);

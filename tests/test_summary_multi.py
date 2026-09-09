@@ -102,16 +102,19 @@ def test_rendered_markers():
     os.makedirs(WORK, exist_ok=True)
     with open(FIXTURE, "w", encoding="utf-8") as fh:
         fh.write(html)
-    check("Summary composes bars on the MULTI path",
-          "buildSummaryMulti() + buildBarsMulti()" in html)
-    check("gas bars block is hidden until the include-gas tick",
-          'sectionClass: i === primaryIndex ? "" : "gas-bars"' in html
-          and '.gas-bars' in html)
+    check("Summary composes ONE live bars container",
+          'id="summary-bars"' in html and "summaryBars(false)" in html)
+    check("the tick re-renders those bars rather than revealing a second block",
+          "sb.innerHTML = summaryBars(on)" in html and "gas-bars" not in html)
+    check("gas rides as a SEGMENT on each bar", 'class="bar-fill bar-gas"' in html)
     check("saving/increase wording is derived, not hardcoded",
           "saveWord" in html and "saveTone" in html)
     check("no hardcoded green tone left on the combined KPIs",
           'class="kpi-value pos" id="m-gross"' not in html
           and 'class="kpi-value pos" id="m-net"' not in html)
+    check("gas rate row tone is compared, not hardcoded green",
+          'pk(g.rec.perKwh.effective, "best")' not in html
+          and 'gr <= gi ? "best" : "warn"' in html)
     check("RYE's charge scopes to the fuels displayed", "function chargeOn(" in html)
     check("offer filters get unique ids per bars block",
           'id="offer-filter${esc(o_.idSuffix' in html)
