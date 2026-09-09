@@ -92,12 +92,18 @@ h1 { font-family: var(--rye-display); font-size: 44px; font-weight: 500;
 
 /* ---- Bar chart ---- */
 .bars { display: flex; flex-direction: column; gap: 12px; }
+.bar-gas { opacity: 0.4; box-shadow: inset 1px 0 0 var(--surface); }
+.bar-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 16px;
+  padding-top: 14px; border-top: 1px solid var(--border); }
+.bar-gas-sw { opacity: 0.4; }
 .bar-row { display: grid; grid-template-columns: 220px 1fr 110px; gap: 12px; align-items: center; }
 .bar-name { font-size: 13px; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-name .term { font-family: var(--rye-mono); font-size: 11px; color: var(--t3); margin-left: 6px; }
 .bar-track { height: 22px; position: relative; }
 .bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 1px;
   transform-origin: left; animation: growBarH 600ms ease-out both; }
+/* NB: the gas segment's inline animation-delay adds this 600ms so it grows out of
+   the electricity segment's end — keep the two in step if the duration changes. */
 .bar-val { font-family: var(--rye-mono); font-size: 11px; font-weight: 500;
   letter-spacing: -0.02em; text-align: right; font-variant-numeric: tabular-nums; }
 @keyframes growBarH { from { transform: scaleX(0); } to { transform: scaleX(1); } }
@@ -690,9 +696,13 @@ function buildSummaryMulti() {
   const ePct = eInc ? (Math.abs(eGross) / eInc.total * 100).toFixed(1) : "0.0";
   const ch = chargeOn(F, false);
 
-  const gasRows = gas.map(g =>
-    `<tr class="gas-row" hidden><td class="name">Mean effective rate — ${esc(g.f.fuelLabel.toLowerCase())} (p/kWh)</td>` +
-    pk(g.inc ? g.inc.perKwh.effective : null) + pk(g.rec.perKwh.effective, "best") + `</tr>`).join("");
+  /* Tone is COMPARED, exactly as the electricity effective row is — a dearer gas
+     rate must not read green just because it is the recommended offer. */
+  const gasRows = gas.map(g => {
+    const gi = g.inc ? g.inc.perKwh.effective : null, gr = g.rec.perKwh.effective;
+    return `<tr class="gas-row" hidden><td class="name">Mean effective rate — ${esc(g.f.fuelLabel.toLowerCase())} (p/kWh)</td>` +
+      pk(gi, gi == null ? "" : "neg") + pk(gr, gi == null ? "" : (gr <= gi ? "best" : "warn")) + `</tr>`;
+  }).join("");
 
   let charge = "";
   if (ch && ch.kind === "fee") {
@@ -746,26 +756,62 @@ function buildSummaryMulti() {
   </section>`;
 }
 
-/* Summary offer bars, one block per fuel: electricity always, gas hidden until the
-   include-gas tick. Same section the single-fuel Summary shows — it was missing
-   from the combined path entirely. */
-function buildBarsMulti() {
+/* ONE set of Summary bars. Electricity only by default; on the include-gas tick each
+   bar GROWS by a gas segment, so its length is the client's total annual spend.
+   The two fuels are tendered separately, so a non-recommended electricity offer has no
+   gas twin: every offer bar carries the RECOMMENDED gas offer (held constant across the
+   bars, which keeps the comparison like-for-like), while the incumbent carries its OWN
+   current gas — the baseline has to be what they actually pay. The footnote says so. */
+function summaryBars(on) {
   const P = FUELS[primaryIndex];
-  let html = "";
-  FUELS.forEach((f, i) => {
-    if (!(f.offers || []).length) return;
-    setState(f);
-    const fl = (f.fuelLabel || f.utility || "").toLowerCase();
-    html += buildBars({
-      title: `All offers tendered${fl ? " — " + fl : ""} · estimated annual cost`,
-      idSuffix: "-sum" + i,
-      sectionClass: i === primaryIndex ? "" : "gas-bars",
-      hidden: i !== primaryIndex,
-    });
-  });
-  setState(P);
-  return html;
+  const secs = FUELS.filter((_, i) => i !== primaryIndex).filter(f => (f.offers || []).length);
+  const gasRec = secs.reduce((a, f) => a + ((recOf(f) || {}).total || 0), 0);
+  const gasIncKnown = secs.length > 0 && secs.every(f => f.incumbent);
+  const gasInc = secs.reduce((a, f) => a + (f.incumbent ? f.incumbent.total : 0), 0);
+  const recId = P.recommendedId || P.bestId;
+  const split = on && secs.length > 0;
+  const rows = (P.incumbent ? [P.incumbent] : []).concat(P.offers).map(o => {
+    const g = !split ? 0 : (o.isIncumbent ? (gasIncKnown ? gasInc : gasRec) : gasRec);
+    return { o, elec: o.total, gas: g, total: o.total + g };
+  }).sort((a, b) => a.total - b.total);
+  const maxTotal = Math.max(...rows.map(r => r.total)) || 1;
+  const CAT_LABELS = { coterminous: "Coterminous", fixed: "Fixed length" };
+  const catLabel = c => CAT_LABELS[c] || (c.charAt(0).toUpperCase() + c.slice(1));
+  const cats = [...new Set(P.offers.filter(o => o.category).map(o => o.category))];
+  const fuelBit = secs.length ? (split ? " — electricity + gas" : " — electricity") : "";
+
+  const bars = rows.map((r, i) => {
+    const o = r.o;
+    const fill = o.isIncumbent ? "var(--rye-amber-fill)"
+      : o.id === recId ? "var(--rye-green-fill)" : "rgba(237,237,237,0.7)";
+    const chip = o.isIncumbent ? `<span class="chip warning">${baseChip}</span>`
+      : o.id === recId ? `<span class="chip success">recommended</span>` : "";
+    const ew = (r.elec / maxTotal * 100).toFixed(1), gw = (r.gas / maxTotal * 100).toFixed(1);
+    const tip = r.gas ? `${esc(o.supplier)} — electricity ${gbp(r.elec)} + gas ${gbp(r.gas)}` : "";
+    return `<div class="bar-row" data-cat="${esc(o.category || 'other')}"${tip ? ` title="${tip}"` : ""}>
+      <div class="bar-name">${esc(o.supplier)}${o.isIncumbent && isBenchmark ? "" : `<span class="term">${esc(o.term)}</span>`}</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${ew}%;background:${fill};animation-delay:${i * 60}ms"></div>
+        ${r.gas ? `<div class="bar-fill bar-gas" style="left:${ew}%;width:${gw}%;background:${fill};animation-delay:${i * 60 + 600}ms"></div>` : ""}
+      </div>
+      <div class="bar-val">${gbp(r.total)} ${chip}</div>
+    </div>`;
+  }).join("");
+
+  const legend = split ? `<div class="bar-legend">
+      <span class="lg"><span class="sw" style="background:rgba(237,237,237,0.7)"></span>electricity</span>
+      <span class="lg"><span class="sw bar-gas-sw" style="background:rgba(237,237,237,0.7)"></span>gas</span>
+    </div>` : "";
+
+  return `<section>
+    <div class="offer-filter-row">
+      <div class="section-label">All offers tendered${fuelBit} · estimated annual cost</div>
+      ${cats.length >= 2 ? `<div class="offer-filter" id="offer-filter-sum"><button data-f="all" class="on">All</button>${cats.map(c => `<button data-f="${esc(c)}">${esc(catLabel(c))}</button>`).join("")}</div>` : ""}
+    </div>
+    <div class="card"><div class="bars">${bars}</div>${legend}</div>
+  </section>`;
 }
+
 function portfolioBody(i) {
   setState(FUELS[i]);
   return buildBars({ idSuffix: "-pf" + i }) + buildBreakdown() + buildSiteMatrix() + buildRateBooks();
@@ -779,7 +825,8 @@ function renderMulti() {
   const P = FUELS[primaryIndex];
   setState(P);
   const canSummary = !!P.incumbent;
-  const savingsPane = canSummary ? (buildBenchmarkNotice() + buildSummaryMulti() + buildBarsMulti()) : "";
+  const savingsPane = canSummary ? (buildBenchmarkNotice() + buildSummaryMulti()
+    + `<div id="summary-bars">${summaryBars(false)}</div>`) : "";
   const switchBar = `<div id="fuelswitch" style="display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap">` +
     FUELS.map((f, i) => `<button class="fuelbtn" data-fi="${i}" onclick="switchPortfolioFuel(${i})" style="${fuelBtnStyle(i === activePortfolioFuel)}">${esc(f.fuelLabel || f.utility)}</button>`).join("") + `</div>`;
   const portfolioPane = switchBar + `<div id="portfolio-body">${portfolioBody(activePortfolioFuel)}</div>`;
@@ -904,7 +951,8 @@ function wireSummaryMulti() {
     const incT = on ? F.cIncTotal : F.eIncTotal;
     document.querySelectorAll(".gswap").forEach(x => { x.textContent = on ? x.dataset.c : x.dataset.e; });
     document.querySelectorAll(".gas-row").forEach(r => { r.hidden = !on; });
-    document.querySelectorAll(".gas-bars").forEach(s => { s.hidden = !on; });
+    const sb = el("summary-bars");
+    if (sb) { sb.innerHTML = summaryBars(on); wireOfferFilter(); }
     if (el("m-gross")) { el("m-gross").textContent = gbp(Math.abs(gross)); tone(el("m-gross"), gross); }
     if (el("m-gross-label")) el("m-gross-label").textContent = `${lead} annual ${saveWord(gross)}`;
     if (el("m-pct")) el("m-pct").textContent = incT ? (Math.abs(gross) / incT * 100).toFixed(1) : "0.0";
