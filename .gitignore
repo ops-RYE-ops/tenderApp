@@ -11,3 +11,4 @@ tests/_work/
 node_modules/
 package.json
 package-lock.json
+Claude outputs/

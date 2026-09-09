@@ -216,10 +216,63 @@ def test_hand_authored_charge_basis_still_applies():
           (q.get("charge_basis") or {}).get("meterCharge") == "gbp/year")
 
 
+def test_mixed_single_and_split_rate_meters():
+    print("/api/extract — a single-rate meter among two-rate meters keeps its rate (per-mpxn)")
+    # Reproduces the Cardiff bug: a tender mixing two-rate meters with one single-rate
+    # meter, where the mapping shaped unitRate as {split:...} (as the LLM did) and mpxn
+    # as {single:...}. Rate mode must be decided per meter by that row's values, so the
+    # single-rate meter keeps its unitRate and no meter loses its mpxn.
+    client = TestClient(main.app)
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "flat 12m"
+    ws.append(["siteName", "mpxn", "updatedEac", "unitRate", "dayRate", "nightRate",
+               "standingCharge", "supplier"])
+    ws.append(["Birmingham", "2000052451574", "169692", None, "24.7926", "20.1196", "388.1096", "Tem"])
+    ws.append(["Bristol",    "2000054016200", "155280", None, "22.3204", "17.2664", "142.6849", "Tem"])
+    ws.append(["Cardiff",    "2000056117772", "98586",  "25.724", None, None, "426.48", "Yu Energy"])
+    f = tempfile.mktemp(suffix=".xlsx"); wb.save(f)
+    mapping = {
+        "header_row": 1, "output_prefix": "tem", "supplier": "Tem", "term": "12 months",
+        "split_output_by_sheet": False,
+        "columns": {
+            "siteName": "siteName", "mpxn": {"single": "mpxn"}, "updatedEac": "updatedEac",
+            "unitRate": {"split": "unitRate"},          # LLM mis-shape: single rate as split
+            "dayRate": {"split": "dayRate"}, "nightRate": {"split": "nightRate"},
+            "standingCharge": "standingCharge", "supplier": "supplier",
+        },
+    }
+    with open(f, "rb") as fh:
+        r = client.post("/api/extract",
+                        files={"file": (os.path.basename(f), fh.read(),
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+                        data={"mapping": json.dumps(mapping), "supplier": "Tem"})
+    os.unlink(f)
+    check("returns 200", r.status_code == 200)
+    er = r.json()["extract_result"]
+    check("all three meters kept (no mpxn wiped on a two-rate row)", len(er["sites"]) == 3)
+    lines = {ln["mpxn"]: ln for ln in er["quotes"][0]["lines"]}
+    check("all three lines present", set(lines) == {"2000052451574", "2000054016200", "2000056117772"})
+    cardiff = lines["2000056117772"]
+    check("single-rate Cardiff keeps its unitRate", cardiff["unitRate"] == 25.724)
+    check("Cardiff has no day/night", cardiff["dayRate"] is None and cardiff["nightRate"] is None)
+    bham = lines["2000052451574"]
+    check("two-rate Birmingham keeps day/night", bham["dayRate"] == 24.7926 and bham["nightRate"] == 20.1196)
+    check("two-rate Birmingham has no single rate", bham["unitRate"] is None)
+
+    # And it actually costs: Cardiff energy is no longer zero.
+    import build_dashboard as bd
+    tender = {"client_name": "Treetop", "tender_label": "T", "utility": "electricity",
+              "sites": [{"mpxn": s["mpxn"], "eac": s["eac"], "kva": s.get("kva")} for s in er["sites"]],
+              "quotes": [{**er["quotes"][0], "featured": True}]}
+    pay = bd.build_render_payload(tender)
+    csite = [st for st in pay["offers"][0]["sites"] if st["mpxn"] == "2000056117772"][0]
+    check("Cardiff energy is costed (was £0 / standing-only in the bug)", csite["costs"]["energy"] > 20000)
+
+
 if __name__ == "__main__":
     test_extract_basic()
     test_site_reference_and_unmatched()
     test_db_eac_kva_override()
     test_validation()
     test_hand_authored_charge_basis_still_applies()
+    test_mixed_single_and_split_rate_meters()
     print("ALL EXTRACT CHECKS PASSED")

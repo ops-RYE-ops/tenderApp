@@ -34,7 +34,82 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-09-02 — combined gas+electricity tenders, per-fuel benchmark, rate
+**Latest session (2026-09-09, later — COMBINED-TENDER SUMMARY FIXES. Uncommitted on `main`:
+`assets/dashboard_template.html` + new `tests/test_summary_multi.py` and `tests/dom_summary_multi.js`.
+All Python suites + `dom_smoke.js` + the new suite green; both Summary states rendered headless and
+eyeballed.)** Found while Rory ran the first real combined gas+electricity tender (Public House
+Group). Three faults, all in the `MULTI` Summary path, all client-facing:
+
+**1. The Summary showed NO offer bars.** `renderMulti()` composed the pane as
+`buildBenchmarkNotice() + buildSummaryMulti()`, where the single-fuel `render()` has always added
+`buildBars()`. So the "All offers tendered" section was simply absent from a combined dashboard —
+the client saw the recommendation card and a table, then blank space, with the bars only reachable
+in the Portfolio tab. Fixed by `buildBarsMulti()`: **one bars block per fuel, electricity always
+visible, gas hidden behind the existing "Include gas in these figures" tick** (Rory's call — one
+consistent shape for every combined tender, never a per-tender judgement). `buildBars(opts)` now
+takes `{title, idSuffix, sectionClass, hidden}`; called bare it behaves exactly as before.
+
+**2. A cost INCREASE rendered as a green saving.** `buildSummaryMulti()` hardcoded `class="pos"` and
+printed `gbp(eGross)` raw, so the PHG dashboard headlined **"Forecasted annual saving £-6,316"** in
+green when the recommendation was £6,316 dearer than incumbent. The single-fuel card has always
+flipped to "increase"/`warn`/`Math.abs`. Now shared: `saveWord()` / `saveTone()` drive the headline,
+the net-after-charge line and the table's delta cell, and they re-evaluate live on the tick (the
+label and the tone, not just the number). The table's delta keeps the single-fuel convention —
+`gbpSigned(rec − inc)`, so a cost increase reads `+£6,022` in amber; MULTI had the sign inverted.
+
+**3. Commission was netted whole-tender against an electricity-only gross.** `RAW.commission.netSaving`
+is computed across ALL fuels (`_tender_level_charge`), so the card sat an elec-only £-6,316 above a
+combined £-8,526 net and the two could not be reconciled — the £12,211 commission shown between them
+explained neither. New `chargeOn(F, on, psm)` scopes the charge to **what is on screen**: commission
+is p/kWh, so it apportions exactly by the displayed fuels' rec EAC (elec-only when unticked, whole
+tender when ticked, with the sub-line saying which). **The flat SaaS fee still does not scope** — it
+is whole-client by design and its sub-line already says "across N meters" — so fee behaviour is
+unchanged. `recompute()` also now updates the net for COMMISSION tenders, which it never did (only
+`fee` was wired), leaving the net stale whenever the tick moved.
+
+Two supporting fixes: `summaryFigures()` is now the single source of the Summary arithmetic, shared
+by the builder and `wireSummaryMulti()` (they previously duplicated ~10 lines of totals and had
+already drifted); and `wireOfferFilter()` wires **every** `.offer-filter` scoped to its own `<section>`
+— ids are unique per block now (`-sum`/`-pf`), where before Summary and Portfolio both emitted
+`id="offer-filter"` and one listener filtered rows in both panes. `wireEvents()` calls it instead of
+carrying its own copy.
+
+**Still NOT in the combined Summary, deliberately:** the "Portfolio cost efficiency" row (hardcoded
+"Medium" on the single-fuel path — junk either way) and the "Effective rate incl./excl. commission"
+row (`_tender_level_charge` sets both rates to `None` for a combined tender, so it would render "—").
+Worth doing properly if RYE wants them.
+
+**Not fixed (pre-existing, cosmetic):** the hero byline and the site/offer counts on a combined
+tender read from the PRIMARY fuel view, so they undercount. On PHG the hero read "1.01 GWh · 2 offers
+· 6 sites" from `TENDER` (= electricity) while the tender covers both fuels.
+
+**Prior session (2026-09-09 — market snapshot refresh only, commit `76062f3` on `main`.
+30 Python tests + `dom_smoke.js` green; Market Review rendered headless and eyeballed.)**
+`assets/market_snapshot.json` moved to **2026-09-09**. Power spot **147.24 £/MWh (+94.58% 1Y**,
+fresh 3-year high), NBP **Oct-26 front-month 195.59 p/therm**, **Winter 26 196.82**, **Jan 27
+200.20** (the curve peak), **Summer 27 129.30 / Winter 27 123.75** — still a ~third step-down, so
+the 24-month argument is stronger, not weaker. Cards stay a 3×3 of eight, every price read verbatim
+off the ICE board (9 Sep, 09:48 GMT).
+
+Drivers, supplied by Rory rather than a wire report: **escalating US-Iran tension** (military
+strikes, reported attacks on Saudi Aramco facilities; Iran-Oman talks on Strait of Hormuz shipping
+being watched) and **Qatar extending its LNG force majeure** and shipment suspension through the
+autumn, which removes the replacement cargoes Europe would normally pull in.
+
+**New commentary point worth keeping in future refreshes — the move is CURVE-WIDE.** Every gas and
+power contract RYE tracks rose at the latest settlement (25 of 25), and over 30 calendar days
+Summer 27 gas is **+35.77%** and Cal 27 gas **+35.16%**. The longer-dated contracts a renewal
+actually prices against have travelled further than the front month's daily percentage suggests, so
+a front-month-only read understates the market. Say this explicitly.
+
+Two small template-facing tweaks made at the same time: `power.seriesLabels` gained a 13th **"Sep"**
+(the 1Y series now runs Sep→Sep, so the axis was one label short and the last point sat under
+"Aug"), and `power.series[0]` was nudged 73 → **76** so the template's "Trend vs start of period"
+KPI reconciles with Trading Economics' +94.58% instead of drifting ~5pts off it. Commentary ran to
+**215 words**, up from the ~150 of prior editions, because Rory asked for the geopolitics and the
+curve-wide move in full — the "keep it light" instruction is superseded for this edition.
+
+**Prior session (2026-09-02 — combined gas+electricity tenders, per-fuel benchmark, rate
 provenance, market refresh. All merged to `main`, deployed, all 13 Python suites + `dom_smoke.js`
 green. Built across two branches, now deleted: `feat/multi-fuel-multi-supplier` and
 `feat/rate-provenance`.)** The tool now handles a single tender that mixes fuels AND suppliers.
@@ -128,7 +203,8 @@ labels, and it **pre-ticked/recommended the cheaper STALE one**.
   when a new upload is present (a rate refresh should let the new rates win). Legacy tenders (no
   `added_at`) fall back to the tender's saved date on first edit, then carry a real stamp.
 
-**E. Market snapshot refreshed to 2026-09-02** (`assets/market_snapshot.json`). Power spot **137.72
+**E. Market snapshot refreshed to 2026-09-02** (superseded by the 2026-09-09 refresh above; kept for
+the curve history). Power spot **137.72
 £/MWh (+85% 1Y**, fresh 3-year high), NBP **Oct-26 front-month 180.78 p/therm**, winter strip
 ~181–185, **Summer 27 119.75 / Winter 27 116.60** (a ~third step-down beyond next winter — the
 24-month argument, now stronger). Driver (from an FT report): renewed **US-Iran hostilities** →

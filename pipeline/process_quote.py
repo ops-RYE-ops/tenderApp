@@ -246,12 +246,19 @@ def process_rows(records, mapping, name_lookup=None, constants=None):
         row = {}
         for target in TARGET_HEADERS:
             spec = cols.get(target)
-            val, kind = resolve(spec, rec)
-            # Apply single/split exclusivity per the agreed rate mapping.
-            if kind == "single" and is_split:
-                val = None            # split row -> leave unitRate blank
-            if kind == "split" and not is_split:
-                val = None            # single row -> leave day/night blank
+            val, _ = resolve(spec, rec)
+            # Single vs split is a property of the TARGET FIELD, decided PER METER
+            # (per mpxn) from THIS row's own day/night/weekend values — never blanket
+            # across the tender, and never from the {single}/{split} wrapper shape.
+            # unitRate is the single/anytime rate; dayRate/nightRate/weekendRate are
+            # the split bands. Keying off the field name (not the wrapper) means a
+            # mis-shaped mapping — e.g. an LLM emitting {"split": "unitRate"} — can't
+            # blank a single-rate meter's energy, and a {single}-wrapped non-rate
+            # column (mpxn, eac) is never wiped on a two-rate row.
+            if target == "unitRate" and is_split:
+                val = None            # two-rate meter -> ignore any single/anytime rate
+            elif target in ("dayRate", "nightRate", "weekendRate") and not is_split:
+                val = None            # single-rate meter -> ignore the day/night bands
             row[target] = clean_id(val) if target == "mpxn" else clean_val(val)
         # Per-row fuel + supplier, present only when the file carries those
         # columns. Stashed under underscore keys so they never reach the rate

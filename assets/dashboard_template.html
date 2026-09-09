@@ -418,16 +418,20 @@ function buildCommission() {
 }
 
 /* ---- Cost comparison bars ---- */
-function buildBars() {
+/* opts: {title, idSuffix, sectionClass, hidden}. A combined tender renders one
+   block per fuel on the Summary, so ids must be unique and the gas block starts
+   hidden behind the include-gas tick. No args = today's single-fuel behaviour. */
+function buildBars(opts) {
+  const o_ = opts || {};
   const maxTotal = Math.max(...allOffers.map(o => o.total));
   const CAT_LABELS = { coterminous: "Coterminous", fixed: "Fixed length" };
   const catLabel = c => CAT_LABELS[c] || (c.charAt(0).toUpperCase() + c.slice(1));
   const offerCats = [...new Set(allOffers.filter(o => !o.isIncumbent && o.category).map(o => o.category))];
   const showOfferFilter = offerCats.length >= 2;
-  return `<section>
+  return `<section class="${esc(o_.sectionClass || "")}"${o_.hidden ? " hidden" : ""}>
     <div class="offer-filter-row">
-      <div class="section-label">All offers tendered — estimated annual cost</div>
-      ${showOfferFilter ? `<div class="offer-filter" id="offer-filter"><button data-f="all" class="on">All</button>${offerCats.map(c => `<button data-f="${esc(c)}">${esc(catLabel(c))}</button>`).join("")}</div>` : ""}
+      <div class="section-label">${esc(o_.title || "All offers tendered — estimated annual cost")}</div>
+      ${showOfferFilter ? `<div class="offer-filter" id="offer-filter${esc(o_.idSuffix || "")}"><button data-f="all" class="on">All</button>${offerCats.map(c => `<button data-f="${esc(c)}">${esc(catLabel(c))}</button>`).join("")}</div>` : ""}
     </div>
     <div class="card"><div class="bars">` +
     allOffers.slice().sort((a, b) => a.total - b.total).map((o, i) => {
@@ -442,7 +446,6 @@ function buildBars() {
       </div>`;
     }).join("") + `</div></div></section>`;
 }
-
 /* ---- Offer breakdown table ---- */
 function buildBreakdown() {
   return `<section>
@@ -623,49 +626,95 @@ function recOf(f) { return (f.offers || []).find(o => o.id === (f.recommendedId 
 function siteSuppliers(offer) { return offer ? [...new Set(offer.sites.map(s => s.supplier || offer.supplier).filter(Boolean))] : []; }
 function supplierLabel(list) { const u = [...new Set(list)].filter(Boolean); return u.length === 0 ? "" : (u.length <= 3 ? u.join(" + ") : "Best of market mix"); }
 
-function buildSummaryMulti() {
+/* Shared arithmetic for the combined-tender Summary — ONE source of truth for the
+   builder and the live recompute, so the two can never drift. Electricity is the
+   default basis; the include-gas tick switches to the combined one. */
+function summaryFigures() {
   const P = FUELS[primaryIndex];
-  const secs = FUELS.filter((_, i) => i !== primaryIndex).filter(f => (f.offers || []).length);
+  const gas = FUELS.filter((_, i) => i !== primaryIndex)
+    .filter(f => (f.offers || []).length)
+    .map(f => ({ f, rec: recOf(f), inc: f.incumbent }));
   const eRec = recOf(P), eInc = P.incumbent;
-  const eGross = eInc ? eInc.total - eRec.total : 0;
-  const gas = secs.map(f => ({ f, rec: recOf(f), inc: f.incumbent }));
-  const haveAll = eInc && gas.every(g => g.inc);
+  const haveAll = !!eInc && gas.every(g => g.inc);
   const cInc = haveAll ? eInc.total + gas.reduce((a, g) => a + g.inc.total, 0) : null;
   const cRec = eRec.total + gas.reduce((a, g) => a + g.rec.total, 0);
-  const cGross = cInc != null ? cInc - cRec : null;
-  const eSites = P.sites.length || 1;
-  const cSites = FUELS.reduce((a, f) => a + ((f.sites || []).length), 0) || 1;
-  const fee = RAW.fee, comm = RAW.commission;
+  return {
+    P, gas, eRec, eInc,
+    eGross: eInc ? eInc.total - eRec.total : 0,
+    cGross: cInc != null ? cInc - cRec : null,
+    eIncTotal: eInc ? eInc.total : 0, cIncTotal: cInc,
+    eRecTotal: eRec.total, cRecTotal: cRec,
+    eSites: P.sites.length || 1,
+    cSites: FUELS.reduce((a, f) => a + ((f.sites || []).length), 0) || 1,
+    eEac: eRec.eac || 0,
+    cEac: (eRec.eac || 0) + gas.reduce((a, g) => a + (g.rec.eac || 0), 0),
+  };
+}
+
+/* RYE's charge on the basis currently on screen. Commission is p/kWh, so it scopes
+   exactly to the fuels displayed — an electricity-only saving must never be netted
+   against the whole tender's commission (that made the two KPIs irreconcilable).
+   The flat fee is whole-client by design and does not scope; its sub-line says so. */
+function chargeOn(F, on, psmOverride) {
+  const comm = RAW.commission, fee = RAW.fee;
+  const gross = on ? F.cGross : F.eGross;
+  if (comm) {
+    const annual = (comm.pKwhUplift || 0) * (on ? F.cEac : F.eEac) / 100;
+    return { kind: "commission", label: comm.label || "RYE commission", annual,
+      included: !!comm.included,
+      net: gross == null ? null : gross - (comm.included ? 0 : annual),
+      scope: on ? "the tender" : (F.P.fuelLabel || "electricity").toLowerCase() };
+  }
+  if (fee) {
+    const psm = psmOverride == null ? fee.perSiteMonth : psmOverride;
+    const annual = Math.max(0, psm || 0) * F.cSites * 12;
+    return { kind: "fee", label: fee.label || "RYE fee", annual, included: false,
+      net: gross == null ? null : gross - annual, scope: null };
+  }
+  return null;
+}
+
+/* A saving is a saving and an increase is an increase — never a green minus sign. */
+const saveWord = v => (v == null ? "saving" : v >= 0 ? "saving" : "increase");
+const saveTone = v => (v != null && v < 0 ? "warn" : "pos");
+
+function buildSummaryMulti() {
+  const F = summaryFigures();
+  const { P, gas, eRec, eInc, eGross } = F;
+  const comm = RAW.commission;
+  const lead = isBenchmark ? "Indicative" : "Forecasted";
   const eSup = supplierLabel(siteSuppliers(eRec));
   const cSup = supplierLabel([...siteSuppliers(eRec), ...gas.flatMap(g => siteSuppliers(g.rec))]);
   const pk = (v, cls) => `<td class="${cls || ""}">${v == null ? "—" : Number(v).toFixed(2)}</td>`;
   const sw = (e, c) => `<span class="gswap" data-e="${esc(String(e))}" data-c="${esc(String(c))}">${esc(String(e))}</span>`;
   const ePct = eInc ? (Math.abs(eGross) / eInc.total * 100).toFixed(1) : "0.0";
+  const ch = chargeOn(F, false);
 
   const gasRows = gas.map(g =>
     `<tr class="gas-row" hidden><td class="name">Mean effective rate — ${esc(g.f.fuelLabel.toLowerCase())} (p/kWh)</td>` +
     pk(g.inc ? g.inc.perKwh.effective : null) + pk(g.rec.perKwh.effective, "best") + `</tr>`).join("");
 
   let charge = "";
-  if (fee) {
+  if (ch && ch.kind === "fee") {
     charge = `
-      <div class="kpi-label" style="margin-top:14px">Net saving after ${esc(fee.label)}</div>
-      <div class="kpi-value pos" id="m-net" style="font-size:26px;margin-top:6px">${gbp(eGross - fee.annual)}</div>
-      <div class="kpi-sub">fee <span id="m-fee-annual">${gbp(fee.annual)}</span>/yr across ${cSites} meter${cSites === 1 ? "" : "s"}</div>
+      <div class="kpi-label" style="margin-top:14px" id="m-net-label">Net ${saveWord(ch.net)} after ${esc(ch.label)}</div>
+      <div class="kpi-value ${saveTone(ch.net)}" id="m-net" style="font-size:26px;margin-top:6px">${gbp(Math.abs(ch.net))}</div>
+      <div class="kpi-sub">fee <span id="m-fee-annual">${gbp(ch.annual)}</span>/yr across ${F.cSites} meter${F.cSites === 1 ? "" : "s"}</div>
       <div class="fee-controls">
         <div class="kpi-label" style="margin-bottom:10px">RYE fee</div>
-        <input type="range" id="m-fee-slider" min="0" max="100" step="5" value="${fee.discountPct}" aria-label="RYE fee discount">
+        <input type="range" id="m-fee-slider" min="0" max="100" step="5" value="${RAW.fee.discountPct}" aria-label="RYE fee discount">
         <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
-          <input type="number" id="m-fee-input" min="0" step="0.5" value="${fee.perSiteMonth}" aria-label="Fee per site per month">
+          <input type="number" id="m-fee-input" min="0" step="0.5" value="${RAW.fee.perSiteMonth}" aria-label="Fee per site per month">
           <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/site/month</span>
         </div>
       </div>`;
-  } else if (comm) {
-    const cn = comm.netSaving != null ? comm.netSaving : eGross - (comm.annual || 0);
-    charge = `
-      <div class="kpi-label" style="margin-top:14px">Net saving after ${esc(comm.label)}</div>
-      <div class="kpi-value pos" id="m-net" style="font-size:26px;margin-top:6px">${gbp(cn)}</div>
-      <div class="kpi-sub">${comm.pKwhUplift} p/kWh · <span id="m-fee-annual">${gbp(comm.annual)}</span>/yr across the tender</div>`;
+  } else if (ch && ch.kind === "commission") {
+    charge = ch.included ? `
+      <div class="kpi-sub" style="margin-top:14px">${esc(ch.label)} ${comm.pKwhUplift} p/kWh ·
+        <span id="m-fee-annual">${gbp(ch.annual)}</span>/yr across <span id="m-charge-scope">${esc(ch.scope)}</span> · already in the rate above</div>` : `
+      <div class="kpi-label" style="margin-top:14px" id="m-net-label">Net ${saveWord(ch.net)} after ${esc(ch.label)}</div>
+      <div class="kpi-value ${saveTone(ch.net)}" id="m-net" style="font-size:26px;margin-top:6px">${gbp(Math.abs(ch.net))}</div>
+      <div class="kpi-sub">${comm.pKwhUplift} p/kWh · <span id="m-fee-annual">${gbp(ch.annual)}</span>/yr across <span id="m-charge-scope">${esc(ch.scope)}</span></div>`;
   }
 
   return `<section>
@@ -676,8 +725,8 @@ function buildSummaryMulti() {
         <span class="chip success">recommended</span>
         <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-top:12px"><span class="gswap" data-e="${esc(eSup)}" data-c="${esc(cSup)}">${esc(eSup)}</span></div>
         <div class="kpi-sub">${esc(eRec.term)} · electricity anchor${gas.length ? ` · gas via ${gas.map(g => esc(supplierLabel(siteSuppliers(g.rec)))).join(", ")}` : ""}</div>
-        <div class="kpi-label" style="margin-top:18px">${isBenchmark ? "Indicative" : "Forecasted"} annual saving</div>
-        <div class="kpi-value pos" id="m-gross" style="font-size:40px;margin-top:8px">${gbp(eGross)}</div>
+        <div class="kpi-label" style="margin-top:18px" id="m-gross-label">${lead} annual ${saveWord(eGross)}</div>
+        <div class="kpi-value ${saveTone(eGross)}" id="m-gross" style="font-size:40px;margin-top:8px">${gbp(Math.abs(eGross))}</div>
         <div class="kpi-sub"><span id="m-pct">${ePct}</span>% vs ${baseLc}</div>
         ${charge}
       </div>
@@ -688,18 +737,38 @@ function buildSummaryMulti() {
           <tr><td class="name">Mean non-commodity — electricity (p/kWh)</td>${pk(eInc ? eInc.perKwh.nonCommodity : null)}${pk(eRec.perKwh.nonCommodity, eInc && eRec.perKwh.nonCommodity <= eInc.perKwh.nonCommodity ? "best" : "")}</tr>
           <tr><td class="name">Mean effective rate — electricity (p/kWh)</td>${pk(eInc ? eInc.perKwh.effective : null, "neg")}${pk(eRec.perKwh.effective, eInc && eRec.perKwh.effective <= eInc.perKwh.effective ? "best" : "warn")}</tr>
           ${gasRows}
-          <tr><td class="name">Forecasted annual spend</td><td>${sw(gbp(eInc ? eInc.total : 0), cInc != null ? gbp(cInc) : "—")}</td><td>${sw(gbp(eRec.total), gbp(cRec))}</td></tr>
-          <tr><td class="name">Annual spend per site</td><td>${sw(gbp(eInc ? eInc.total / eSites : 0), cInc != null ? gbp(cInc / cSites) : "—")}</td><td>${sw(gbp(eRec.total / eSites), gbp(cRec / cSites))}</td></tr>
-          <tr><td class="name">${isBenchmark ? "Indicative" : "Forecasted"} annual saving</td><td></td><td class="best">${sw(gbpSigned(eGross), cGross != null ? gbpSigned(cGross) : "—")}</td></tr>
+          <tr><td class="name">Forecasted annual spend</td><td>${sw(gbp(F.eIncTotal), F.cIncTotal != null ? gbp(F.cIncTotal) : "—")}</td><td>${sw(gbp(F.eRecTotal), gbp(F.cRecTotal))}</td></tr>
+          <tr><td class="name">Annual spend per site</td><td>${sw(gbp(F.eIncTotal / F.eSites), F.cIncTotal != null ? gbp(F.cIncTotal / F.cSites) : "—")}</td><td>${sw(gbp(F.eRecTotal / F.eSites), gbp(F.cRecTotal / F.cSites))}</td></tr>
+          <tr><td class="name">${lead} annual saving</td><td></td><td class="${eGross >= 0 ? "best" : "warn"}" id="m-savecell">${sw(gbpSigned(F.eRecTotal - F.eIncTotal), F.cGross != null ? gbpSigned(F.cRecTotal - F.cIncTotal) : "—")}</td></tr>
         </tbody>
       </table></div>
     </div>
   </section>`;
 }
 
+/* Summary offer bars, one block per fuel: electricity always, gas hidden until the
+   include-gas tick. Same section the single-fuel Summary shows — it was missing
+   from the combined path entirely. */
+function buildBarsMulti() {
+  const P = FUELS[primaryIndex];
+  let html = "";
+  FUELS.forEach((f, i) => {
+    if (!(f.offers || []).length) return;
+    setState(f);
+    const fl = (f.fuelLabel || f.utility || "").toLowerCase();
+    html += buildBars({
+      title: `All offers tendered${fl ? " — " + fl : ""} · estimated annual cost`,
+      idSuffix: "-sum" + i,
+      sectionClass: i === primaryIndex ? "" : "gas-bars",
+      hidden: i !== primaryIndex,
+    });
+  });
+  setState(P);
+  return html;
+}
 function portfolioBody(i) {
   setState(FUELS[i]);
-  return buildBars() + buildBreakdown() + buildSiteMatrix() + buildRateBooks();
+  return buildBars({ idSuffix: "-pf" + i }) + buildBreakdown() + buildSiteMatrix() + buildRateBooks();
 }
 
 function fuelBtnStyle(active) {
@@ -710,7 +779,7 @@ function renderMulti() {
   const P = FUELS[primaryIndex];
   setState(P);
   const canSummary = !!P.incumbent;
-  const savingsPane = canSummary ? (buildBenchmarkNotice() + buildSummaryMulti()) : "";
+  const savingsPane = canSummary ? (buildBenchmarkNotice() + buildSummaryMulti() + buildBarsMulti()) : "";
   const switchBar = `<div id="fuelswitch" style="display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap">` +
     FUELS.map((f, i) => `<button class="fuelbtn" data-fi="${i}" onclick="switchPortfolioFuel(${i})" style="${fuelBtnStyle(i === activePortfolioFuel)}">${esc(f.fuelLabel || f.utility)}</button>`).join("") + `</div>`;
   const portfolioPane = switchBar + `<div id="portfolio-body">${portfolioBody(activePortfolioFuel)}</div>`;
@@ -754,10 +823,10 @@ function buildFooter() {
 function render() {
   if (MULTI) { renderMulti(); return; }
   setState(FUELS[activeFuel]);
-  const savingsPane = hasInc ? (buildBenchmarkNotice() + buildRecVsInc() + buildBars()) : "";
+  const savingsPane = hasInc ? (buildBenchmarkNotice() + buildRecVsInc() + buildBars({ idSuffix: "-sum" })) : "";
   const portfolioPane =
     (!hasInc ? (commission ? buildCommission() : (fee ? buildFeeStandalone() : "")) : "")
-    + (!hasInc ? buildBars() : "")
+    + (!hasInc ? buildBars({ idSuffix: "-pf" }) : "")
     + buildBreakdown() + buildSiteMatrix() + buildRateBooks();
   const marketPane = hasMarket ? buildMarketPane() : "";
   const tabs = [];
@@ -797,51 +866,56 @@ function switchPortfolioFuel(i) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+/* Wire every offer filter on the page, each scoped to its OWN bars block. The
+   Summary and Portfolio panes both render bars (and a combined tender renders one
+   set per fuel), so a single getElementById wired the first and filtered them all. */
 function wireOfferFilter() {
-  const fw = document.getElementById("offer-filter");
-  if (!fw) return;
-  const rows = Array.from(document.querySelectorAll(".bars .bar-row"));
-  fw.addEventListener("click", e => {
-    const b = e.target.closest("button"); if (!b) return;
-    const f = b.dataset.f;
-    rows.forEach(r => { r.style.display = (f === "all" || r.dataset.cat === f) ? "" : "none"; });
-    fw.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".offer-filter").forEach(fw => {
+    if (fw.dataset.wired) return;
+    fw.dataset.wired = "1";
+    const scope = fw.closest("section") || document;
+    const rows = Array.from(scope.querySelectorAll(".bars .bar-row"));
+    fw.addEventListener("click", e => {
+      const b = e.target.closest("button"); if (!b) return;
+      const f = b.dataset.f;
+      rows.forEach(r => { r.style.display = (f === "all" || r.dataset.cat === f) ? "" : "none"; });
+      fw.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    });
   });
 }
-
 function wireSummaryMulti() {
-  const P = FUELS[primaryIndex];
-  const secs = FUELS.filter((_, i) => i !== primaryIndex).filter(f => (f.offers || []).length);
-  const eRec = recOf(P), eInc = P.incumbent;
-  const eGross = eInc ? eInc.total - eRec.total : 0;
-  const gas = secs.map(f => ({ f, rec: recOf(f), inc: f.incumbent }));
-  const haveAll = eInc && gas.every(g => g.inc);
-  const cInc = haveAll ? eInc.total + gas.reduce((a, g) => a + g.inc.total, 0) : null;
-  const cRec = eRec.total + gas.reduce((a, g) => a + g.rec.total, 0);
-  const cGross = cInc != null ? cInc - cRec : null;
-  const cSites = FUELS.reduce((a, f) => a + ((f.sites || []).length), 0) || 1;
-  const fee = RAW.fee;
+  const F = summaryFigures();
   const el = id => document.getElementById(id);
   const cb = el("inc-gas");
+  const fee = RAW.fee;
+  const lead = isBenchmark ? "Indicative" : "Forecasted";
   const list = fee ? (fee.listPerSiteMonth || 90) : 90;
   const slider = el("m-fee-slider"), input = el("m-fee-input");
   let psm = fee ? fee.perSiteMonth : 0;
+  const tone = (node, v) => {
+    if (!node) return;
+    node.classList.toggle("pos", !(v != null && v < 0));
+    node.classList.toggle("warn", v != null && v < 0);
+  };
 
   function recompute() {
-    const on = !!(cb && cb.checked && cGross != null);
-    const gross = on ? cGross : eGross;
-    const incT = on ? cInc : (eInc ? eInc.total : 0);
+    const on = !!(cb && cb.checked && F.cGross != null);
+    const gross = on ? F.cGross : F.eGross;
+    const incT = on ? F.cIncTotal : F.eIncTotal;
     document.querySelectorAll(".gswap").forEach(x => { x.textContent = on ? x.dataset.c : x.dataset.e; });
     document.querySelectorAll(".gas-row").forEach(r => { r.hidden = !on; });
-    if (el("m-gross")) el("m-gross").textContent = gbp(gross);
+    document.querySelectorAll(".gas-bars").forEach(s => { s.hidden = !on; });
+    if (el("m-gross")) { el("m-gross").textContent = gbp(Math.abs(gross)); tone(el("m-gross"), gross); }
+    if (el("m-gross-label")) el("m-gross-label").textContent = `${lead} annual ${saveWord(gross)}`;
     if (el("m-pct")) el("m-pct").textContent = incT ? (Math.abs(gross) / incT * 100).toFixed(1) : "0.0";
-    if (fee && el("m-net")) {
-      const annual = Math.max(0, psm) * cSites * 12;
-      if (el("m-fee-annual")) el("m-fee-annual").textContent = gbp(annual);
-      const net = gross - annual;
-      el("m-net").textContent = gbp(net);
-      el("m-net").classList.toggle("pos", net >= 0);
-      el("m-net").classList.toggle("warn", net < 0);
+    const cell = el("m-savecell");
+    if (cell) { cell.classList.toggle("best", gross >= 0); cell.classList.toggle("warn", gross < 0); }
+    const ch = chargeOn(F, on, fee ? psm : null);
+    if (ch) {
+      if (el("m-fee-annual")) el("m-fee-annual").textContent = gbp(ch.annual);
+      if (el("m-charge-scope")) el("m-charge-scope").textContent = ch.scope || "";
+      if (el("m-net")) { el("m-net").textContent = gbp(Math.abs(ch.net)); tone(el("m-net"), ch.net); }
+      if (el("m-net-label")) el("m-net-label").textContent = `Net ${saveWord(ch.net)} after ${ch.label}`;
     }
   }
   if (cb) cb.addEventListener("change", recompute);
@@ -849,19 +923,9 @@ function wireSummaryMulti() {
   if (input) input.addEventListener("input", () => { psm = parseFloat(input.value) || 0; if (slider) slider.value = Math.min(100, Math.max(0, Math.round((1 - psm / list) * 100))); recompute(); });
   recompute();
 }
-
 /* Re-attach the offer filter + live fee control after every (re)render. */
 function wireEvents() {
-  const fw = document.getElementById("offer-filter");
-  if (fw) {
-    const rows = Array.from(document.querySelectorAll(".bars .bar-row"));
-    fw.addEventListener("click", e => {
-      const b = e.target.closest("button"); if (!b) return;
-      const f = b.dataset.f;
-      rows.forEach(r => { r.style.display = (f === "all" || r.dataset.cat === f) ? "" : "none"; });
-      fw.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
-    });
-  }
+  wireOfferFilter();
 /* ---- Live fee control: net saving recalculates as the fee moves ---- */
 if (fee) {
   const sites = TENDER.sites.length || 1;
