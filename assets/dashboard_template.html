@@ -96,13 +96,14 @@ h1 { font-family: var(--rye-display); font-size: 44px; font-weight: 500;
 .bar-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 16px;
   padding-top: 14px; border-top: 1px solid var(--border); }
 .bar-gas-sw { opacity: 0.4; }
-.lg-note { font-family: var(--rye-mono); font-size: 10.5px; color: var(--t3); }
 .bar-row { display: grid; grid-template-columns: 220px 1fr 110px; gap: 12px; align-items: center; }
 .bar-name { font-size: 13px; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-name .term { font-family: var(--rye-mono); font-size: 11px; color: var(--t3); margin-left: 6px; }
 .bar-track { height: 22px; position: relative; }
 .bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 1px;
   transform-origin: left; animation: growBarH 600ms ease-out both; }
+/* NB: the gas segment's inline animation-delay adds this 600ms so it grows out of
+   the electricity segment's end — keep the two in step if the duration changes. */
 .bar-val { font-family: var(--rye-mono); font-size: 11px; font-weight: 500;
   letter-spacing: -0.02em; text-align: right; font-variant-numeric: tabular-nums; }
 @keyframes growBarH { from { transform: scaleX(0); } to { transform: scaleX(1); } }
@@ -791,7 +792,7 @@ function summaryBars(on) {
       <div class="bar-name">${esc(o.supplier)}${o.isIncumbent && isBenchmark ? "" : `<span class="term">${esc(o.term)}</span>`}</div>
       <div class="bar-track">
         <div class="bar-fill" style="width:${ew}%;background:${fill};animation-delay:${i * 60}ms"></div>
-        ${r.gas ? `<div class="bar-fill bar-gas" style="left:${ew}%;width:${gw}%;background:${fill};animation-delay:${i * 60}ms"></div>` : ""}
+        ${r.gas ? `<div class="bar-fill bar-gas" style="left:${ew}%;width:${gw}%;background:${fill};animation-delay:${i * 60 + 600}ms"></div>` : ""}
       </div>
       <div class="bar-val">${gbp(r.total)} ${chip}</div>
     </div>`;
@@ -800,7 +801,6 @@ function summaryBars(on) {
   const legend = split ? `<div class="bar-legend">
       <span class="lg"><span class="sw" style="background:rgba(237,237,237,0.7)"></span>electricity</span>
       <span class="lg"><span class="sw bar-gas-sw" style="background:rgba(237,237,237,0.7)"></span>gas</span>
-      <span class="lg lg-note">every electricity offer is shown with the recommended gas offer${gasIncKnown ? `; the ${baseLc} shows its own current gas` : ""}</span>
     </div>` : "";
 
   return `<section>

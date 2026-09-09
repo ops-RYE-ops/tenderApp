@@ -79,8 +79,13 @@ ck('longest bar still fills the track (rescaled, not overflowing)',
 ck('a bar is LONGER than it was on electricity alone',
   Math.max(...rowsNow.map(r => parseFloat(r.querySelector('.bar-fill').style.width)
     + parseFloat(r.querySelector('.bar-gas').style.width))) > Math.max(...elecWidths) - 0.01);
-ck('footnote explains the gas pairing',
-  /recommended gas offer/.test(sum.querySelector('.bar-legend').textContent));
+ck('legend names both fuels', /electricity/.test(sum.querySelector('.bar-legend').textContent)
+  && /gas/.test(sum.querySelector('.bar-legend').textContent));
+ck('gas segment animates AFTER its electricity segment, not alongside it',
+  rowsNow.every(r => parseFloat(r.querySelector('.bar-gas').style.animationDelay)
+    > parseFloat(r.querySelector('.bar-fill').style.animationDelay)),
+  rowsNow.map(r => r.querySelector('.bar-fill').style.animationDelay + '->'
+    + r.querySelector('.bar-gas').style.animationDelay).join(' '));
 ck('gas rate rows revealed', [...sum.querySelectorAll('.gas-row')].every(r => !r.hidden));
 ck('headline flips to a saving', /annual saving/i.test(txt('m-gross-label')) && txt('m-gross') === '£9,015',
   txt('m-gross-label') + ' ' + txt('m-gross'));
