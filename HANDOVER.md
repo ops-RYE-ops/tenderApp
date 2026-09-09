@@ -36,6 +36,9 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 
 **Latest session (2026-09-09, later — COMBINED-TENDER SUMMARY FIXES. Uncommitted on `main`:
 `assets/dashboard_template.html` + new `tests/test_summary_multi.py` and `tests/dom_summary_multi.js`.
+Shipped in two parts: commit `41eac23` **direct to `main`** (my error — this work should have gone on
+a branch for a Vercel preview, since main IS production here and a deploy re-renders every live
+client link), then the bars redesign + gas-row tone on `fix/summary-bars-gas`.
 All Python suites + `dom_smoke.js` + the new suite green; both Summary states rendered headless and
 eyeballed.)** Found while Rory ran the first real combined gas+electricity tender (Public House
 Group). Three faults, all in the `MULTI` Summary path, all client-facing:
@@ -44,10 +47,34 @@ Group). Three faults, all in the `MULTI` Summary path, all client-facing:
 `buildBenchmarkNotice() + buildSummaryMulti()`, where the single-fuel `render()` has always added
 `buildBars()`. So the "All offers tendered" section was simply absent from a combined dashboard —
 the client saw the recommendation card and a table, then blank space, with the bars only reachable
-in the Portfolio tab. Fixed by `buildBarsMulti()`: **one bars block per fuel, electricity always
-visible, gas hidden behind the existing "Include gas in these figures" tick** (Rory's call — one
-consistent shape for every combined tender, never a per-tender judgement). `buildBars(opts)` now
-takes `{title, idSuffix, sectionClass, hidden}`; called bare it behaves exactly as before.
+in the Portfolio tab. Fixed by **`summaryBars(on)` — ONE set of bars that GROWS on the tick**, in a
+live `<div id="summary-bars">` that `recompute()` re-renders. Off: electricity only, as the
+single-fuel dash looks. On: each bar keeps its electricity segment and gains a faded gas segment
+(`.bar-gas`, same colour at 0.4 opacity), the scale rebases on combined totals, the value becomes
+total annual spend and the title reads "electricity + gas". Same shape for every combined tender —
+Rory's call, never a per-tender judgement.
+  - **The pairing rule matters.** The two fuels are tendered separately, so a losing electricity
+    offer has no gas twin. Every OFFER bar carries the **recommended gas offer** (gas held constant
+    across bars, so the only thing varying between them is still the electricity decision); the
+    **incumbent carries its OWN current gas**, because the baseline has to be what the client
+    actually pays. A hover title on each row shows the split. Gas offers are no longer ranked on the
+    Summary — the Portfolio tab's fuel switch still carries the full gas set.
+  - An intermediate design (a second, separate gas bars block revealed by the tick, `buildBarsMulti`
+    + a `.gas-bars` section) was built and then **replaced** at Rory's request — he wanted one set of
+    bars, not two. Don't reintroduce it. `buildBars(opts)` keeps the `{title, idSuffix, sectionClass,
+    hidden}` signature from that round and is still what the single-fuel and Portfolio panes call;
+    bare, it behaves exactly as before.
+  - **Animation is sequenced, deliberately.** Both fills scale from their left edge, so starting them
+    together left the gas segment growing from a point mid-track with a gap under it for the whole
+    600ms. The gas segment's inline `animation-delay` is its row delay **+600ms** (the `growBarH`
+    duration) so it grows out of the end of the electricity segment. Keep the two in step.
+
+**1b. The gas rate row was hardcoded green.** `pk(g.rec.perKwh.effective, "best")` — so a gas
+offer DEARER than the incumbent still rendered green on the client's dashboard (spotted by Rory on
+PHG: 5.96 vs 5.74, green). Now compared exactly as the electricity effective row is: incumbent
+`neg`, recommended `best`/`warn` on `gr <= gi`, and neutral when there's no gas incumbent to compare
+against. The DOM test now derives the expected tone from the two numbers in each row, so a
+hardcoded class fails the suite rather than shipping.
 
 **2. A cost INCREASE rendered as a green saving.** `buildSummaryMulti()` hardcoded `class="pos"` and
 printed `gbp(eGross)` raw, so the PHG dashboard headlined **"Forecasted annual saving £-6,316"** in
