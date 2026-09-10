@@ -34,7 +34,35 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-09-09, later — COMBINED-TENDER SUMMARY FIXES. Uncommitted on `main`:
+**Latest session (2026-09-10 — second market snapshot refresh in two days, ahead of a tender going
+out 11 Sep. 33 Python tests + `dom_smoke.js` green; Market Review rendered headless and eyeballed.)**
+`assets/market_snapshot.json` moved to **2026-09-10**. Power spot **152.00 £/MWh — now +105.35% 1Y,
+i.e. more than doubled in a year**. NBP **Oct-26 front-month 203.68 p/therm**, **Winter 26 205.10**,
+**Jan 27 209.45** (curve peak), **Summer 27 136.25 / Winter 27 129.65**.
+
+**The point that makes this edition worth having — THE BACK OF THE CURVE IS OUTRUNNING THE FRONT.**
+Day-on-day 9→10 Sep: Oct 26 +4.1%, Winter 26 +4.2%, but **Summer 27 +5.4% and Winter 27 +4.8%**
+(spot +3.2%). The cheap 2027 contracts a 24-month term relies on are repricing faster than the
+winter that term exists to dilute, so **the term discount is narrowing**. The 24-month argument
+still holds (Winter 26 205.10 against Summer 27 136.25 / Winter 27 129.65 is still a ~34–37%
+step-down) but the "wait for a better entry" case weakens by the day. That contrast is the sales
+point — lead with it.
+
+**Drivers were CARRIED FORWARD, not renewed.** Same two as 9 Sep (US-Iran escalation including
+reported attacks on Saudi Aramco facilities; Qatar's extended LNG force majeure). A web check on
+10 Sep surfaced no fresh named catalyst, so the commentary says the same drivers are still running.
+**Do not invent an event to explain a daily move** — if Rory hasn't supplied one and the wires
+haven't got one, say the existing driver persists.
+
+Mechanics: cards are now a **full 3×3 of nine** — **Feb 27 is back** (207.80) now that there are
+nine to fit; don't exceed nine. Each edition **appends** the new print rather than redrawing, so
+9 Sep's 147.24 sits alongside 10 Sep's 152.00. `power.series[0]` re-tuned **76 → 74** so the trend
+KPI reconciles with TE's +105.35% (it tracks the headline 1Y figure — re-tune it every refresh).
+No N2EX screenshot this edition, so the 4–10 Sep hourly averages in the previous note are the last
+day-ahead read and must not be restated as current.
+
+**Prior session (2026-09-09, later — COMBINED-TENDER SUMMARY FIXES. Merged to `main` via PR #31
+(`f53ea8a`); the "uncommitted" note here was stale and is corrected.
 `assets/dashboard_template.html` + new `tests/test_summary_multi.py` and `tests/dom_summary_multi.js`.
 All Python suites + `dom_smoke.js` + the new suite green; both Summary states rendered headless and
 eyeballed.)** Found while Rory ran the first real combined gas+electricity tender (Public House
