@@ -34,7 +34,39 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-09-10 — second market snapshot refresh in two days, ahead of a tender going
+**Latest session (2026-09-14 — market snapshot refresh, fourth edition in six days. 33 Python tests
++ `dom_smoke.js` green; Market Review rendered headless and eyeballed.)** `assets/market_snapshot.json`
+moved to **2026-09-14**. Power spot **153.00 £/MWh (+106.95% 1Y)**. NBP **Oct-26 207.72 p/therm**,
+**Winter 26 211.24**, **Dec 26 213.07**, **Winter 27 130.25**, **Summer 28 81.60**.
+
+**A REAL NAMED CATALYST THIS TIME — A PHYSICAL SUPPLY LOSS, NOT RISK PREMIUM.** Saudi Arabia shut its
+**East-West crude pipeline** after drone strikes; reporting (Reuters and others, 13–14 Sep) puts the
+outage at roughly **4% of global oil supply** if pumping does not resume within days. That sits on top
+of the Qatari LNG force majeure and US-Iran hostilities carried through the three prior editions.
+
+**⚠ THIS EDITION REVERSES THE 10 SEP CONCLUSION — do not restate the old line.** On 10 Sep the back of
+the curve was outrunning the front and the note said *the term discount is narrowing*. Over the weekend
+it flipped. 10→14 Sep: Oct 26 **+2.0%**, Winter 26 **+3.0%**, Dec 26 **+2.0%**, but Winter 27 **+0.5%**
+and spot **+0.7%**. A physical outage prices into the prompt and the coming winter; the far curve barely
+moves. **Winter 27 now sits 38.3% below Winter 26 (was 36.8%) — the term discount WIDENED**, so the
+24-month argument is stronger, not weaker. Lesson worth keeping: a *risk-premium* rally lifts the whole
+strip, a *physical outage* concentrates in the prompt. Check which one you are looking at before writing
+the term argument.
+
+**TWO CONTRACTS WERE DROPPED, NOT CARRIED FORWARD.** Jan 27 (was 209.45) and **Summer 27** (was 136.25)
+had no print on the 09:43 board. Never re-show a prior edition's price as if it were today's — drop the
+card. Summer 27's absence is why the term argument is anchored on Winter 27 this time.
+
+**SUMMER 28 AT 81.60 IS A FIRST APPEARANCE — VERIFY IT NEXT EDITION.** No history in this file, so unlike
+Winter 27 (held across four editions, the safe anchor) we cannot yet say the level has held. Shown as a
+card and mentioned in passing, but the argument does not rest on it. If 81.60 holds it is a strong
+36-month talking point; if it moves sharply it was a thin mark.
+
+N2EX daily averages 9–15 Sep: 126.91, 140.76, 139.99, 118.87, 133.97, **168.30**, 156.38; peak hour on
+14 Sep **204.69**. `power.series[0]` stays **74** (reconciles the trend KPI with TE's +106.95%). Cards
+remain a 3×3 of nine; each edition appends rather than redraws.
+
+**Prior session (2026-09-10 — second market snapshot refresh in two days, ahead of a tender going
 out 11 Sep. 33 Python tests + `dom_smoke.js` green; Market Review rendered headless and eyeballed.)**
 `assets/market_snapshot.json` moved to **2026-09-10**. Power spot **152.00 £/MWh — now +105.35% 1Y,
 i.e. more than doubled in a year**. NBP **Oct-26 front-month 203.68 p/therm**, **Winter 26 205.10**,

@@ -1,11 +1,11 @@
 {
-  "_note": "Market snapshot taken 2026-09-10 from Rory's Trading Economics (UK power spot 152.00 GBP/MWh, +77.98 / +105.35% 1Y) and the ICE Futures Europe UK NBP gas forward board (10 Sep 2026, 17:35 GMT update; Oct 26 the front-month at 203.680, +3.040% on the day, 11,760 lots). Second refresh in two days - Rory has a tender going out 11 Sep and the curve moved again. No N2EX day-ahead screenshot this edition, so the 4-10 Sep daily averages in the previous note are the last hourly-level read; do not restate them as current.\n\nDRIVERS ARE CARRIED FORWARD FROM 2026-09-09, NOT NEW: escalating US-Iran tension (military strikes, reported attacks on Saudi Aramco facilities, Iran-Oman talks on Strait of Hormuz shipping) and Qatar's extended LNG force majeure and shipment suspension through the autumn. A web check on 10 Sep surfaced no fresh named catalyst for the day's move, so the commentary attributes it to the same two drivers persisting. Do NOT invent a new event to explain a daily move.\n\nTHE NEW POINT THIS EDITION - THE BACK OF THE CURVE IS NOW OUTRUNNING THE FRONT. Day-on-day (9 Sep -> 10 Sep): Oct 26 195.59 -> 203.68 (+4.1%), Winter 26 196.82 -> 205.10 (+4.2%), Summer 27 129.30 -> 136.25 (+5.4%), Winter 27 123.75 -> 129.65 (+4.8%). Power spot 147.24 -> 152.00 (+3.2%). The cheap 2027 contracts a 24-month term relies on are repricing faster than the winter it is meant to avoid, so the term DISCOUNT IS NARROWING. The 24-month argument still holds (Winter 26 205.10 vs Summer 27 136.25 / Winter 27 129.65 is still a ~34-37% step-down) but the 'wait for a better entry' case is weakening by the day. That contrast is the sales point - lead with it.\n\nPrior 30-day context, as at 9 Sep and NOT re-measured today: 25 of 25 contracts up at settlement, Summer 27 gas +35.77%, Cal 27 gas +35.16%.\n\nCARDS ARE NOW A FULL 3x3 OF NINE. Feb 27 is back (207.800, +3.853% on the day) - it was dropped in earlier editions only because there were eight cards to fit. Nine is the natural grid; do not exceed it.\n\nMEASURES ARE DIFFERENT AND MUST NOT BE MERGED: Trading Economics prints a single daily spot index; N2EX is every hourly delivery period. Quote them separately.\n\nWINDOW = THREE YEARS, DELIBERATELY (Rory, 2026-08-27). The long chart was a five-year view; the 2022 Russia-Ukraine spikes (to ~585) dwarf today's level and made a severe market look benign. Three years starts after the crisis unwound, so today reads as the top of the range. The template reads power.rangeLong.years + .axisLabels, so changing the window again is a JSON edit only. Do NOT widen it back without a reason.\n\nGAS FORWARDS ARE REAL, NOT THIN (Rory, 2026-08-27). Summer 27 and Winter 27 sit far below the winter-26 strip and have held there through four editions of this file; treat them as a settled view of the curve, not illiquid indications. Every gas price is read from the ICE board verbatim.\n\nSHAPE-TRACED, NOT TICK-EXACT: power.series (1Y), power.rangeLong and gas.series (1Y). Each edition appends the new print rather than redrawing, so 9 Sep's 147.24 is retained alongside 10 Sep's 152.00. power.series[0] is set to 74 so the template's start-of-period trend KPI reconciles with Trading Economics' +105.35% 1Y (it was 76 for the +94.58% reading on 9 Sep; re-tune it whenever the headline 1Y percentage changes).\n\nRefresh by hand and redeploy; every already-published client link re-renders from this file, so it is production. Delete it to hide the Market Review tab.",
-  "updated": "2026-09-10",
-  "headline": "spot has doubled in a year to a fresh three-year high, and 2027 is now rising faster than next winter - the term discount is narrowing",
-  "commentary": "UK power spot is 152.00 £/MWh. It has now more than doubled in a year, up 105%, and sits at a fresh three-year high. The drivers are the same two as last week, still running: escalating US-Iran tension, including military strikes and reported attacks on Saudi Aramco facilities, and Qatar's extended LNG force majeure, which keeps replacement cargoes away from Europe through the autumn. What changed in the last day is where the buying is. The back of the curve is now moving faster than the front - since yesterday Oct 26 gas is up 4.1% and Winter 26 up 4.2%, but Summer 27 is up 5.4% and Winter 27 up 4.8%. The cheaper 2027 contracts a longer term depends on are repricing upward faster than the winter that term is meant to dilute. The term argument still holds. Winter 26 at 205.10 p/therm against Summer 27 at 136.25 and Winter 27 at 129.65 is still roughly a third cheaper beyond next winter, so a 24-month starting this October blends the expensive winter with a materially cheaper 2027/28 while a 12-month sits on the winter alone. But that discount is narrowing, not widening. On this curve waiting is costing more than it saves.",
+  "_note": "Market snapshot taken 2026-09-14 from Rory's Trading Economics (UK power spot 153.00 GBP/MWh, +79.07 / +106.95% 1Y), the ICE Futures Europe UK NBP gas forward board (14 Sep 2026, 09:43 GMT, Oct 26 the front-month at 207.720) and N2EX/Nord Pool UK day-ahead (delivery dates 9-15 Sep).\n\nNEW NAMED CATALYST THIS EDITION - A PHYSICAL SUPPLY LOSS, NOT JUST RISK PREMIUM. Saudi Arabia shut its East-West crude pipeline after drone strikes (attributed in reporting to Iraq-launched and Houthi drones); Reuters and others report the outage threatens roughly 4% of global oil supply if pumping is not resumed within days. This sits on top of the continuing Qatari LNG force majeure and US-Iran hostilities carried through the previous three editions. Unlike 9-10 Sep, there IS a dated catalyst here - name it.\n\nTHE CURVE RE-STEEPENED - THIS REVERSES WHAT THE 10 SEP EDITION SAID. On 10 Sep the back of the curve was outrunning the front (Summer/Winter 27 up more than Oct 26) and the note said the term discount was narrowing. Over the weekend that flipped. 10 Sep -> 14 Sep: Oct 26 203.68 -> 207.72 (+2.0%), Winter 26 205.10 -> 211.24 (+3.0%), Dec 26 208.82 -> 213.07 (+2.0%), but Winter 27 129.65 -> 130.25 (+0.5%) and spot 152.00 -> 153.00 (+0.7%). A physical outage prices into the prompt and next winter; the far curve barely moved. Winter 27 now sits 38.3% below Winter 26 (was 36.8%), so THE TERM DISCOUNT HAS WIDENED AGAIN and the 24-month argument is stronger, not weaker. Do not restate the 10 Sep 'discount is narrowing' line - it is superseded.\n\nTWO CONTRACTS HAD NO PRINT ON THIS BOARD AND WERE DROPPED, NOT CARRIED FORWARD: Jan 27 (was 209.45) and Summer 27 (was 136.25) were blank at 09:43. Never re-show a previous edition's price as if it were today's - drop the card.\n\nSUMMER 28 AT 81.60 IS A FIRST APPEARANCE - TREAT WITH MILD CAUTION. It has no history in this file, so unlike Winter 27 (which has held across four editions and is the safe anchor for the term argument) we cannot yet say the level has held. It is a real ICE print and is shown, but the commentary leans on Winter 27. CHECK IT NEXT EDITION: if 81.60 holds, it is a powerful 36-month talking point; if it moves sharply, it was a thin mark.\n\nN2EX DAILY AVERAGES (GBP/MWh), 9-15 Sep: 126.91, 140.76, 139.99, 118.87, 133.97, 168.30, 156.38. Peak hour on 14 Sep was 204.69 (18:00-19:00), trough 137.45. MEASURES ARE DIFFERENT AND MUST NOT BE MERGED: Trading Economics prints a single daily spot index; N2EX is every hourly delivery period.\n\nWINDOW = THREE YEARS, DELIBERATELY (Rory, 2026-08-27). A five-year view puts the 2022 spikes (~585) on the same axis and makes a severe market look benign. The template reads power.rangeLong.years + .axisLabels, so changing it is a JSON edit only. Do NOT widen it back without a reason.\n\nGAS FORWARDS ARE REAL, NOT THIN (Rory, 2026-08-27) - for the established contracts. Winter 27 has sat far below the winter-26 strip across every edition of this file; treat it as a settled view, not an illiquid indication. Every gas price is read from the ICE board verbatim.\n\nSHAPE-TRACED, NOT TICK-EXACT: power.series (1Y), power.rangeLong and gas.series (1Y). Each edition APPENDS the new print rather than redrawing. power.series[0] stays 74, which reconciles the template's start-of-period trend KPI with TE's +106.95% 1Y - re-tune it whenever the headline 1Y percentage moves.\n\nRefresh by hand and redeploy; every already-published client link re-renders from this file, so it is production. Delete it to hide the Market Review tab.",
+  "updated": "2026-09-14",
+  "headline": "a physical Saudi supply outage has pushed spot up 107% on the year and re-steepened the curve - next winter took the hit, 2027 barely moved",
+  "commentary": "UK power spot is 153.00 £/MWh, up 107% on a year ago. The market has shifted from geopolitical risk to an actual physical supply loss: Saudi Arabia has shut its East-West crude pipeline after drone strikes, an outage reported to threaten around 4% of global oil supply if pumping does not resume within days, on top of the continuing Qatari LNG force majeure. Day-ahead power followed over the weekend - the N2EX daily average was £168/MWh on 14 September against £127 on 9 September, with the evening peak printing £204.69. What matters for term choice is that the curve has re-steepened. Since Thursday Winter 26 is up 3.0% to 211.24 p/therm while Winter 27 is up just 0.5% to 130.25. A physical outage prices into the prompt and the coming winter; the far curve has barely moved. Winter 27 now sits 38% below Winter 26, a wider gap than a week ago, and Summer 28 is quoted at 81.60. So the case for a longer term has strengthened. A 12-month starting this October buys the most expensive part of the curve outright, while a 24-month blends it with a 2027/28 this shock has largely passed over. The risk premium is concentrated in exactly the months a short contract is most exposed to.",
   "power": {
     "unit": "£/MWh",
-    "spotNow": 152.0,
+    "spotNow": 153.0,
     "series": [
       74,
       76,
@@ -44,7 +44,8 @@
       111,
       132,
       147.24,
-      152.0
+      152.0,
+      153.0
     ],
     "seriesLabels": [
       "Sep",
@@ -104,7 +105,8 @@
         120,
         132,
         147.24,
-        152.0
+        152.0,
+        153.0
       ],
       "axisLabels": [
         "Aug 23",
@@ -119,8 +121,8 @@
   },
   "gas": {
     "unit": "p/therm",
-    "spotNow": 203.68,
-    "note": "NBP front-month (Oct 26) is 203.68 p/therm and the winter strip is higher still - Winter 26 at 205.10, Jan 27 at 209.45. The whole board is up again on the same Middle East tension and Qatar LNG force majeure. Summer 27 (136.25) and Winter 27 (129.65) still sit around a third below next winter, but both rose more than the front month today - the far curve is catching up, so the discount a longer term buys is narrowing.",
+    "spotNow": 207.72,
+    "note": "NBP front-month (Oct 26) is 207.72 p/therm, with the winter strip higher still - Winter 26 211.24, Dec 26 213.07. The weekend's leg up came from a physical event: Saudi Arabia shutting its East-West crude pipeline after drone strikes, alongside the continuing Qatari LNG force majeure. Note where the move landed - Winter 26 rose 3.0% since Thursday but Winter 27 only 0.5%, at 130.25, and Summer 28 is quoted at 81.60. The shock is concentrated in the coming winter, so the discount further out has widened.",
     "series": [
       76,
       77,
@@ -155,44 +157,45 @@
       172,
       183,
       195.59,
-      203.68
+      203.68,
+      207.72
     ],
     "contracts": [
       [
         "OCT 26",
-        203.68
+        207.72
       ],
       [
         "NOV 26",
-        207.86
+        211.49
       ],
       [
         "DEC 26",
-        208.82
-      ],
-      [
-        "JAN 27",
-        209.45
+        213.07
       ],
       [
         "FEB 27",
-        207.8
+        210.0
       ],
       [
         "Q1 27",
-        204.55
+        208.8
+      ],
+      [
+        "MAR 27",
+        202.0
       ],
       [
         "WINTER 26",
-        205.1
-      ],
-      [
-        "SUMMER 27",
-        136.25
+        211.24
       ],
       [
         "WINTER 27",
-        129.65
+        130.25
+      ],
+      [
+        "SUMMER 28",
+        81.6
       ]
     ]
   }
