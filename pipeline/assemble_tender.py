@@ -50,7 +50,8 @@ Usage:
         [--expires-at 2026-07-31] [--day-split 0.7] \
         [--created-by rory@rye.energy] \
         [--recommended-supplier EDF] [--recommended-term "12 months"] \
-        [--fee-list-price 90] [--fee-discount 80] [--fee-label "..."] \
+        [--fee-list-price 90] [--fee-discount 80] [--fee-chargeable-sites 10] \
+        [--fee-label "..."] \
         [--note "..."] [--note "..."]
 
 The incumbent JSON is an object matching the schema's #/$defs/incumbent
@@ -424,7 +425,7 @@ def _build_rye_fee(meta):
         return meta["rye_fee"]
     fee = {}
     for key in ("list_price_site_month", "discount_pct", "per_site_month",
-                "annual", "label"):
+                "chargeable_sites", "annual", "label"):
         if meta.get(f"fee_{key}") is not None:
             fee[key] = meta[f"fee_{key}"]
         elif meta.get(key) is not None:
@@ -585,6 +586,8 @@ def parse_args(argv):
     p.add_argument("--recommended-term", dest="recommended_term")
     p.add_argument("--fee-list-price", dest="fee_list_price_site_month", type=float)
     p.add_argument("--fee-discount", dest="fee_discount_pct", type=float)
+    p.add_argument("--fee-chargeable-sites", dest="fee_chargeable_sites", type=int,
+                   help="Charge the fee on this many supply points (default: all of them).")
     p.add_argument("--fee-label", dest="fee_label")
     p.add_argument("--note", action="append", dest="notes", default=[])
     return p.parse_args(argv)
@@ -612,6 +615,7 @@ def main(argv):
         "recommended_term": args.recommended_term,
         "fee_list_price_site_month": args.fee_list_price_site_month,
         "fee_discount_pct": args.fee_discount_pct,
+        "fee_chargeable_sites": args.fee_chargeable_sites,
         "fee_label": args.fee_label,
         "notes": args.notes,
     }

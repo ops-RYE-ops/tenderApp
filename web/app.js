@@ -104,6 +104,7 @@ function resetWizard() {
   setVal("in-charge-model", "fee");
   setVal("in-fee-list", "90");
   setVal("in-fee-discount", "80");
+  setVal("in-fee-chargeable", "");
   setVal("in-commission-uplift", "0.30");
   setChk("in-commission-included", false);
   setChk("in-benchmark-on", false);
@@ -565,6 +566,33 @@ function flatQuotes() {
   return out;
 }
 
+function totalSupplyPoints() {
+  // Distinct meter points across every confirmed extract - the same count the
+  // cost engine spreads the fee over.
+  const seen = new Set();
+  for (const f of state.files) {
+    if (!f.extract) continue;
+    for (const s of (f.extract.sites || [])) if (s.mpxn) seen.add(String(s.mpxn));
+  }
+  return seen.size;
+}
+
+function renderFeeChargeable() {
+  // The chargeable-count field is blank by default = charge on every supply
+  // point, which is exactly the old behaviour. Filling it in lets RYE charge
+  // list price on a subset (e.g. 10 of 14) instead of back-solving the
+  // equivalent portfolio discount by hand.
+  const n = totalSupplyPoints();
+  const el = $("in-fee-chargeable");
+  if (!el) return;
+  if (n) el.max = n; else el.removeAttribute("max");
+  el.placeholder = n ? `all ${n}` : "all";
+  const hint = $("fee-chargeable-hint");
+  if (hint) hint.textContent = n
+    ? `This tender covers ${n} supply points. Charge on fewer - e.g. 10 of ${n} - or leave blank to charge on all ${n}. The client sees the portfolio discount that works out at, not the count.`
+    : "Charge on fewer supply points than the tender covers. Leave blank to charge on all of them.";
+}
+
 async function openAssemble() {
   showStep(5);
   notice($("assemble-msg"), "");
@@ -572,6 +600,7 @@ async function openAssemble() {
   renderEditBanner();
   renderKeepIncumbent();
   await loadOffers();
+  renderFeeChargeable();
 }
 
 async function loadOffers() {
@@ -775,6 +804,9 @@ function assembleMeta() {
     if (!isNaN(feeList)) meta.fee_list_price_site_month = feeList;
     const feeDisc = parseFloat($("in-fee-discount").value);
     if (!isNaN(feeDisc)) meta.fee_discount_pct = feeDisc;
+    // Blank = charge on every supply point, so the key is simply not sent.
+    const feeChargeable = parseInt($("in-fee-chargeable").value, 10);
+    if (!isNaN(feeChargeable) && feeChargeable > 0) meta.fee_chargeable_sites = feeChargeable;
   }
 
   const exp = $("in-expires").value;
@@ -814,6 +846,21 @@ async function doAssemble() {
     for (const f of present) {
       if (!featuredCountForFuel(f)) {
         notice($("assemble-msg"), `Tick at least one ${(FUEL_LABEL[f] || f).toLowerCase()} offer to show the client.`, "error");
+        return;
+      }
+    }
+  }
+  if ($("in-charge-model").value !== "commission") {
+    const rawChargeable = ($("in-fee-chargeable").value || "").trim();
+    if (rawChargeable !== "") {
+      const total = totalSupplyPoints();
+      const c = parseInt(rawChargeable, 10);
+      if (isNaN(c) || c < 1) {
+        notice($("assemble-msg"), "Chargeable supply points must be 1 or more - or leave it blank to charge on all of them.", "error");
+        return;
+      }
+      if (total && c > total) {
+        notice($("assemble-msg"), `This tender covers ${total} supply points, so the fee can't be charged on ${c}. Leave it blank to charge on all ${total}.`, "error");
         return;
       }
     }
@@ -1088,6 +1135,7 @@ function hydrateFromTender(p) {
     const f = p.rye_fee || {};
     if (f.list_price_site_month != null) $("in-fee-list").value = f.list_price_site_month;
     if (f.discount_pct != null) $("in-fee-discount").value = f.discount_pct;
+    if (f.chargeable_sites != null) $("in-fee-chargeable").value = f.chargeable_sites;
   }
   onChargeModelChange();
 

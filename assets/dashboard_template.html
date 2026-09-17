@@ -252,6 +252,30 @@ let TENDER, allOffers, rec, fee, commission, inc, savings, baseline,
 const gbp = v => "£" + Math.round(v).toLocaleString("en-GB");
 const gbpSigned = v => (v > 0 ? "+" : v < 0 ? "−" : "") + "£" + Math.round(Math.abs(v)).toLocaleString("en-GB");
 const num = v => v == null ? "—" : Number(v).toLocaleString("en-GB", { maximumFractionDigits: 3 });
+const gbp2 = v => "£" + Number(v || 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* ---- Flat fee: charged supply points vs the portfolio ----------------------
+   RYE can charge the fee on FEWER supply points than the tender covers (e.g. 10
+   of 14) rather than back-solving an equivalent portfolio discount. The client is
+   never shown the count: they see the rate per supply point and the portfolio
+   discount it works out at. With no cap, charged == total and every figure below
+   is identical to the old behaviour. */
+const feeTotalPts = f => (f && f.totalSites) || ((typeof TENDER !== "undefined" && TENDER) ? TENDER.sites.length : 0) || 1;
+const feeChargedPts = f => (f && f.chargeableSites != null) ? f.chargeableSites : feeTotalPts(f);
+/* Slider position = discount off list on the CHARGED rate, so dragging it moves
+   the rate itself. The portfolio discount is a read-out, not the control. */
+const feeSliderPct = f => {
+  const list = (f && f.listPerSiteMonth) || 90;
+  return list ? Math.round((1 - ((f && f.perSiteMonth) || 0) / list) * 100) : 0;
+};
+function feeRateNote(f, psm) {
+  const list = (f && f.listPerSiteMonth) || 90;
+  const total = feeTotalPts(f), charged = feeChargedPts(f);
+  const annual = Math.max(0, psm || 0) * charged * 12;
+  const blended = total ? annual / (12 * total) : 0;
+  const disc = list ? Math.round((1 - blended / list) * 100) : 0;
+  if (charged < total) return `${disc}% portfolio discount · equivalent to ${gbp2(blended)} per supply`;
+  return disc > 0 ? `${disc}% off list £${list}/supply point/month` : `list price £${list}/supply point/month`;
+}
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 /* Portfolio size for the title byline: GWh for large portfolios, MWh for most,
    kWh for a single small meter. Annual consumption, so the unit is always /yr. */
@@ -297,7 +321,7 @@ const CHART = { red: "#ee0000", amber: "#f5a623", green: "#0cce6b", blue: "#0070
 
 function buildHero() {
   return `<header>
-    <div class="section-label">${esc(TENDER.utility || "energy")} tender · ${TENDER.offers.length} offers · ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
+    <div class="section-label">${esc(TENDER.utility || "energy")} tender · ${TENDER.offers.length} offers · ${TENDER.sites.length} supply point${TENDER.sites.length === 1 ? "" : "s"}</div>
     <h1>${esc(TENDER.label)}</h1>
     <div class="subtitle">Prepared for ${esc(TENDER.client)} by RYE.
       <span class="mono">${totalEac > 0 ? `${eacHeadline(totalEac)} tender. ` : ""}Standardised annual costs — like-for-like across all offers.</span></div>
@@ -343,20 +367,20 @@ function buildRecVsInc() {
       <div class="card accent-green">
         <span class="chip success">recommended</span>
         <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-top:12px">${esc(rec.supplier)}</div>
-        <div class="kpi-sub">${esc(rec.term)} fixed · covers all ${TENDER.sites.length} site${TENDER.sites.length === 1 ? "" : "s"}</div>
+        <div class="kpi-sub">${esc(rec.term)} fixed · covers all ${TENDER.sites.length} supply point${TENDER.sites.length === 1 ? "" : "s"}</div>
         <div class="kpi-label" style="margin-top:18px">${isBenchmark ? "Indicative" : "Forecasted"} annual ${savings >= 0 ? "saving" : "increase"}</div>
         <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}" style="font-size:40px;margin-top:8px">${gbp(Math.abs(savings))}</div>
         <div class="kpi-sub">${(Math.abs(savings) / inc.total * 100).toFixed(1)}% vs ${esc(inc.supplier)}</div>
         ${fee && fee.netSaving != null ? `
         <div class="kpi-label" style="margin-top:14px">Net saving after ${esc(fee.label)}</div>
         <div class="kpi-value ${fee.netSaving >= 0 ? "pos" : "warn"}" id="net-saving" style="font-size:26px;margin-top:6px">${gbp(fee.netSaving)}</div>
-        <div class="kpi-sub"><span id="net-per-site">${gbp(fee.netSavingPerSite)}</span> per site · fee <span id="fee-annual">${gbp(fee.annual)}</span>/yr · no commission</div>
+        <div class="kpi-sub"><span id="net-per-site">${gbp(fee.netSavingPerSite)}</span> per supply · fee <span id="fee-annual">${gbp(fee.annual)}</span>/yr · no commission</div>
         <div class="fee-controls">
           <div class="kpi-label" style="margin-bottom:10px">RYE fee</div>
-          <input type="range" id="fee-slider" min="0" max="100" step="5" value="${fee.discountPct}" aria-label="RYE fee discount">
+          <input type="range" id="fee-slider" min="0" max="100" step="5" value="${feeSliderPct(fee)}" aria-label="RYE fee discount">
           <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
-            <input type="number" id="fee-input" min="0" step="0.5" value="${fee.perSiteMonth}" aria-label="Fee per site per month">
-            <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/site/month · <span id="fee-disc"></span></span>
+            <input type="number" id="fee-input" min="0" step="0.5" value="${fee.perSiteMonth}" aria-label="Fee per supply point per month">
+            <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/supply point/month · <span id="fee-disc"></span></span>
           </div>
         </div>` : ""}
         ${commission ? (commission.included ? `
@@ -375,8 +399,8 @@ function buildRecVsInc() {
           <tr><td class="name">Mean effective rate (p/kWh)</td>${pk(inc.perKwh.effective, "neg")}${pk(rec.perKwh.effective, rec.perKwh.effective <= inc.perKwh.effective ? "best" : "warn")}</tr>
           ${commission ? `<tr><td class="name">Effective rate ${cOtherLabel} RYE commission (p/kWh)</td><td>—</td><td class="total">${cOther == null ? "—" : cOther.toFixed(2)}</td></tr>` : ""}
           <tr><td class="name">Forecasted annual spend</td><td>${gbp(inc.total)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total)}</td></tr>
-          <tr><td class="name">Annual spend per site</td><td>${gbp(inc.total / perSite)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total / perSite)}</td></tr>
-          <tr><td class="name">${isBenchmark ? "Indicative" : "Forecasted"} annual saving</td><td></td><td class="${savings >= 0 ? "best" : "warn"}">${gbpSigned(rec.total - inc.total)}</td></tr>
+          <tr><td class="name">Annual spend per supply</td><td>${gbp(inc.total / perSite)}</td><td class="${rec.total <= inc.total ? "best" : ""}">${gbp(rec.total / perSite)}</td></tr>
+          <tr><td class="name">${isBenchmark ? "Indicative" : "Forecasted"} annual ${savings >= 0 ? "saving" : "increase"}</td><td></td><td class="${savings >= 0 ? "best" : "warn"}">${savings >= 0 ? gbp(savings) : "+" + gbp(Math.abs(savings))}</td></tr>
           <tr><td class="name">Portfolio cost efficiency</td><td></td><td class="total">Medium</td></tr>
         </tbody>
       </table></div>
@@ -386,19 +410,18 @@ function buildRecVsInc() {
 
 /* ---- Standalone RYE fee (shown when there is no incumbent baseline) ---- */
 function buildFeeStandalone() {
-  const sites = TENDER.sites.length || 1;
   return `<section>
     <div class="section-label">RYE fee</div>
     <div class="card accent-green" style="max-width:440px">
       <div class="kpi-label">${esc(fee.label)}</div>
       <div class="kpi-value" id="fee-annual" style="font-size:36px;margin-top:8px">${gbp(fee.annual)}</div>
-      <div class="kpi-sub"><span id="fee-per-site">${gbp(fee.perSiteMonth)}</span>/site/month × ${sites} site${sites === 1 ? "" : "s"} × 12 months · flat fee, no commission</div>
+      <div class="kpi-sub"><span id="fee-note"></span> · flat fee, no commission</div>
       <div class="fee-controls">
         <div class="kpi-label" style="margin-bottom:10px">Adjust fee</div>
-        <input type="range" id="fee-slider" min="0" max="100" step="5" value="${fee.discountPct}" aria-label="RYE fee discount">
+        <input type="range" id="fee-slider" min="0" max="100" step="5" value="${feeSliderPct(fee)}" aria-label="RYE fee discount">
         <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
-          <input type="number" id="fee-input" min="0" step="0.5" value="${fee.perSiteMonth}" aria-label="Fee per site per month">
-          <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/site/month · <span id="fee-disc"></span></span>
+          <input type="number" id="fee-input" min="0" step="0.5" value="${fee.perSiteMonth}" aria-label="Fee per supply point per month">
+          <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/supply point/month · <span id="fee-disc"></span></span>
         </div>
       </div>
     </div>
@@ -496,9 +519,9 @@ function buildSiteMatrix() {
   const p1 = v => v == null ? "—" : v.toFixed(1) + "p";
   const offeredLbl = singleOffer ? "offered" : "best";
   return `<section>
-    <div class="section-label">Site-by-site annual cost (£/year)</div>
+    <div class="section-label">Supply-by-supply annual cost (£/year)</div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Site</th><th>EAC kWh</th>` +
+      <thead><tr><th>Supply</th><th>EAC kWh</th>` +
       `<th>Efficiency<br>${inc ? baseLc + " / " + offeredLbl : offeredLbl}</th>` +
       allOffers.map(o => `<th>${o.isIncumbent ? baseLabel : esc(o.supplier) + "<br>" + esc(o.term)}</th>`).join("") +
       (singleOffer && inc ? `<th>${isBenchmark ? "Indicative " : ""}Δ vs ${baseLc}</th>` : "") +
@@ -556,7 +579,7 @@ function buildRateBooks() {
           <span style="margin-left:auto" class="chip neutral">${gbp(o.total)}/yr</span></summary>
         ${warn}
         <div class="table-wrap"><table>
-          <thead><tr><th>Site</th><th>EAC kWh</th>` +
+          <thead><tr><th>Supply</th><th>EAC kWh</th>` +
           used.map(([, lbl]) => `<th>${lbl}</th>`).join("") +
           (showDates ? `<th>Start</th><th>End</th>` : "") +
           `<th>£/year</th></tr></thead><tbody>` +
@@ -673,7 +696,8 @@ function chargeOn(F, on, psmOverride) {
   }
   if (fee) {
     const psm = psmOverride == null ? fee.perSiteMonth : psmOverride;
-    const annual = Math.max(0, psm || 0) * F.cSites * 12;
+    // The fee may be charged on fewer supply points than the tender covers.
+    const annual = Math.max(0, psm || 0) * feeChargedPts(fee) * 12;
     return { kind: "fee", label: fee.label || "RYE fee", annual, included: false,
       net: gross == null ? null : gross - annual, scope: null };
   }
@@ -709,13 +733,13 @@ function buildSummaryMulti() {
     charge = `
       <div class="kpi-label" style="margin-top:14px" id="m-net-label">Net ${saveWord(ch.net)} after ${esc(ch.label)}</div>
       <div class="kpi-value ${saveTone(ch.net)}" id="m-net" style="font-size:26px;margin-top:6px">${gbp(Math.abs(ch.net))}</div>
-      <div class="kpi-sub">fee <span id="m-fee-annual">${gbp(ch.annual)}</span>/yr across ${F.cSites} meter${F.cSites === 1 ? "" : "s"}</div>
+      <div class="kpi-sub">fee <span id="m-fee-annual">${gbp(ch.annual)}</span>/yr across ${F.cSites} supply point${F.cSites === 1 ? "" : "s"}</div>
       <div class="fee-controls">
         <div class="kpi-label" style="margin-bottom:10px">RYE fee</div>
-        <input type="range" id="m-fee-slider" min="0" max="100" step="5" value="${RAW.fee.discountPct}" aria-label="RYE fee discount">
+        <input type="range" id="m-fee-slider" min="0" max="100" step="5" value="${feeSliderPct(RAW.fee)}" aria-label="RYE fee discount">
         <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
-          <input type="number" id="m-fee-input" min="0" step="0.5" value="${RAW.fee.perSiteMonth}" aria-label="Fee per site per month">
-          <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/site/month</span>
+          <input type="number" id="m-fee-input" min="0" step="0.5" value="${RAW.fee.perSiteMonth}" aria-label="Fee per supply point per month">
+          <span style="font-family:var(--rye-mono);font-size:11px;color:var(--t3)">£/supply point/month · <span id="m-fee-disc"></span></span>
         </div>
       </div>`;
   } else if (ch && ch.kind === "commission") {
@@ -748,7 +772,7 @@ function buildSummaryMulti() {
           <tr><td class="name">Mean effective rate — electricity (p/kWh)</td>${pk(eInc ? eInc.perKwh.effective : null, "neg")}${pk(eRec.perKwh.effective, eInc && eRec.perKwh.effective <= eInc.perKwh.effective ? "best" : "warn")}</tr>
           ${gasRows}
           <tr><td class="name">Forecasted annual spend</td><td>${sw(gbp(F.eIncTotal), F.cIncTotal != null ? gbp(F.cIncTotal) : "—")}</td><td>${sw(gbp(F.eRecTotal), gbp(F.cRecTotal))}</td></tr>
-          <tr><td class="name">Annual spend per site</td><td>${sw(gbp(F.eIncTotal / F.eSites), F.cIncTotal != null ? gbp(F.cIncTotal / F.cSites) : "—")}</td><td>${sw(gbp(F.eRecTotal / F.eSites), gbp(F.cRecTotal / F.cSites))}</td></tr>
+          <tr><td class="name">Annual spend per supply</td><td>${sw(gbp(F.eIncTotal / F.eSites), F.cIncTotal != null ? gbp(F.cIncTotal / F.cSites) : "—")}</td><td>${sw(gbp(F.eRecTotal / F.eSites), gbp(F.cRecTotal / F.cSites))}</td></tr>
           <tr><td class="name">${lead} annual saving</td><td></td><td class="${eGross >= 0 ? "best" : "warn"}" id="m-savecell">${sw(gbpSigned(F.eRecTotal - F.eIncTotal), F.cGross != null ? gbpSigned(F.cRecTotal - F.cIncTotal) : "—")}</td></tr>
         </tbody>
       </table></div>
@@ -961,6 +985,7 @@ function wireSummaryMulti() {
     const ch = chargeOn(F, on, fee ? psm : null);
     if (ch) {
       if (el("m-fee-annual")) el("m-fee-annual").textContent = gbp(ch.annual);
+      if (el("m-fee-disc")) el("m-fee-disc").textContent = feeRateNote(fee, psm);
       if (el("m-charge-scope")) el("m-charge-scope").textContent = ch.scope || "";
       if (el("m-net")) { el("m-net").textContent = gbp(Math.abs(ch.net)); tone(el("m-net"), ch.net); }
       if (el("m-net-label")) el("m-net-label").textContent = `Net ${saveWord(ch.net)} after ${ch.label}`;
@@ -976,7 +1001,9 @@ function wireEvents() {
   wireOfferFilter();
 /* ---- Live fee control: net saving recalculates as the fee moves ---- */
 if (fee) {
-  const sites = TENDER.sites.length || 1;
+  const sites = feeTotalPts(fee);        // every supply point in the tender
+  const charged = feeChargedPts(fee);    // how many of them the fee is charged on
+  const capped = charged < sites;
   const gross = savings;                 // null when there is no incumbent baseline
   const list = fee.listPerSiteMonth || 90;
   const slider = document.getElementById("fee-slider");
@@ -985,13 +1012,15 @@ if (fee) {
 
   function apply(psm) {
     psm = Math.max(0, psm || 0);
-    const annual = psm * sites * 12;
-    const disc = list ? Math.round((1 - psm / list) * 100) : 0;
+    const annual = psm * charged * 12;
+    const blended = sites ? annual / (12 * sites) : 0;
     if (el("fee-annual")) el("fee-annual").textContent = gbp(annual);
-    if (el("fee-per-site")) el("fee-per-site").textContent = gbp(psm);
-    if (el("fee-disc")) el("fee-disc").textContent = disc > 0
-      ? `${disc}% off list £${list}/site/month`
-      : `list price £${list}/site/month`;
+    if (el("fee-disc")) el("fee-disc").textContent = feeRateNote(fee, psm);
+    // The control underneath already states the discount, so the note just
+    // carries the list rate and what it works out at across the portfolio.
+    if (el("fee-note")) el("fee-note").textContent = capped
+      ? `${gbp2(psm)}/supply point/month · equivalent to ${gbp2(blended)} per supply across ${sites} supplies`
+      : `${gbp2(psm)}/supply point/month × ${sites} suppl${sites === 1 ? "y" : "ies"} × 12 months`;
     if (gross != null) {                 // net saving only exists with a baseline
       const net = gross - annual;
       if (el("net-saving")) {
@@ -1003,8 +1032,10 @@ if (fee) {
       if (el("kpi-net")) el("kpi-net").textContent = gbp(net);
     }
     if (el("assump-fee")) el("assump-fee").textContent =
-      `${fee.label}: £${psm.toFixed(2)}/site/month ` +
-      `(£${Math.round(annual).toLocaleString("en-GB")}/year across ${sites} site${sites === 1 ? "" : "s"}). ` +
+      `${fee.label}: £${psm.toFixed(2)}/supply point/month ` +
+      `(£${Math.round(annual).toLocaleString("en-GB")}/year` +
+      `${capped ? `, equivalent to £${blended.toFixed(2)} per supply` : ""} ` +
+      `across ${sites} suppl${sites === 1 ? "y" : "ies"}). ` +
       `RYE charges a flat subscription fee and takes no supplier commission.`;
   }
 

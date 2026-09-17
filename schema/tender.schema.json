@@ -289,6 +289,7 @@
         "list_price_site_month": { "type": "number", "default": 90 },
         "discount_pct": { "type": "number", "minimum": 0, "maximum": 100 },
         "per_site_month": { "type": "number", "description": "Overrides the discount calc if given." },
+        "chargeable_sites": { "type": "integer", "minimum": 0, "description": "How many supply points the fee is charged on. Absent = every supply point in the tender. Lets RYE charge e.g. 10 of 14 at list price instead of faking an equivalent portfolio discount." },
         "annual": { "type": "number", "description": "Overrides per_site_month if given." },
         "label": { "type": "string", "description": "Client-facing fee label." }
       }

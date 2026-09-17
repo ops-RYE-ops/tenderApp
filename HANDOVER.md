@@ -34,7 +34,67 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-09-14 — market snapshot refresh, fourth edition in six days. 33 Python tests
+**Latest session (2026-09-17 — branch `feat/chargeable-supply-points`: fee charged on a subset of
+supply points, "site" renamed to "supply" on the client dashboard, saving sign fixed. 16 Python
+suites + `dom_smoke.js` + `dom_summary_multi.js` green; six render variants exercised in jsdom with
+no JS errors. NOT yet merged — preview-deploy and eyeball before it goes near `main`, because the
+client dashboard renders live.)** Three changes, all driven by a real X + Why tender (14 MPANs, 5
+physical sites, Capture Energy recommended).
+
+**1. `rye_fee.chargeable_sites` — charge the flat fee on N of M supply points.** Capture Energy is
+daily-settled wholesale, so RYE charges the SaaS fee on those clients; on X + Why the commercial deal
+was "£90 on 10 of the 14 supply points". There was no way to express that, so it was entered as a
+28.57% whole-portfolio discount — which rendered as a wrong-looking **29% off list** and an annual of
+**£10,801** instead of £10,800 (psm rounded to £64.29, then multiplied back up by 14). New optional
+integer `chargeable_sites` states the count directly: `annual = charged rate × chargeable × 12`,
+exact, and `blendedPerSiteMonth` is derived for display. **Absent, unparseable or out of range ⇒
+every supply point**, i.e. byte-identical to the old payload, so every published link is unaffected.
+No DB migration (it rides inside the `payload` jsonb); the only schema touched is
+`schema/tender.schema.json`.
+- **The two fee paths were deduplicated while doing this.** `build_dashboard._fee_block(rf, n, gross)`
+  is now the single implementation, called by both `_compute_payload` (single fuel) and
+  `_tender_level_charge` (combined). They were copy-pasted before and were already an invitation to
+  drift. Precedence is unchanged: explicit `annual` > `per_site_month` > list less `discount_pct`.
+  The cap only changes the multiplier, so **a per-supply discount and a cap compose** (20% off £90 on
+  10 of 14 ⇒ £72 charged, £8,640/yr, 43% portfolio discount).
+- **`discountPct` changed meaning** — it is now derived from the BLENDED rate against list, i.e. the
+  portfolio discount the client sees. With no cap, blended == charged rate, so it is the same number
+  it always was. The fee **slider** therefore no longer reads `discountPct` for its position: it uses
+  new `feeSliderPct()` (discount off list on the CHARGED rate) so dragging it moves the rate itself,
+  with the portfolio discount as a read-out. `chargeOn()` multiplies by `feeChargedPts(fee)`, not
+  every supply point.
+- **Client-facing wording (Rory's call): show the discount, never the count.** Capped tenders read
+  `29% portfolio discount · equivalent to £64.29 per supply`; uncapped tenders keep exactly the old
+  `29% off list £90/supply point/month`. The count is deliberately NOT on the page — "10 of 14" is a
+  concession to state in the covering email, not a lever for the client to pull. The rejected
+  alternative was "4 of 14 supplies free".
+- **Wizard:** third input on the existing fee row, `in-fee-chargeable`, blank = all. `How RYE is paid`
+  is untouched (still fee | commission) — deliberately NOT a third charge model, so the two levers
+  compose and there is one less branch to hydrate and test. Blank sends no key at all. Validated
+  1 ≤ n ≤ total in `doAssemble` against `totalSupplyPoints()` (distinct mpxn across confirmed
+  extracts); hydrates on Edit. New `tests/test_fee_chargeable.py` (33 checks).
+
+**2. "Site" → "supply" across the client dashboard.** In the data model **one "site" is one MPAN** —
+`sites[]` is deduped on `mpxn` — so X + Why's dashboard said "covers all 14 sites" and "Annual spend
+per site" when the client has 5 sites and 14 supply points. That is wrong on the page, not merely
+ambiguous. Now: the eyebrow and the recommendation card's coverage line say **"supply points"** (the
+full industry term, where it is read once), everything else says **"supply"/"supplies"** (Rory's
+call — shorter reads better in a unit, e.g. `£/supply point/month`, `Annual spend per supply`,
+`Supply-by-supply annual cost`, table header `Supply`). Internal payload keys were deliberately NOT
+renamed (`perSiteMonth`, `netSavingPerSite`, `cSites`) — churn with no benefit.
+**Rejected:** putting a real site count in the hero (`14 supply points · 5 sites`). Rory: RYE's DB
+gives each supply its own name, so there is no reliable way to tell which supplies share a site.
+
+**3. Saving no longer renders as a negative.** The Summary comparison row printed
+`gbpSigned(rec.total − inc.total)`, so a saving showed as **−£32,819** in green. It now reads
+`£32,819` (plain, green) for a saving and `+£68,380` (amber) for an increase, and the row LABEL flips
+saving/increase to match the card directly above it — which had always done this correctly.
+**Scoped to that one row on Rory's explicit instruction.** The other three delta spots keep the old
+arithmetic convention: the cost-breakdown `vs incumbent` column, and both Portfolio matrix deltas.
+Worth knowing those two matrix spots already contradict each other — a per-site saving prints
+`(−£1,262)` in one cell and `+£1,262` in another. Not touched; still open if anyone wants it tidy.
+
+**Prior session (2026-09-14 — market snapshot refresh, fourth edition in six days. 33 Python tests
 + `dom_smoke.js` green; Market Review rendered headless and eyeballed.)** `assets/market_snapshot.json`
 moved to **2026-09-14**. Power spot **153.00 £/MWh (+106.95% 1Y)**. NBP **Oct-26 207.72 p/therm**,
 **Winter 26 211.24**, **Dec 26 213.07**, **Winter 27 130.25**, **Summer 28 81.60**.

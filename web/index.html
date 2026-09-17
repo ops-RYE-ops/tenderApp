@@ -172,12 +172,17 @@
     </div>
     <div class="row" id="fee-fields">
       <div class="field">
-        <span class="label">RYE fee — list price (£/site/month)</span>
+        <span class="label">RYE fee — list price (£/supply point/month)</span>
         <input type="number" id="in-fee-list" value="90" step="1" min="0">
       </div>
       <div class="field">
         <span class="label">RYE fee — discount (%)</span>
         <input type="number" id="in-fee-discount" value="80" step="1" min="0" max="100">
+      </div>
+      <div class="field">
+        <span class="label">RYE fee — chargeable supply points</span>
+        <input type="number" id="in-fee-chargeable" step="1" min="1" placeholder="all">
+        <div class="siteref-sub" id="fee-chargeable-hint">Charge on fewer supply points than the tender covers. Leave blank to charge on all of them.</div>
       </div>
     </div>
     <div class="row hidden" id="commission-fields">
