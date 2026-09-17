@@ -568,11 +568,13 @@ def _compute_payload(tender, resolve, market_data):
         rec = matches[0]
 
     # Optional RYE flat-fee block -> net saving after fees (no commission).
-    # List price defaults to £90/site/month; discount_pct sets the starting
-    # position of the dashboard's adjustable fee control.
+    # List price defaults to GBP 90 per supply point per month; discount_pct
+    # discounts THAT rate, and chargeable_sites sets how many supply points it is
+    # charged on (see _fee_block). The dashboard's fee slider starts at the
+    # discount off list on the charged rate; the portfolio discount the client
+    # sees is derived from the blended figure.
     # The fee renders whenever it's configured — with an incumbent it also shows
-    # the net saving after fee; without one it stands alone as a fee quote (site
-    # count x per-site fee, adjustable via the dashboard's discount slider).
+    # the net saving after fee; without one it stands alone as a fee quote.
     fee = None
     if tender.get("rye_fee"):
         # Net saving only exists when there's an incumbent baseline to net against.
