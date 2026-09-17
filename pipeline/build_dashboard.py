@@ -444,6 +444,57 @@ def _build_cfg(tender, work, tag="", include_charge=True):
     return cfg
 
 
+def _fee_block(rf, n, gross):
+    """RYE's flat SaaS fee -> the dashboard's fee payload.
+
+    `n` is the total number of supply points (meter points) in the tender.
+    `chargeable_sites` lets RYE charge on fewer than all of them (e.g. 10 of 14)
+    WITHOUT back-solving an equivalent portfolio discount: the annual total stays
+    exact, and the client sees the blended per-supply equivalent plus the discount
+    that implies. Absent, unparseable or out of range => every supply point, i.e.
+    exactly the pre-existing behaviour, so every already-published tender is
+    unaffected.
+
+    Precedence is unchanged: explicit `annual` > `per_site_month` > list price
+    less `discount_pct`. The chargeable count only changes the multiplier, so a
+    per-supply discount and a chargeable cap compose.
+    """
+    list_price = rf.get("list_price_site_month", 90.0)
+    try:
+        chargeable = int(rf.get("chargeable_sites"))
+    except (TypeError, ValueError):
+        chargeable = None
+    if chargeable is None or chargeable < 0 or chargeable > n:
+        chargeable = n
+    if rf.get("annual"):
+        annual = rf["annual"]
+        psm = round(annual / (12 * chargeable), 2) if chargeable else 0.0
+    else:
+        psm = rf.get("per_site_month")
+        if psm is None:
+            psm = round(list_price * (1 - rf.get("discount_pct", 0) / 100), 2)
+        annual = psm * chargeable * 12
+    # Blended = what the whole portfolio works out at per supply point. Equal to
+    # psm when every supply point is charged, so the no-cap payload is unchanged.
+    blended = round(annual / (12 * n), 2) if n else 0.0
+    return {
+        "label": rf.get("label", "RYE fee"),
+        "listPerSiteMonth": list_price,
+        "perSiteMonth": psm,
+        "chargeableSites": chargeable,
+        "totalSites": n,
+        "blendedPerSiteMonth": blended,
+        # The discount the client sees: blended against list, so a chargeable cap
+        # shows up here as the portfolio discount it actually is.
+        "discountPct": round((1 - blended / list_price) * 100) if list_price else 0,
+        "annual": round(annual, 2),
+        "netSaving": round(gross - annual, 2) if gross is not None else None,
+        # Per-supply figures are always across ALL supply points - it is the
+        # client's portfolio, not RYE's invoice.
+        "netSavingPerSite": round((gross - annual) / n, 2) if gross is not None else None,
+    }
+
+
 def _compute_payload(tender, resolve, market_data):
     if not tender.get("quotes"):
         raise SystemExit("ERROR: tender config has no 'quotes' entries")
@@ -517,35 +568,18 @@ def _compute_payload(tender, resolve, market_data):
         rec = matches[0]
 
     # Optional RYE flat-fee block -> net saving after fees (no commission).
-    # List price defaults to £90/site/month; discount_pct sets the starting
-    # position of the dashboard's adjustable fee control.
+    # List price defaults to GBP 90 per supply point per month; discount_pct
+    # discounts THAT rate, and chargeable_sites sets how many supply points it is
+    # charged on (see _fee_block). The dashboard's fee slider starts at the
+    # discount off list on the charged rate; the portfolio discount the client
+    # sees is derived from the blended figure.
     # The fee renders whenever it's configured — with an incumbent it also shows
-    # the net saving after fee; without one it stands alone as a fee quote (site
-    # count x per-site fee, adjustable via the dashboard's discount slider).
+    # the net saving after fee; without one it stands alone as a fee quote.
     fee = None
     if tender.get("rye_fee"):
-        rf = tender["rye_fee"]
-        n = len(all_mpxns)
-        list_price = rf.get("list_price_site_month", 90.0)
-        if rf.get("annual"):
-            annual = rf["annual"]
-            psm = round(annual / (12 * n), 2)
-        else:
-            psm = rf.get("per_site_month")
-            if psm is None:
-                psm = round(list_price * (1 - rf.get("discount_pct", 0) / 100), 2)
-            annual = psm * n * 12
         # Net saving only exists when there's an incumbent baseline to net against.
         gross = incumbent["total"] - rec["total"] if incumbent else None
-        fee = {
-            "label": rf.get("label", "RYE fee"),
-            "listPerSiteMonth": list_price,
-            "perSiteMonth": psm,
-            "discountPct": round((1 - psm / list_price) * 100) if list_price else 0,
-            "annual": round(annual, 2),
-            "netSaving": round(gross - annual, 2) if gross is not None else None,
-            "netSavingPerSite": round((gross - annual) / n, 2) if gross is not None else None,
-        }
+        fee = _fee_block(tender["rye_fee"], len(all_mpxns), gross)
 
     # Optional RYE COMMISSION block -> a per-kWh uplift charged INSTEAD of the fee.
     # The client sees a single commission figure plus the unit rate with and without
@@ -693,24 +727,8 @@ def _tender_level_charge(tender, fuel_payloads):
             "perFuel": True,
         }
     if tender.get("rye_fee"):
-        rf = tender["rye_fee"]
-        list_price = rf.get("list_price_site_month", 90.0)
-        if rf.get("annual"):
-            annual = rf["annual"]
-            psm = round(annual / (12 * n), 2)
-        else:
-            psm = rf.get("per_site_month")
-            if psm is None:
-                psm = round(list_price * (1 - rf.get("discount_pct", 0) / 100), 2)
-            annual = psm * n * 12
-        return {
-            "label": rf.get("label", "RYE fee"), "listPerSiteMonth": list_price,
-            "perSiteMonth": psm,
-            "discountPct": round((1 - psm / list_price) * 100) if list_price else 0,
-            "annual": round(annual, 2),
-            "netSaving": round(gross - annual, 2) if gross is not None else None,
-            "netSavingPerSite": round((gross - annual) / n, 2) if gross is not None else None,
-        }, None
+        # Same helper as the single-fuel path so the two cannot drift.
+        return _fee_block(tender["rye_fee"], n, gross), None
     return None, None
 
 
