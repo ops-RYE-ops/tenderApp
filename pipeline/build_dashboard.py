@@ -411,7 +411,8 @@ def _build_cfg(tender, work, tag="", include_charge=True):
     where RYE's charge is applied once at tender level, not per fuel)."""
     sites = {s.get("mpxn"): s for s in tender.get("sites", [])}
     keys = ("client_name", "tender_label", "utility", "day_split", "weekend_split",
-            "charge_basis", "rye_fee", "rye_commission", "recommended", "notes", "expires_at")
+            "charge_basis", "rye_fee", "rye_commission", "recommended", "notes", "expires_at",
+            "show_timeline")
     cfg = {k: tender[k] for k in keys if k in tender}
     if not include_charge:
         cfg.pop("rye_fee", None)
@@ -442,6 +443,100 @@ def _build_cfg(tender, work, tag="", include_charge=True):
                 inc_entry[k] = inc[k]
         cfg["incumbent"] = inc_entry
     return cfg
+
+
+def _timeline_block(rec, incumbent, show):
+    """Month-by-month saving as each supply point moves onto the new contract.
+
+    Supplies in a portfolio rarely all switch on the same day, so the headline
+    annual saving is a RUN RATE that only applies once the last one is live. This
+    block spells out the difference: what lands in the first twelve months, what
+    the run rate is, and what the whole term is worth.
+
+    Per supply the annual saving is (incumbent total - offer total) from the cost
+    engine, divided evenly across twelve months. That flat split is deliberate —
+    we hold no per-site monthly consumption, so shaping it to a seasonal profile
+    would dress an assumption as data. It is footnoted on the tab. The thing the
+    chart is actually showing is WHEN each supply joins, which is exact.
+
+    Returns None unless the operator ticked it AND there is a baseline to measure
+    against — a saving needs something to be a saving against.
+    """
+    if not show or not incumbent or not rec:
+        return None
+    inc_by_mpxn = {s["mpxn"]: s for s in incumbent.get("sites", [])}
+    supplies, notes, undated = [], [], 0
+    for s in rec.get("sites", []):
+        base = inc_by_mpxn.get(s["mpxn"])
+        if not base:
+            continue                      # no baseline for this meter -> no saving to show
+        annual = round(base["total"] - s["total"], 2)
+        start = (s.get("startDate") or "").strip()[:10]
+        try:
+            sd = date.fromisoformat(start) if start else None
+        except ValueError:
+            sd = None
+        if sd is None:
+            undated += 1
+        supplies.append({
+            "name": s["name"], "mpxn": s["mpxn"],
+            "startDate": sd.isoformat() if sd else None,
+            "annualSaving": annual,
+            "monthlySaving": round(annual / 12, 2),
+        })
+    if not supplies:
+        return None
+    if undated:
+        notes.append(f"{undated} supply point{'' if undated == 1 else 's'} had no contract start "
+                     f"date, so {'it is' if undated == 1 else 'they are'} shown as live from the start "
+                     f"of the term.")
+
+    dated = [s for s in supplies if s["startDate"]]
+    first = min((date.fromisoformat(s["startDate"]) for s in dated), default=date.today())
+    start_month = date(first.year, first.month, 1)
+    months_n = _months_from_term(rec.get("term")) or 12
+
+    months = []
+    running = 0.0
+    for i in range(months_n):
+        m = _add_months(start_month, i)
+        nxt = _add_months(start_month, i + 1)
+        live = [s for s in supplies
+                if not s["startDate"] or date.fromisoformat(s["startDate"]) < nxt]
+        monthly = round(sum(s["monthlySaving"] for s in live), 2)
+        running = round(running + monthly, 2)
+        months.append({
+            "iso": m.isoformat()[:7],
+            "label": m.strftime("%b %y"),
+            "monthly": monthly,
+            "cumulative": running,
+            "live": len(live),
+        })
+
+    saving_n = sum(1 for s in supplies if s["annualSaving"] > 0)
+    losing_n = sum(1 for s in supplies if s["annualSaving"] < 0)
+    run_rate = round(sum(s["annualSaving"] for s in supplies), 2)
+    first_year = round(sum(m["monthly"] for m in months[:12]), 2)
+    all_live = max((date.fromisoformat(s["startDate"]) for s in dated), default=None)
+    # Sorted by the date the client will be asked about, then by size.
+    supplies.sort(key=lambda s: (s["startDate"] or "", -s["annualSaving"]))
+    return {
+        "months": months,
+        "supplies": supplies,
+        "termMonths": months_n,
+        "runRateAnnual": run_rate,
+        "firstYear": first_year,
+        "totalOverTerm": months[-1]["cumulative"] if months else 0.0,
+        "allLiveFrom": all_live.isoformat() if all_live else None,
+        "staggered": len({s["startDate"] for s in supplies}) > 1,
+        # A portfolio can net to a saving while individual meters go the other way —
+        # usually a site on a good legacy rate. Counted here so the tab can SAY so
+        # rather than leave the client to find it in the Portfolio tab.
+        "savingCount": saving_n,
+        "losingCount": losing_n,
+        "supplyCount": len(supplies),
+        "notes": notes,
+    }
 
 
 def _fee_block(rf, n, gross):
@@ -575,6 +670,8 @@ def _compute_payload(tender, resolve, market_data):
     # sees is derived from the blended figure.
     # The fee renders whenever it's configured — with an incumbent it also shows
     # the net saving after fee; without one it stands alone as a fee quote.
+    timeline = _timeline_block(rec, incumbent, tender.get("show_timeline"))
+
     fee = None
     if tender.get("rye_fee"):
         # Net saving only exists when there's an incumbent baseline to net against.
@@ -680,6 +777,7 @@ def _compute_payload(tender, resolve, market_data):
         "bestId": best["id"],
         "recommendedId": rec["id"],
         "fee": fee,
+        "timeline": timeline,
         "components": [
             {"key": k, "label": lbl} for k, lbl in COMPONENT_LABELS
             if any(o["totals"][k] for o in offers + ([incumbent] if incumbent else []))

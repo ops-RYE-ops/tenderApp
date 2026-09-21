@@ -126,6 +126,7 @@ td .sub { display: block; font-size: 10px; color: var(--t4); font-weight: 400; }
 tr:hover td { background: rgba(255,255,255,0.015); }
 td.best { color: var(--rye-green); }
 td.total { color: var(--t1); }
+.total-row td { border-top: 1px solid var(--border-strong); font-weight: 500; color: var(--t1); }
 tr.incumbent-row td { color: var(--t3); }
 tr.incumbent-row td.name { color: var(--t2); }
 
@@ -247,7 +248,8 @@ const primaryIndex = RAW.primaryIndex || 0;
 let activePortfolioFuel = primaryIndex;
 /* Module state for the ACTIVE fuel view, (re)assigned by setState() on every render. */
 let TENDER, allOffers, rec, fee, commission, inc, savings, baseline,
-    isBenchmark, baseLabel, baseLc, baseChip, totalEac, comps, hasInc, hasMarket;
+    isBenchmark, baseLabel, baseLc, baseChip, totalEac, comps, hasInc, hasMarket,
+    timeline, hasTimeline;
 
 const gbp = v => (v < 0 ? "−£" : "£") + Math.round(Math.abs(v)).toLocaleString("en-GB");
 const gbpSigned = v => (v > 0 ? "+" : v < 0 ? "−" : "") + "£" + Math.round(Math.abs(v)).toLocaleString("en-GB");
@@ -309,6 +311,8 @@ function setState(view) {
   comps = TENDER.components;
   hasInc = !!inc;
   hasMarket = !!(TENDER.market && (TENDER.market.power || TENDER.market.gas));
+  timeline = TENDER.timeline || null;
+  hasTimeline = !!(timeline && timeline.months && timeline.months.length);
 }
 
 document.title = `${RAW.client} \u2014 ${RAW.label} \u2014 RYE`;
@@ -900,9 +904,11 @@ function render() {
     + (!hasInc ? buildBars({ idSuffix: "-pf" }) : "")
     + buildBreakdown() + buildSiteMatrix() + buildRateBooks();
   const marketPane = hasMarket ? buildMarketPane() : "";
+  const timelinePane = hasTimeline ? buildTimelinePane() : "";
   const tabs = [];
   if (hasInc) tabs.push(["savings", "Summary"]);
   tabs.push(["portfolio", "Portfolio"]);
+  if (hasTimeline) tabs.push(["timeline", "Savings timeline"]);
   if (hasMarket) tabs.push(["market", "Market Review"]);
   const defaultTab = hasInc ? "savings" : "portfolio";
   let html = buildHero() + buildWarnings();
@@ -912,11 +918,13 @@ function render() {
   }
   if (hasInc) html += `<div id="tab-savings" class="tabpane"${defaultTab === "savings" ? "" : " hidden"}>${savingsPane}</div>`;
   html += `<div id="tab-portfolio" class="tabpane"${defaultTab === "portfolio" ? "" : " hidden"}>${portfolioPane}</div>`;
+  if (hasTimeline) html += `<div id="tab-timeline" class="tabpane" hidden>${timelinePane}</div>`;
   if (hasMarket) html += `<div id="tab-market" class="tabpane" hidden>${marketPane}</div>`;
   html += buildFooter();
   document.getElementById("app").innerHTML = html;
   wireEvents();
   if (hasMarket) renderMarket();
+  if (hasTimeline) renderTimeline();
 }
 
 /* ---- Tab switching ---- */
@@ -1052,6 +1060,178 @@ if (fee) {
   });
   apply(fee.perSiteMonth);
 }
+}
+
+
+/* ================= Savings timeline =================
+   Supplies in a portfolio rarely all switch on the same day, so the headline
+   annual figure is a RUN RATE. This tab shows what actually lands, month by
+   month, as each supply point moves across — and the gap between the two.
+   TWO charts, never one with two y-axes: monthly rate and cumulative total are
+   different scales and a dual axis is the classic way to mislead with both. */
+function tlWord() { return timeline.runRateAnnual >= 0 ? "saving" : "increase"; }
+function tlColor() { return timeline.runRateAnnual >= 0 ? "var(--rye-green)" : "var(--rye-amber)"; }
+function tlTone() { return timeline.runRateAnnual >= 0 ? "pos" : "warn"; }
+function tlAccent() { return timeline.runRateAnnual >= 0 ? "accent-green" : "accent-amber"; }
+function tlMonthLabel(m) { return m.label; }
+/* Axis ticks land on round numbers (1 / 2 / 2.5 / 5 x 10^n), not on whatever the
+   data max happens to divide into — "1,881 / 1,410 / 940" reads like a rounding
+   error, "2,000 / 1,500 / 1,000" reads like a scale. */
+function tlNice(v, ticks) {
+  if (!(v > 0)) return { max: ticks, step: 1 };
+  const raw = v / ticks, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
+  const step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
+  return { max: step * ticks, step };
+}
+
+function buildTimelinePane() {
+  const t = timeline, w = tlWord(), lead = isBenchmark ? "Indicative" : "Forecasted";
+  const months = t.months;
+  const table = t.supplies.map(s => `<tr>
+      <td class="name">${esc(s.name)}<span class="sub">${esc(s.mpxn)}</span></td>
+      <td>${s.startDate ? fmtMonth(s.startDate) : "—"}</td>
+      <td class="${s.monthlySaving >= 0 ? "best" : "warn"}">${gbp(Math.abs(s.monthlySaving))}</td>
+      <td class="${s.annualSaving >= 0 ? "best" : "warn"}">${gbp(Math.abs(s.annualSaving))}</td>
+    </tr>`).join("");
+
+  return `<section>
+    ${t.staggered || t.losingCount ? `<p class="subtitle" style="margin:0 0 20px;max-width:760px">
+      ${t.staggered ? `Your incumbent contracts end on different dates. Below is how ${w}s accrue as each
+        RYE contract goes live. The full monthly ${w} applies once the last supply point has
+        switched${t.allLiveFrom ? `, in ${fmtMonth(t.allLiveFrom)}` : ""}.` : ""}
+      ${t.losingCount ? `${t.savingCount} of the ${t.supplyCount} supply points
+        ${t.savingCount === 1 ? "saves" : "save"} on the new contract;
+        ${t.losingCount === 1 ? "one shows" : `${t.losingCount} show`} an increase, typically where a
+        meter is already on a competitive legacy rate. All ${t.supplyCount} are included in every figure
+        below.` : ""}
+    </p>` : ""}
+    ${isBenchmark ? `<div class="notice"><span class="chip warning">benchmark</span>
+      Measured against UK market average costs rather than your actual contract, so these
+      figures are indicative.</div>` : ""}
+
+    <div class="section-label">What this is worth</div>
+    <div class="kpi-row">
+      <div class="card ${tlAccent()}">
+        <div class="kpi-label">${lead} annual ${w} — run rate</div>
+        <div class="kpi-value ${tlTone()}">${gbp(Math.abs(t.runRateAnnual))}</div>
+        <div class="kpi-sub">once all ${t.supplies.length} supply points are on contract</div>
+      </div>
+      <div class="card ${tlAccent()}">
+        <div class="kpi-label">${w === "saving" ? "Saving" : "Increase"} in the first 12 months</div>
+        <div class="kpi-value ${tlTone()}">${gbp(Math.abs(t.firstYear))}</div>
+        <div class="kpi-sub">${t.staggered
+          ? `${Math.round(Math.abs(t.firstYear) / Math.abs(t.runRateAnnual || 1) * 100)}% of the run rate — supplies join through the year`
+          : "all supply points live from the start"}</div>
+      </div>
+      <div class="card ${tlAccent()}">
+        <div class="kpi-label">Total over the ${t.termMonths}-month term</div>
+        <div class="kpi-value ${tlTone()}">${gbp(Math.abs(t.totalOverTerm))}</div>
+        <div class="kpi-sub">cumulative, to the end of the contract</div>
+      </div>
+    </div>
+
+    <div class="section-label" style="margin-top:26px">${lead} ${w} per month (£)</div>
+    <svg id="tl-bars" class="mchart" viewBox="0 0 1040 210"></svg>
+
+    <div class="section-label" style="margin-top:22px">Cumulative ${w} (£)</div>
+    <svg id="tl-cum" class="mchart" viewBox="0 0 1040 210"></svg>
+
+    <div class="section-label" style="margin-top:26px">When each supply point moves</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Supply</th><th>Moves onto contract</th><th>Per month</th><th>Per year</th></tr></thead>
+      <tbody>${table}
+        <tr class="total-row">
+          <td class="name">All ${t.supplyCount} supply points</td><td></td>
+          <td class="${t.runRateAnnual >= 0 ? "best" : "warn"}">${gbp(Math.abs(t.runRateAnnual / 12))}</td>
+          <td class="${t.runRateAnnual >= 0 ? "best" : "warn"}">${gbp(Math.abs(t.runRateAnnual))}</td>
+        </tr></tbody>
+    </table></div>
+
+    <ul class="assumptions">
+      <li>Each supply point's annual ${w} is spread evenly across the twelve months it is live. We hold
+        annual consumption per meter, not monthly, so the month-to-month shape of your usage is not
+        modelled — the steps in the chart are the dates supplies move across, which are exact.</li>
+      ${t.notes.map(n => `<li>${esc(n)}</li>`).join("")}
+      <li>Figures assume the quoted rates and your current annual consumption, on the same
+        standardised basis as the rest of this page.</li>
+    </ul>
+  </section>`;
+}
+
+const fmtMonth = iso => {
+  const d = new Date(String(iso).slice(0, 10) + "T00:00:00");
+  return isNaN(d) ? String(iso) : d.toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+};
+
+/* Bars: one series, so no legend — the section label names it. Recessive grid,
+   direct label on the peak only, native <title> for hover. */
+function tlBars(id, months, W, H) {
+  const svg = document.getElementById(id);
+  if (!svg) return;
+  const padL = 46, padR = 14, padT = 12, padB = 24;
+  const vals = months.map(m => Math.abs(m.monthly));
+  const max = tlNice(Math.max(...vals, 1), 4).max;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const bw = Math.max(2, innerW / months.length - 2);
+  const Y = v => padT + (1 - v / max) * innerH;
+  let s = "";
+  for (let i = 0; i <= 4; i++) {
+    const val = max * i / 4, y = Y(val);
+    s += `<line class="gridln" x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}"/>`;
+    s += `<text class="axlabel" x="${padL - 6}" y="${y + 3}" text-anchor="end">${Math.round(val).toLocaleString("en-GB")}</text>`;
+  }
+  const everyNth = Math.max(1, Math.round(months.length / 8));
+  let peak = 0;
+  months.forEach((m, i) => { if (Math.abs(m.monthly) > Math.abs(months[peak].monthly)) peak = i; });
+  months.forEach((m, i) => {
+    const v = Math.abs(m.monthly), x = padL + i * innerW / months.length, y = Y(v);
+    s += `<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(0, padT + innerH - y)}" rx="1"
+            fill="${tlColor()}" opacity="0.85"><title>${esc(m.label)}: £${Math.round(v).toLocaleString("en-GB")}/month · ${m.live} supply point${m.live === 1 ? "" : "s"} live</title></rect>`;
+    if (i % everyNth === 0) s += `<text class="axlabel" x="${x + bw / 2}" y="${H - 7}" text-anchor="middle">${esc(m.label)}</text>`;
+  });
+  const pv = Math.abs(months[peak].monthly);
+  s += `<text class="mk" x="${padL + peak * innerW / months.length + bw / 2}" y="${Y(pv) - 6}" text-anchor="middle" fill="var(--t1)">£${Math.round(pv).toLocaleString("en-GB")}</text>`;
+  svg.innerHTML = s;
+}
+
+/* Cumulative: its own chart with its own axis — never a second y-scale on the bars. */
+function tlCum(id, months, W, H) {
+  const svg = document.getElementById(id);
+  if (!svg) return;
+  const padL = 46, padR = 14, padT = 12, padB = 24;
+  const vals = months.map(m => Math.abs(m.cumulative));
+  const max = tlNice(Math.max(...vals, 1), 4).max;
+  const innerW = W - padL - padR, innerH = H - padT - padB, n = months.length;
+  const X = i => padL + (n === 1 ? innerW / 2 : i * innerW / (n - 1));
+  const Y = v => padT + (1 - v / max) * innerH;
+  let s = "";
+  for (let i = 0; i <= 4; i++) {
+    const val = max * i / 4, y = Y(val);
+    s += `<line class="gridln" x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}"/>`;
+    s += `<text class="axlabel" x="${padL - 6}" y="${y + 3}" text-anchor="end">${Math.round(val).toLocaleString("en-GB")}</text>`;
+  }
+  let area = `M ${X(0)} ${Y(vals[0])}`;
+  vals.forEach((v, i) => area += ` L ${X(i)} ${Y(v)}`);
+  area += ` L ${X(n - 1)} ${padT + innerH} L ${X(0)} ${padT + innerH} Z`;
+  s += `<path d="${area}" fill="${tlColor()}" opacity="0.12"/>`;
+  let line = "";
+  vals.forEach((v, i) => line += (i ? " L " : "M ") + X(i) + " " + Y(v));
+  s += `<path d="${line}" fill="none" stroke="${tlColor()}" stroke-width="2" stroke-linejoin="round"/>`;
+  const everyNth = Math.max(1, Math.round(n / 8));
+  months.forEach((m, i) => {
+    if (i % everyNth === 0) s += `<text class="axlabel" x="${X(i)}" y="${H - 7}" text-anchor="middle">${esc(m.label)}</text>`;
+    s += `<circle cx="${X(i)}" cy="${Y(vals[i])}" r="7" fill="transparent"><title>${esc(m.label)}: £${Math.round(vals[i]).toLocaleString("en-GB")} cumulative</title></circle>`;
+  });
+  const last = vals[n - 1];
+  s += `<circle cx="${X(n - 1)}" cy="${Y(last)}" r="3.5" fill="${tlColor()}" stroke="#000" stroke-width="1.5"/>`;
+  s += `<text class="mk" x="${X(n - 1) - 6}" y="${Y(last) - 9}" text-anchor="end" fill="var(--t1)">£${Math.round(last).toLocaleString("en-GB")}</text>`;
+  svg.innerHTML = s;
+}
+
+function renderTimeline() {
+  if (!hasTimeline) return;
+  tlBars("tl-bars", timeline.months, 1040, 210);
+  tlCum("tl-cum", timeline.months, 1040, 210);
 }
 
 /* ================= Market context charts ================= */

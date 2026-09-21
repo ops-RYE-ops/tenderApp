@@ -529,6 +529,8 @@ def assemble(extracts, meta, incumbent=None):
         # Commission is charged INSTEAD of the flat fee; don't stamp both.
         tender["rye_commission"] = rye_commission
     else:
+        if meta.get("show_timeline"):
+            tender["show_timeline"] = True
         rye_fee = _build_rye_fee(meta)
         if rye_fee is not None:
             tender["rye_fee"] = rye_fee

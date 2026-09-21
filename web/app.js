@@ -108,6 +108,7 @@ function resetWizard() {
   setVal("in-commission-uplift", "0.30");
   setChk("in-commission-included", false);
   setChk("in-benchmark-on", false);
+  setChk("in-show-timeline", false);
   setVal("in-benchmark-unit", "");
   setVal("in-benchmark-standing", "");
   setVal("in-benchmark-gas-unit", "");
@@ -809,6 +810,8 @@ function assembleMeta() {
     if (!isNaN(feeChargeable) && feeChargeable > 0) meta.fee_chargeable_sites = feeChargeable;
   }
 
+  if ($("in-show-timeline") && $("in-show-timeline").checked) meta.show_timeline = true;
+
   const exp = $("in-expires").value;
   if (exp) meta.expires_at = exp;
 
@@ -1139,6 +1142,7 @@ function hydrateFromTender(p) {
   }
   onChargeModelChange();
 
+  if ($("in-show-timeline")) $("in-show-timeline").checked = !!p.show_timeline;
   $("in-expires").value = dateInputValue(p.expires_at);
   $("in-notes").value = (p.notes || []).join("\n");
 
