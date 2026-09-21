@@ -138,8 +138,28 @@ def test_increase():
     check("every month is negative", all(m["monthly"] < 0 for m in tl["months"]))
 
 
+def test_mixed_portfolio():
+    print("\n5) a portfolio that nets to a saving with some meters going the other way")
+    starts = ["2026-10-01", "2026-10-01", "2027-01-01", "2027-04-01"]
+    t = tender(starts)
+    # two meters sit on a good legacy rate and come out dearer on the new contract
+    for i in (1, 3):
+        t["incumbent"]["lines"][i]["unitRate"] = 18.90
+        t["incumbent"]["lines"][i]["standingCharge"] = 60.0
+    tl = bd.build_render_payload(t)["timeline"]
+    check("counts the winners", tl["savingCount"] == 2, tl["savingCount"])
+    check("counts the losers", tl["losingCount"] == 2, tl["losingCount"])
+    check("counts everything", tl["supplyCount"] == 4)
+    check("losers are NOT dropped from the supply list", len(tl["supplies"]) == 4)
+    check("run rate is the NET of both", 
+          abs(tl["runRateAnnual"] - sum(s["annualSaving"] for s in tl["supplies"])) < 0.05,
+          f'{tl["runRateAnnual"]:,.2f}')
+    check("a losing meter keeps its negative sign for the template to flip",
+          any(s["annualSaving"] < 0 for s in tl["supplies"]))
+
+
 def test_missing_start():
-    print("\n5) a supply with no start date is surfaced, not silently dropped")
+    print("\n6) a supply with no start date is surfaced, not silently dropped")
     tl = bd.build_render_payload(
         tender(["2026-10-01", "", "2027-01-01"]))["timeline"]
     check("still counted as a supply", len(tl["supplies"]) == 3)
@@ -150,7 +170,7 @@ def test_missing_start():
 
 
 def test_rendered():
-    print("\n6) rendered HTML — the tab is there and self-hides")
+    print("\n7) rendered HTML — the tab is there and self-hides")
     html = bd.render_tender(tender(STAGGERED))
     os.makedirs(WORK, exist_ok=True)
     with open(FIXTURE, "w", encoding="utf-8") as fh:
@@ -171,7 +191,7 @@ def test_rendered():
 
 
 def test_dom():
-    print("\n7) jsdom — tab, charts, schedule, tones (optional)")
+    print("\n8) jsdom — tab, charts, schedule, tones (optional)")
     if not os.path.isdir(os.path.join(ROOT, "node_modules", "jsdom")):
         print("  SKIP  node_modules/jsdom not installed (npm i jsdom to run)")
         return
@@ -187,7 +207,8 @@ def test_dom():
 
 def main():
     test_gating(); test_staggered(); test_synchronised()
-    test_increase(); test_missing_start(); test_rendered(); test_dom()
+    test_increase(); test_mixed_portfolio(); test_missing_start()
+    test_rendered(); test_dom()
     if FAILURES:
         print(f"\n{len(FAILURES)} CHECK(S) FAILED")
         return 1

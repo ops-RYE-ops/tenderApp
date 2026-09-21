@@ -513,6 +513,8 @@ def _timeline_block(rec, incumbent, show):
             "live": len(live),
         })
 
+    saving_n = sum(1 for s in supplies if s["annualSaving"] > 0)
+    losing_n = sum(1 for s in supplies if s["annualSaving"] < 0)
     run_rate = round(sum(s["annualSaving"] for s in supplies), 2)
     first_year = round(sum(m["monthly"] for m in months[:12]), 2)
     all_live = max((date.fromisoformat(s["startDate"]) for s in dated), default=None)
@@ -527,6 +529,12 @@ def _timeline_block(rec, incumbent, show):
         "totalOverTerm": months[-1]["cumulative"] if months else 0.0,
         "allLiveFrom": all_live.isoformat() if all_live else None,
         "staggered": len({s["startDate"] for s in supplies}) > 1,
+        # A portfolio can net to a saving while individual meters go the other way —
+        # usually a site on a good legacy rate. Counted here so the tab can SAY so
+        # rather than leave the client to find it in the Portfolio tab.
+        "savingCount": saving_n,
+        "losingCount": losing_n,
+        "supplyCount": len(supplies),
         "notes": notes,
     }
 

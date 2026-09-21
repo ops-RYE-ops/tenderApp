@@ -126,6 +126,7 @@ td .sub { display: block; font-size: 10px; color: var(--t4); font-weight: 400; }
 tr:hover td { background: rgba(255,255,255,0.015); }
 td.best { color: var(--rye-green); }
 td.total { color: var(--t1); }
+.total-row td { border-top: 1px solid var(--border-strong); font-weight: 500; color: var(--t1); }
 tr.incumbent-row td { color: var(--t3); }
 tr.incumbent-row td.name { color: var(--t2); }
 
@@ -1073,6 +1074,15 @@ function tlColor() { return timeline.runRateAnnual >= 0 ? "var(--rye-green)" : "
 function tlTone() { return timeline.runRateAnnual >= 0 ? "pos" : "warn"; }
 function tlAccent() { return timeline.runRateAnnual >= 0 ? "accent-green" : "accent-amber"; }
 function tlMonthLabel(m) { return m.label; }
+/* Axis ticks land on round numbers (1 / 2 / 2.5 / 5 x 10^n), not on whatever the
+   data max happens to divide into — "1,881 / 1,410 / 940" reads like a rounding
+   error, "2,000 / 1,500 / 1,000" reads like a scale. */
+function tlNice(v, ticks) {
+  if (!(v > 0)) return { max: ticks, step: 1 };
+  const raw = v / ticks, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
+  const step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
+  return { max: step * ticks, step };
+}
 
 function buildTimelinePane() {
   const t = timeline, w = tlWord(), lead = isBenchmark ? "Indicative" : "Forecasted";
@@ -1085,10 +1095,16 @@ function buildTimelinePane() {
     </tr>`).join("");
 
   return `<section>
-    ${t.staggered ? `<div class="notice"><span class="chip warning">note</span>
-      Your supply points move onto the new contract on different dates, so the full
-      ${w} rate only applies once the last one is live${t.allLiveFrom ? ` in ${fmtMonth(t.allLiveFrom)}` : ""}.
-      The figures below are what actually lands.</div>` : ""}
+    ${t.staggered || t.losingCount ? `<p class="subtitle" style="margin:0 0 20px;max-width:760px">
+      ${t.staggered ? `Your incumbent contracts end on different dates. Below is how ${w}s accrue as each
+        RYE contract goes live. The full monthly ${w} applies once the last supply point has
+        switched${t.allLiveFrom ? `, in ${fmtMonth(t.allLiveFrom)}` : ""}.` : ""}
+      ${t.losingCount ? `${t.savingCount} of the ${t.supplyCount} supply points
+        ${t.savingCount === 1 ? "saves" : "save"} on the new contract;
+        ${t.losingCount === 1 ? "one shows" : `${t.losingCount} show`} an increase, typically where a
+        meter is already on a competitive legacy rate. All ${t.supplyCount} are included in every figure
+        below.` : ""}
+    </p>` : ""}
     ${isBenchmark ? `<div class="notice"><span class="chip warning">benchmark</span>
       Measured against UK market average costs rather than your actual contract, so these
       figures are indicative.</div>` : ""}
@@ -1115,15 +1131,20 @@ function buildTimelinePane() {
     </div>
 
     <div class="section-label" style="margin-top:26px">${lead} ${w} per month (£)</div>
-    <svg id="tl-bars" viewBox="0 0 720 190" preserveAspectRatio="none" style="width:100%;height:190px"></svg>
+    <svg id="tl-bars" class="mchart" viewBox="0 0 1040 210"></svg>
 
     <div class="section-label" style="margin-top:22px">Cumulative ${w} (£)</div>
-    <svg id="tl-cum" viewBox="0 0 720 190" preserveAspectRatio="none" style="width:100%;height:190px"></svg>
+    <svg id="tl-cum" class="mchart" viewBox="0 0 1040 210"></svg>
 
     <div class="section-label" style="margin-top:26px">When each supply point moves</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Supply</th><th>Moves onto contract</th><th>Per month</th><th>Per year</th></tr></thead>
-      <tbody>${table}</tbody>
+      <tbody>${table}
+        <tr class="total-row">
+          <td class="name">All ${t.supplyCount} supply points</td><td></td>
+          <td class="${t.runRateAnnual >= 0 ? "best" : "warn"}">${gbp(Math.abs(t.runRateAnnual / 12))}</td>
+          <td class="${t.runRateAnnual >= 0 ? "best" : "warn"}">${gbp(Math.abs(t.runRateAnnual))}</td>
+        </tr></tbody>
     </table></div>
 
     <ul class="assumptions">
@@ -1149,7 +1170,7 @@ function tlBars(id, months, W, H) {
   if (!svg) return;
   const padL = 46, padR = 14, padT = 12, padB = 24;
   const vals = months.map(m => Math.abs(m.monthly));
-  const max = Math.max(...vals, 1) * 1.1;
+  const max = tlNice(Math.max(...vals, 1), 4).max;
   const innerW = W - padL - padR, innerH = H - padT - padB;
   const bw = Math.max(2, innerW / months.length - 2);
   const Y = v => padT + (1 - v / max) * innerH;
@@ -1179,7 +1200,7 @@ function tlCum(id, months, W, H) {
   if (!svg) return;
   const padL = 46, padR = 14, padT = 12, padB = 24;
   const vals = months.map(m => Math.abs(m.cumulative));
-  const max = Math.max(...vals, 1) * 1.08;
+  const max = tlNice(Math.max(...vals, 1), 4).max;
   const innerW = W - padL - padR, innerH = H - padT - padB, n = months.length;
   const X = i => padL + (n === 1 ? innerW / 2 : i * innerW / (n - 1));
   const Y = v => padT + (1 - v / max) * innerH;
@@ -1209,8 +1230,8 @@ function tlCum(id, months, W, H) {
 
 function renderTimeline() {
   if (!hasTimeline) return;
-  tlBars("tl-bars", timeline.months, 720, 190);
-  tlCum("tl-cum", timeline.months, 720, 190);
+  tlBars("tl-bars", timeline.months, 1040, 210);
+  tlCum("tl-cum", timeline.months, 1040, 210);
 }
 
 /* ================= Market context charts ================= */

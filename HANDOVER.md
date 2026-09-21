@@ -76,6 +76,43 @@ Market Review. **GOTCHA that cost a debug cycle:** `_compute_payload` receives t
 `_build_cfg`, not the tender, so a new tender-level key must be added to that function's `keys` tuple or
 it silently never arrives.
 
+**MIXED PORTFOLIOS — WE SHOW THE LOSERS, DELIBERATELY (decided with Rory).** Rory asked whether meters
+that come out DEARER could be dropped from the schedule table while staying in the summary totals, since
+a portfolio can net to a strong saving with one or two meters going the other way. **Answer: no.** The
+Portfolio tab already lists every site incumbent-vs-offer, so one tab would say seven supply points and
+the other list five; the table column would stop reconciling with the cards above it; and the footer of
+every dashboard claims RYE works for the client, not the supplier. Instead the tab **names it first**, in the intro line.
+Volunteering the weakness is stronger than hiding it: it shows every meter was priced rather than
+cherry-picked. Payload carries `savingCount`,
+`losingCount`, `supplyCount`; the table gained a **total row** so the column reconciles with the cards.
+
+**COPY — Rory rewrote both intro lines, twice. Keep this register.** The first cut put the staggered
+explanation in an amber `.notice` chip block reading "Your supply points move onto the new contract on
+different dates, so the full saving rate only applies once the last one is live...". Too wordy and too
+alarming for something that is just context. It is now a **plain `.subtitle` paragraph at the top of the
+pane, no chip**, reading: *"Your incumbent contracts end on different dates. Below is how savings accrue
+as each RYE contract goes live. The full monthly saving applies once the last supply point has switched,
+in Jul 2027."* The mixed-portfolio disclosure folds into the SAME paragraph rather than sitting as a
+second block. **The word "dearer" was rejected** — the rest of the dashboard says "increase" when a
+figure goes the wrong way (`saveWord()`), so the copy says "show an increase" for consistency, and
+"typically where a meter is already on a competitive legacy rate" rather than "a good legacy rate".
+Only the benchmark caveat still uses an amber `.notice`, because that one IS a warning.
+
+**AXIS TICKS ARE ROUNDED, NOT DERIVED FROM THE DATA MAX.** First cut scaled to `max * 1.1` and sliced it
+into four, producing "1,881 / 1,410 / 940 / 470" — which reads like a rounding error rather than a scale.
+`tlNice(v, ticks)` snaps the step to 1 / 2 / 2.5 / 5 x 10^n, so the same chart now reads
+"2,000 / 1,500 / 1,000 / 500". Guarded in `dom_timeline.js`.
+
+**STRETCHED TEXT — the bug Rory caught on the preview.** The first cut set
+`preserveAspectRatio="none"` with `style="width:100%"`, which stretches the viewBox horizontally to the
+container and takes every glyph with it. The Market Review charts have always used a plain `viewBox` plus
+the shared `.mchart` class (`width:100%; height:auto`) and scale uniformly — a sizing contract that
+already existed in the file and should have been reused rather than reinvented. Now matched, at
+1040x210 like `pchart`. `dom_timeline.js` fails if anyone reintroduces `preserveAspectRatio` or drops
+`.mchart`. The apparent DIP in the cumulative line on that same screenshot was the stretch distorting it,
+not a data fault — the drawn path's y-coordinates were verified monotonic, and there is now a permanent
+check asserting that on the SVG geometry rather than on the payload.
+
 **KNOWN LIMITATION — single-fuel only.** The timeline is emitted from the single-fuel payload; the
 combined gas+electricity path (`build_render_payload`'s MULTI branch) does not build one, so ticking the
 box on a combined tender produces no tab. The wizard hint says so. Doing it properly means one
