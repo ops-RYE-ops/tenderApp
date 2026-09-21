@@ -34,6 +34,126 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
+**Latest session (2026-09-18 — market snapshot refresh, fifth edition in ten days. Straight to `main`
+per the standing rule that only a snapshot refresh skips the branch. Market Review rendered headless
+and eyeballed; no JS errors.)** `assets/market_snapshot.json` moved to **2026-09-18**. Power spot
+**147.31 £/MWh (+93.83% 1Y**, down from +106.95%). NBP **Oct 26 197.06 p/therm (+3.319% on the day)**,
+**Nov 26 199.45**, **Dec 26 200.75**, **Jan 27 200.98**, **Winter 26 197.50**, **Mar 27 192.28**,
+**May 27 138.50**, **Summer 27 134.01**, **Winter 27 129.00**.
+
+**⚠ THIS EDITION REVERSES THE 14 SEP CONCLUSION, WHICH ITSELF REVERSED THE 10 SEP ONE.** On 14 Sep the
+Saudi outage had concentrated in the prompt and the term discount WIDENED to 38.3%. It has now narrowed
+back to **34.7%** (Winter 26 197.50 vs Winter 27 129.00), because reports on 17 Sep that Saudi Arabia is
+working to restart the East-West pipeline took the outage premium back out of the front while 2027 barely
+moved. **The mechanism from 14 Sep, running in reverse — a physical outage prices into the prompt, and so
+does its relief.** Two editions have now confirmed it, so it is worth treating as the rule rather than an
+observation. The 24-month argument still holds on a 34.7% step-down, just less emphatically.
+
+**DON'T CALL THIS A MARKET TURN — Rory's read, pushed back on.** The week fell (front month 207.72 →
+197.06, −5.1%), but Oct 26 is **+0.8% above the 195.59 logged on 9 Sep**, which that edition called a
+fresh three-year high, and the whole front of the board was **up 2.5–3.6% on 18 Sep itself**. A four-day
+spike unwound; a downtrend did not start. The structural fact underneath it, and the strongest line in the
+edition: **European gas storage ≈68% of capacity, near two-decade lows**, after disrupted Gulf LNG and a
+record-hot summer, with Asian competition for cargoes still to come. That is why Friday bounced.
+
+**THE ANGLE THIS EDITION LANDS ON — SUPPLIER COMPETITION, NOT A CURVE CALL (Rory's, and the best of the
+three we tried).** Wholesale sets the floor, not the price the client pays. High prices have slowed
+switching right across the market, but suppliers still have books to fill and the one lever they control is
+their own margin — so acquisition pricing is keen and the spread between the best and worst offer on the
+same meters is unusually wide. **That argument is more robust than anything on the ICE board because it
+holds whichever way the curve moves next**, and it points the client at the comparison table on their own
+dashboard as the evidence.
+**It is NOT externally sourceable** — a search turned up only broker SEO, no public non-domestic switching
+data. So it is deliberately worded as RYE's first-party observation ("across the tenders we are running
+now"), never as a market statistic with an implied citation.
+**AND THE CLAIM DELIBERATELY RESTS ON THE SPREAD, NOT ON FALLING RATES.** Rory's evidence was a tender
+re-quoted two days apart where the average effective rate fell **0.6 p/kWh**, plus anecdote from suppliers'
+TPI managers. **THE TERM CHANGES THE ANSWER — the first pass at this, using the front month, was WRONG.**
+The re-quote was a **24-MONTH** tender, so the front month is the wrong benchmark. Over 14→18 Sep the fall
+was concentrated entirely in the prompt (Winter 26 **−6.5%**, Summer 27 **−1.6%**, Winter 27 **−1.0%**,
+Summer 28 no print), so blending in the back end **damps** the move rather than amplifying it — a 12-month
+blend fell 4.8%, a 24-month blend only **3.2%**. (Rory's own reading was that the far months dragged the
+price down; they did the opposite. Same rule as the last two editions: relief from a physical outage prices
+into the PROMPT.) Converting each blend through a ~50% CCGT, winter-weighted 55/45:
+
+| Contract | wholesale-equivalent fall | observed | unexplained |
+|---|---|---|---|
+| 12-month | 0.585 p/kWh | −0.600 | 0.015p — nothing there |
+| **24-month** | **0.316 p/kWh** | −0.600 | **0.284p** |
+
+So on the 24-month tender roughly **HALF the 0.6p is not explained by wholesale**, and margin compression
+is the obvious candidate. Caveats: the gas curve is a proxy for a power contract, and a supplier
+prices off its own hedge book rather than the screen. **The Summer 28 caveat has since been RETIRED** —
+Rory supplied **Winter 28 at 89.50** off the same board (below the fold of his screenshot). 89.50 sits
+**+9.7% over 81.60**, a normal winter-over-summer spread, so Summer 28 had not collapsed and the ~0.284p
+stands.
+
+**WINTER 28 IS NOT IN A 24-MONTH CONTRACT — mechanism correction.** Rory read 89.50 as "helping" a 24m
+fixed to **30/09/28**. It is not in the blend: Winter 28 delivers **Oct 28 – Mar 29**, starting the day
+after that contract ends. A 24m from 01/10/26 buys exactly Winter 26 + Summer 27 + Winter 27 + Summer 28.
+Winter 28 is a **36-month** talking point and a cross-check on Summer 28, nothing more. What IS defensible with nothing to isolate is the **same-day spread**: two suppliers quoting
+the same meters on the same day face identical wholesale, so any gap between them is margin, hedging and
+risk appetite. That is what the published sentence claims, and the client can verify it in the comparison
+table on their own dashboard.
+**Open, and worth doing:** every quote carries `added_at`, so `margin delta = rate move − wholesale-
+equivalent move over the same dates` is computable across RYE's own book. That would turn the anecdote
+into a number and make the strongest version of this argument publishable. Keep that wording discipline in future
+editions: first-party intelligence is legitimate and valuable, dressing it as a published fact is not.
+Commentary ran to **276 words**, the longest yet, because this argument needs the wholesale context before
+it lands.
+
+**NEGATIVE DAY-AHEAD PRICES ARE NOT A CLIENT-FACING "WAIT" SIGNAL — decided this edition.** N2EX daily
+averages fell every day: 13–19 Sep **133.97, 168.30, 156.38, 149.95, 118.19, 105.77, 32.71**, with
+Saturday 19 Sep going **negative 10:00–15:00 (min −1.89, max 96.26)**. That is a weekend of low demand and
+strong renewables, not a forward-curve move, and a fixed tender buys the curve. Offered to a client as a
+reason to wait it collapses the moment they read the 25–30% January bill forecasts. **Use it the other way
+round:** the spread between −£1.89 on Saturday and the **204.69 peak hour on 14 Sep** is exactly the
+exposure a fixed price removes — a good line for pass-through and for explaining Capture's daily-settled
+product. In the published commentary this is now a SINGLE closing sentence, demoted to make room for the
+supplier-competition argument above.
+
+**THE THREE-WINTER STEP-DOWN IS NOW THE CARD SET.** With Winter 28 on the board the cards run six of the
+Winter-26 wall (Oct 26 197.06, Nov 26 199.45, Dec 26 200.75, Jan 27 200.98, Winter 26 197.50, Mar 27
+192.28 — all 192–201) and then the cliff (Summer 27 134.01, Winter 27 129.00, **Winter 28 89.50**). Each
+winter is priced roughly a third below the one before — **−34.7%** then **−30.6%**, **−54.7%** across the
+two years. That is the clearest term argument the board has produced in five editions. May 27 (138.50) was
+dropped as a near-duplicate of Summer 27. **Winter 28 at 89.50 is a FIRST APPEARANCE — verify it next
+edition before leaning on it**, exactly as Summer 28 should have been and was not.
+
+**Mechanics.** `power.series[0]` re-tuned **74 → 76** so the trend KPI reconciles with +93.83% (re-tune it
+every refresh). The Sep bucket in both power series is now three real prints — 9, 14, 18 Sep — rather than
+four, keeping 39 points against 13 labels. `rangeLong.max` stays **153** (the highest verbatim print we
+hold); TE's chart traces a peak nearer 158 mid-month but we have no verbatim figure for it, so it is not
+claimed. **SUMMER 28 (81.60) had NO print on the board and is DROPPED** — it debuted on 14 Sep flagged as
+"verify next edition", and never was. Cards stay a 3×3 of nine; Feb 27 and Q1 27 printed but were left off
+to keep the winter wall and the 2027 cliff legible.
+
+**Latest session (2026-09-17, later — branch `fix/fee-net-sign`: a fee that turns a result NEGATIVE
+rendered as "NET SAVING AFTER RYE FEE £-18,202". 17 Python suites + all three jsdom suites green;
+new `tests/test_fee_net_sign.py` + `tests/dom_fee_net_sign.js`.)** Found by Rory on a LIVE client
+dashboard (Public House Group, 7 supply points, Capture Energy dearer than incumbent). **This is a
+FOURTH sign spot, distinct from the three deliberately left alone earlier today** — those are delta
+cells in the breakdown and Portfolio tables; this is the fee net line on the recommendation card.
+Two faults:
+
+**1. The label never flipped.** `buildRecVsInc` hardcoded `Net saving after ${fee.label}` while the
+gross line directly above it already derived saving/increase. So the card read "Forecasted annual
+increase £10,642" and then "Net saving after RYE fee" underneath. `saveWord()`/`saveTone()` were
+written for the MULTI card on 2026-09-09 and never back-ported to the single-fuel fee line — the
+one direction nobody checks, because single-fuel is usually ahead of MULTI. Now derived, with a new
+`net-saving-label` id so the live slider re-writes the WORD as well as the number (it previously
+re-wrote only the value, which would have restored a stale label on any drag).
+
+**2. `gbp()` put the minus inside the currency.** It was `"£" + Math.round(v).toLocaleString()`, so
+a negative came out **`£-18,202`** instead of `−£18,202`. It survived this long because every other
+call site passes `Math.abs` first; it only surfaces on a tender that is negative AND has a fee. Now
+hardened: `const gbp = v => (v < 0 ? "−£" : "£") + Math.round(Math.abs(v)).toLocaleString("en-GB")`.
+Zero change for positives, and the whole class is dead rather than this one instance. The fee net
+value and net-per-supply also pass `Math.abs` now, since the label carries the direction.
+
+**Worth knowing:** `test_fee_net_sign.py` asserts **no literal `£-` anywhere in the rendered page**,
+which is the cheap guard for any future instance of this.
+
 **Latest session (2026-09-17 — branch `feat/chargeable-supply-points`: fee charged on a subset of
 supply points, "site" renamed to "supply" on the client dashboard, saving sign fixed. 16 Python
 suites + `dom_smoke.js` + `dom_summary_multi.js` green; six render variants exercised in jsdom with

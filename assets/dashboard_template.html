@@ -249,7 +249,7 @@ let activePortfolioFuel = primaryIndex;
 let TENDER, allOffers, rec, fee, commission, inc, savings, baseline,
     isBenchmark, baseLabel, baseLc, baseChip, totalEac, comps, hasInc, hasMarket;
 
-const gbp = v => "£" + Math.round(v).toLocaleString("en-GB");
+const gbp = v => (v < 0 ? "−£" : "£") + Math.round(Math.abs(v)).toLocaleString("en-GB");
 const gbpSigned = v => (v > 0 ? "+" : v < 0 ? "−" : "") + "£" + Math.round(Math.abs(v)).toLocaleString("en-GB");
 const num = v => v == null ? "—" : Number(v).toLocaleString("en-GB", { maximumFractionDigits: 3 });
 const gbp2 = v => "£" + Number(v || 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -372,9 +372,9 @@ function buildRecVsInc() {
         <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}" style="font-size:40px;margin-top:8px">${gbp(Math.abs(savings))}</div>
         <div class="kpi-sub">${(Math.abs(savings) / inc.total * 100).toFixed(1)}% vs ${esc(inc.supplier)}</div>
         ${fee && fee.netSaving != null ? `
-        <div class="kpi-label" style="margin-top:14px">Net saving after ${esc(fee.label)}</div>
-        <div class="kpi-value ${fee.netSaving >= 0 ? "pos" : "warn"}" id="net-saving" style="font-size:26px;margin-top:6px">${gbp(fee.netSaving)}</div>
-        <div class="kpi-sub"><span id="net-per-site">${gbp(fee.netSavingPerSite)}</span> per supply · fee <span id="fee-annual">${gbp(fee.annual)}</span>/yr · no commission</div>
+        <div class="kpi-label" style="margin-top:14px" id="net-saving-label">Net ${saveWord(fee.netSaving)} after ${esc(fee.label)}</div>
+        <div class="kpi-value ${saveTone(fee.netSaving)}" id="net-saving" style="font-size:26px;margin-top:6px">${gbp(Math.abs(fee.netSaving))}</div>
+        <div class="kpi-sub"><span id="net-per-site">${gbp(Math.abs(fee.netSavingPerSite))}</span> per supply · fee <span id="fee-annual">${gbp(fee.annual)}</span>/yr · no commission</div>
         <div class="fee-controls">
           <div class="kpi-label" style="margin-bottom:10px">RYE fee</div>
           <input type="range" id="fee-slider" min="0" max="100" step="5" value="${feeSliderPct(fee)}" aria-label="RYE fee discount">
@@ -1023,12 +1023,13 @@ if (fee) {
       : `${gbp2(psm)}/supply point/month × ${sites} suppl${sites === 1 ? "y" : "ies"} × 12 months`;
     if (gross != null) {                 // net saving only exists with a baseline
       const net = gross - annual;
+      if (el("net-saving-label")) el("net-saving-label").textContent = `Net ${saveWord(net)} after ${fee.label}`;
       if (el("net-saving")) {
-        el("net-saving").textContent = gbp(net);
+        el("net-saving").textContent = gbp(Math.abs(net));
         el("net-saving").classList.toggle("pos", net >= 0);
         el("net-saving").classList.toggle("warn", net < 0);
       }
-      if (el("net-per-site")) el("net-per-site").textContent = gbp(net / sites);
+      if (el("net-per-site")) el("net-per-site").textContent = gbp(Math.abs(net / sites));
       if (el("kpi-net")) el("kpi-net").textContent = gbp(net);
     }
     if (el("assump-fee")) el("assump-fee").textContent =
