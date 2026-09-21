@@ -95,6 +95,10 @@
     "recommended": {
       "$ref": "#/$defs/recommended"
     },
+    "show_timeline": {
+      "type": "boolean",
+      "description": "Show the client-facing savings timeline tab: month-by-month saving as each supply point moves onto the new contract. Absent = off. Needs a baseline (real incumbent or benchmark) to measure against, and is single-fuel only for now."
+    },
     "rye_fee": {
       "$ref": "#/$defs/rye_fee"
     },

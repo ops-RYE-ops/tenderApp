@@ -34,6 +34,53 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
+**Latest session (2026-09-21 — branch `feat/savings-timeline`: optional 4th client-facing tab showing
+the saving month by month as supplies move onto the new contract. 18 Python suites + 4 jsdom suites
+green; five render variants exercised in jsdom with no JS errors. NOT merged — preview and eyeball
+first.)** Asked for by a client (Public House Group) in a meeting on 18 Sep.
+
+**WHY IT EARNS ITS PLACE — it exposes a gap nothing else on the dashboard shows.** In a portfolio whose
+supplies switch on DIFFERENT dates, the headline annual saving on the Summary tab is a **run rate** that
+only applies once the last supply is live. On the 7-supply test fixture (four distinct switch dates over
+24 months) the run rate is **£14,082** but only **£9,053 — 64% of it — lands in the first twelve months**.
+A client WILL notice two different numbers, so the tab states all three up front: run rate, actual first
+12 months, and cumulative over the term (**£23,134**, a figure the dashboard never showed before and a
+better closing number than the annual one).
+
+**Decisions taken with Rory.** Chart PLUS a switch-date schedule table, not chart alone ("which of my
+sites moves when" is a real operational question). Monthly saving spread **flat, annual ÷ 12, footnoted**
+— we hold annual consumption per meter, not monthly, so shaping it to a seasonal profile would dress an
+assumption as data; what the chart really shows is WHEN supplies join, which is exact. Turned on by an
+operator **tickbox at step 5** (`show_timeline`), stored on the tender so it survives an edit, rather
+than auto-showing whenever dates differ.
+
+**TWO CHARTS, NEVER ONE WITH TWO Y-AXES.** Monthly rate and cumulative total are different scales; a dual
+axis is the classic way to mislead with both (the `dataviz` skill calls it the single most common chart
+mistake). So: bars for £/month, a separate area+line beneath for cumulative, each with its own axis and
+its own label. Do not "tidy" these into one chart. Marks follow `rye-design-system` — 1px bar radius,
+`#1f1f1f` dashed grid, mono 10px axis labels — because the tab has to look like the page it sits on, not
+like the skill's default. Single series each, so no legend; the section label names it. Native SVG
+`<title>` gives hover without inventing an interaction pattern the rest of the page lacks.
+
+**Built sign-aware from the start**, deliberately, because PHG's own tender came out **£10,642 dearer** —
+a "savings accruing" tab there would be absurd. `tlWord()` / `tlTone()` / `tlAccent()` derive the wording,
+the colour AND the card's left accent from the sign, so an increase reads as an increase in amber
+throughout. Benchmark baselines get the usual "indicative" labelling. `test_timeline.py` covers the
+negative case explicitly.
+
+**Where it lives.** `schema/tender.schema.json` gains optional `show_timeline`;
+`assemble_tender.py` carries it from meta; `build_dashboard._timeline_block(rec, incumbent, show)` builds
+the payload and returns **None unless ticked AND there is a baseline**; the template gains
+`buildTimelinePane()` + `tlBars()` + `tlCum()` + `renderTimeline()`, and the tab self-hides exactly like
+Market Review. **GOTCHA that cost a debug cycle:** `_compute_payload` receives the **cfg** from
+`_build_cfg`, not the tender, so a new tender-level key must be added to that function's `keys` tuple or
+it silently never arrives.
+
+**KNOWN LIMITATION — single-fuel only.** The timeline is emitted from the single-fuel payload; the
+combined gas+electricity path (`build_render_payload`'s MULTI branch) does not build one, so ticking the
+box on a combined tender produces no tab. The wizard hint says so. Doing it properly means one
+tender-level timeline across fuels, the same shape as `_tender_level_charge`.
+
 **Latest session (2026-09-18 — market snapshot refresh, fifth edition in ten days. Straight to `main`
 per the standing rule that only a snapshot refresh skips the branch. Market Review rendered headless
 and eyeballed; no JS errors.)** `assets/market_snapshot.json` moved to **2026-09-18**. Power spot
