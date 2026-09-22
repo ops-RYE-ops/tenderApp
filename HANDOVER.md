@@ -640,7 +640,8 @@ commit/push/merge by hand):** `git add` stages but does not commit; `git merge <
 FROM `main` (checkout main first — running it while on the branch merges it into itself, a no-op);
 a fresh branch needs `git push -u origin <branch>` or just merge locally into main and push main
 (main has an upstream). A failed commit can leave a stale `.git/index.lock` the sandbox can't delete
-— clear it before the next commit.
+— clear it before the next commit. **Superseded in scope 2026-09-22: Claude does not run git
+writes at all now — see the CARDINAL RULE under "Environment / workflow gotchas".**
 
 **Prior session (2026-08-27 — branch `feat/live-link-edits`, all suites green, **loaded and
 tested e2e on the preview with a real tender by Rory**, not yet merged):** four things Rory
@@ -1100,6 +1101,22 @@ All endpoints below are on `main` and deployed. `/api/extract` (PR #6) and
   engine, `main.py`, the wizard or the schema still goes on a branch and gets eyeballed
   on a Vercel preview first, because a bad render reaches published clients instantly.
   Don't spend a cycle creating a branch for a snapshot and then moving it back.
+- **Claude never runs a git command that writes** — Rory runs every `add`/`commit`/`branch`/
+  `checkout`/`merge`/`stash`. See the CARDINAL RULE in "Environment / workflow gotchas" for
+  why, including the near-miss on 2026-09-22. Combined with the rule above: Claude edits
+  `market_snapshot.json` and `HANDOVER.md`, then hands over the commands.
+- **We COST CAPACITY; Tem's portal headline does not. Do not "reconcile" to it.** (Rory,
+  2026-09-22.) Tem's "Estimated monthly cost" card covers day + night + standing + TNUoS
+  only — capacity sits below it under "Other charges" as £x/kVA/month, outside the total.
+  Our engine includes it, and stays that way: the client pays it every month, and on a real
+  meter (Discovery Adventure Golf, MPAN ...574) it was £9,372/yr, **18% of that site's
+  cost**. It also protects the COMPARISON — suppliers differ on whether capacity is bundled
+  into the standing charge or quoted separately, so excluding it flatters whoever quotes it
+  separately. Worked reconciliation, if the gap comes up again: Tem card £3,604.85/mo
+  × 12 = £43,258; ours £51,703 = energy £33,886 + standing £1,615 + TNUoS £6,829 +
+  capacity £9,372 (220 kVA × 11.6712 p/kVA/day). The residual £927 is the day/night split
+  question below, NOT an extraction fault. Tem's own figures are internally correct to the
+  penny; nothing is wrong on their side.
 - **EAC and kVA live on `sites[]`, once** — meter facts, not per-offer; one
   consumption basis across all offers. `sites[].eac_source` records provenance.
 - **Line values are typed numbers (or null), parsed once** via shared `parse_num`.
@@ -1733,11 +1750,32 @@ function, so the endpoints stay thin wrappers.
 - Run scripts from repo root so same-dir imports resolve.
 - `.git/index.lock: File exists` with no git running → `rm -f .git/index.lock`.
   (Claude's file tooling touching the repo can leave one behind.)
-- **Claude must not run git against the repo through the device bridge.** The bridge is
-  denied unlink permission on the mounted folder, so git creates `.git/index.lock`, fails
-  to remove it, and every subsequent git command in the repo blocks. It happened
-  2026-08-06 from a single read-only `git status`. Claude reads and writes files; Rory runs
-  git. (Claude *can* move a stale lock out of the way — `mv` is permitted, `rm` isn't.)
+- **CARDINAL RULE — CLAUDE NEVER RUNS A GIT COMMAND THAT WRITES. Rory runs every one.**
+  Claude edits files; `add`, `commit`, `branch`, `checkout`, `merge`, `stash`, `reset`,
+  `clean`, `rm` are Rory's, always, with no exceptions and no "just this once". Read-only
+  `git status` / `log` / `diff` / `show` are fine. Rory's framing, 2026-09-22: this is the
+  cardinal rule of working on code together, because the failure mode of an AI getting
+  mixed up with git is unrecoverable deletion.
+  **Two independent reasons, and the second is the serious one:**
+  1. *Mess.* The bridge is denied unlink permission on the mounted folder, so every failed
+     git write leaves a zero-byte `.lock` git cannot clean up, and the next command blocks
+     on it. They come in sequence — `index.lock`, then `packed-refs.lock`, then
+     `refs/heads/<branch>.lock` — so clearing them one at a time is whack-a-mole. Clear the
+     lot: `find .git -name "*.lock" -delete`. A stuck branch ref can be deleted as a file
+     (`rm -f .git/refs/heads/<branch>`) rather than fighting `git branch -D`; check it
+     points at a commit reachable from `main` first, then nothing is orphaned.
+  2. *Data loss.* The destructive commands are the ones that move uncommitted work —
+     `stash`, `checkout`, `reset --hard`, `clean`. On **2026-09-22** Claude ran `git stash`
+     to move a finished, UNCOMMITTED snapshot refresh from a branch to `main`. It jammed
+     half-way on a lock left by its own earlier `git add`. It happened to fail safely (the
+     stash list came back empty and the working tree was intact), but a `stash` that
+     half-completes puts the only copy of the day's work somewhere the next blocked command
+     cannot reach. There was no second copy. That is the horror story, and it was one lock
+     away.
+  **This rule was already in this file, dated 2026-08-06, and was broken anyway on
+  2026-09-22** — it read as lock hygiene buried in a list, so it was skimmed. Hence the
+  rewrite and the cross-reference from "Key design decisions". If a task seems to need a
+  git write, it does not: Claude leaves the files edited and hands Rory the exact commands.
 - **Stale ref locks silently block pruning.** `.git/refs/remotes/origin/**/*.lock` files
   left by a crashed git make `git fetch --prune` error per-ref and leave phantom remote
   branches in `git branch -a` forever — five of them dated 17 July were found on
