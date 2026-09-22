@@ -123,6 +123,11 @@ td { padding: 9px 14px; font-family: var(--rye-mono); font-size: 11px; font-weig
 tr:last-child td { border-bottom: none; }
 td.name { font-family: var(--rye-sans); font-size: 13px; color: var(--t1); }
 td .sub { display: block; font-size: 10px; color: var(--t4); font-weight: 400; }
+/* Unit under a rate-book column label. A second line rather than a longer header:
+   appending the unit inline pushed the widest rate books into horizontal scroll at
+   1280px, where they had fitted before. */
+th .unit { display: block; font-size: 9px; color: var(--t4); font-weight: 400;
+  letter-spacing: 0.04em; text-transform: none; margin-top: 2px; }
 tr:hover td { background: rgba(255,255,255,0.015); }
 td.best { color: var(--rye-green); }
 td.total { color: var(--t1); }
@@ -568,11 +573,29 @@ function buildRateBooks() {
     ["standingCharge", "Standing"], ["capacityCharge", "Capacity"],
     ["networkCharge", "Network"], ["meterCharge", "Meter"],
   ];
+  // The four non-commodity columns state the unit they are COSTED on. Read it from
+  // the OFFER's own chargeBasis (compute_offer already emits it) rather than
+  // hardcoding "p/day": charge_basis is overridable per tender AND per offer, so a
+  // hardcoded unit could state a falsehood on a client page — the presentation-layer
+  // twin of the p/kWh network mis-cost. chargeBasis only ever carries those four
+  // keys, so the energy columns keep their own p/kWh and are never double-suffixed.
+  // An offer with no chargeBasis degrades to the bare label, never to a guess.
+  const BASIS_UNIT = {
+    "p/day": "p/day", "p/mpan/day": "p/MPAN/day", "p/kva/day": "p/kVA/day",
+    "p/kwh": "p/kWh", "gbp/day": "£/day", "gbp/month": "£/month", "gbp/year": "£/year",
+  };
+  const colsFor = o => {
+    const cb = o.chargeBasis || {};
+    return rateCols.map(([k, lbl]) => {
+      const u = BASIS_UNIT[cb[k]];
+      return [k, u ? `${lbl}<span class="unit">${u}</span>` : lbl];
+    });
+  };
   // Contract dates (Start / End) show only on real supplier offers — the
   // incumbent/benchmark baseline has no quoted term to show.
   let anyEstimated = false;
   const body = allOffers.map(o => {
-      const used = rateCols.filter(([k]) => o.sites.some(s => s.rates[k] != null));
+      const used = colsFor(o).filter(([k]) => o.sites.some(s => s.rates[k] != null));
       const showDates = !o.isIncumbent;
       const warn = o.warnings.length
         ? `<div class="notice" style="margin:12px 20px">` +
