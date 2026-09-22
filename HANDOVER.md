@@ -34,10 +34,80 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-09-21 — branch `feat/savings-timeline`: optional 4th client-facing tab showing
+**Latest session (2026-09-22 — market snapshot refresh, sixth edition in fourteen days. Straight to
+`main` per the standing rule that only a snapshot refresh skips the branch. 18 Python suites + 4 jsdom
+suites green; Market Review rendered headless at 1280x1400 and eyeballed, no JS errors.)**
+`assets/market_snapshot.json` moved to **2026-09-22**. Power spot **142.51 £/MWh (+86.04% 1Y**, down
+from +93.83%, and **−7.39% on the day**). NBP **Oct 26 176.89 p/therm (−2.594% on the day)**,
+**Nov 26 179.96**, **Dec 26 181.56**, **Jan 27 180.54**, **Winter 26 175.54**, **Mar 27 168.04**,
+**Summer 27 126.25**, **Winter 27 124.00**, **Winter 28 88.40**.
+
+**THE FIRST BROAD FALL IN THIS SERIES — and the first edition where "don't call it a turn" needed
+re-examining rather than repeating.** Oct 26 is down **10.2% in four sessions** and at 176.89 sits
+**below every front-month print we hold for September** (195.59, 203.68, 207.72, 197.06) and below
+2 Sep's 180.78. That is materially different from 18 Sep, where the same-sounding weekly fall left
+Oct 26 still *above* the 9 Sep high and the note correctly refused to call it a turn. This one is a
+genuine break of the September range. It is still well above late August (161.85 on 27 Aug), so the
+honest frame is a four-week retracement, not a return to summer.
+
+**THE ANGLE — A RISK PREMIUM UNWINDING, NOT MORE GAS ARRIVING.** All three drivers on the board are
+bearish and all three are about *risk* rather than supply: Saudi Arabia reported to be bringing the
+damaged **East-West pipeline** back on line **this week** (Rory's, and the completion of the mechanism
+18 Sep only saw starting); a possible **US-Iran meeting at the UN General Assembly** plus US pressure
+on Ukraine to halt strikes on Russian refineries; and a **weather pattern read as bearish for winter
+demand**. A fourth, Qatar's North Field East on schedule for H1 2027, was **cut from the commentary** —
+2027 supply is background, not a decision input for someone pricing today. None of these adds a
+molecule to European storage, still ~68% of capacity, which is the line that keeps the edition honest:
+**a fall built on risk coming out is one a cold snap can put back.** Framed to the client as a window,
+not a turn.
+
+**THE TERM DISCOUNT HAS NARROWED FOR THE SECOND EDITION RUNNING, AND THIS TIME IT CUTS AGAINST US.**
+38.3% (14 Sep) → 34.7% (18 Sep) → **29.4%** today, Winter 26 175.54 vs Winter 27 124.00. Third
+consecutive confirmation of the rule — **near-term risk prices into the front, and so does its
+relief** — so treat it as settled rather than as an observation. The move is monotonic across the
+curve: Winter 26 **−11.1%**, Summer 27 −5.8%, Winter 27 **−3.9%**, Winter 28 **−1.2%**. The
+consequence is worth stating plainly because it is the one that costs money if we get it wrong:
+**the thing a 24-month exists to dilute is getting cheaper faster than the 2027 it dilutes with**, so
+12m and 24m have converged. Winter-weighted 55/45 blends from 01/10/26, through a ~50% CCGT:
+
+| Contract | blend 18 Sep | blend 22 Sep | fall | wholesale-equivalent |
+|---|---|---|---|---|
+| 12-month | 168.93 | 153.36 | **−9.22%** | **−1.06 p/kWh** |
+| 24-month | 138.30 | 128.95 | −6.76% | −0.64 p/kWh |
+
+24m sits **15.9% below 12m**, against **18.1%** four days ago. Longer term still wins, by less. **The
+24m blend's "before" leg uses Summer 28 at 81.60 from 14 Sep** because 18 Sep had no print; today's is
+80.75, a 1.0% difference — immaterial here, but not same-board, so say so if anyone leans on it.
+
+**TWO CARRIED-FORWARD VERIFICATIONS, BOTH CLEARED.** **Winter 28 89.50** was a first appearance on
+18 Sep explicitly flagged "verify next edition before leaning on it". It printed **88.40** today,
+−1.2%, so the level held and the three-winter step-down (−29.4% then −28.7%, **−49.6%** across two
+years) is safe to lean on. **Summer 28 is back** with a real print at **80.75** after being dropped on
+18 Sep for having none; it sits 1.0% under its 81.60 debut, so that mark has now held across eight
+days. **Summer 29 68.50 is a FIRST APPEARANCE — recorded in `_note`, deliberately not used.**
+
+**COMMENTARY IS RENDERED WITH `textContent` (template line 1334), SO `\n\n` DOES NOTHING.** It reads
+as one continuous block. Every prior edition wrote paragraph breaks that were invisible on the page.
+This edition is written as a single tight block, **239 words** (down from 276), and the day-ahead
+volatility line stays as one closing sentence per the 18 Sep decision: **−£1.89 last Saturday against
+a 178.37 peak hour on Tuesday evening**. N2EX daily averages 17–23 Sep: 118.19, 105.77, 32.71,
+**25.35**, **87.88**, **137.98**, **136.16** — the weekend collapse (min −0.01 on 20 Sep) has fully
+snapped back.
+
+**Mechanics.** `power.series[0]` re-tuned **76 → 76.6** so the trend KPI reconciles with +86.04%
+(re-tune every refresh; it is a float now — no integer lands close enough). The power series
+**REPLACES** the 18 Sep print rather than appending, since 39 points against 13 labels must hold,
+keeping the peak-then-fall shape 147.24 / 153.00 / 142.51. `rangeLong.max` stays **153**; today's
+142.51 is below it. `gas.series` appends (no label array, so its length is free). Cards stay the same
+3×3 of nine as 18 Sep so the edition-on-edition comparison is like for like; Feb 27 180.84, Apr 27
+142.00, Jun 27 123.50, Aug 27 124.50 and Q1 27 174.30 all printed but were left off.
+
+**Prior session (2026-09-21 — branch `feat/savings-timeline`: optional 4th client-facing tab showing
 the saving month by month as supplies move onto the new contract. 18 Python suites + 4 jsdom suites
-green; five render variants exercised in jsdom with no JS errors. NOT merged — preview and eyeball
-first.)** Asked for by a client (Public House Group) in a meeting on 18 Sep.
+green; five render variants exercised in jsdom with no JS errors. **MERGED** — PR #34, commit
+`0b7bbff`, now the tip of `main` and live on every published client link. The "NOT merged — preview
+and eyeball first" note here was stale and is corrected.)** Asked for by a client (Public House Group)
+in a meeting on 18 Sep.
 
 **WHY IT EARNS ITS PLACE — it exposes a gap nothing else on the dashboard shows.** In a portfolio whose
 supplies switch on DIFFERENT dates, the headline annual saving on the Summary tab is a **run rate** that
@@ -1022,6 +1092,14 @@ All endpoints below are on `main` and deployed. `/api/extract` (PR #6) and
 
 ## Key design decisions (don't relitigate without reason)
 
+- **Market snapshot and HANDOVER changes go STRAIGHT TO `main`** (Rory, standing
+  authorisation, reconfirmed 2026-09-22). No branch, no PR, no preview. `main` IS
+  production and a deploy re-renders the Market Review on every live client link, which
+  is the point: a refresh is meant to be live everywhere at once. This is the ONLY
+  exception to the branch-and-preview rule — anything touching the template, the cost
+  engine, `main.py`, the wizard or the schema still goes on a branch and gets eyeballed
+  on a Vercel preview first, because a bad render reaches published clients instantly.
+  Don't spend a cycle creating a branch for a snapshot and then moving it back.
 - **EAC and kVA live on `sites[]`, once** — meter facts, not per-offer; one
   consumption basis across all offers. `sites[].eac_source` records provenance.
 - **Line values are typed numbers (or null), parsed once** via shared `parse_num`.
