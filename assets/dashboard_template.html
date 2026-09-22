@@ -123,6 +123,11 @@ td { padding: 9px 14px; font-family: var(--rye-mono); font-size: 11px; font-weig
 tr:last-child td { border-bottom: none; }
 td.name { font-family: var(--rye-sans); font-size: 13px; color: var(--t1); }
 td .sub { display: block; font-size: 10px; color: var(--t4); font-weight: 400; }
+/* Unit under a rate-book column label. A second line rather than a longer header:
+   appending the unit inline pushed the widest rate books into horizontal scroll at
+   1280px, where they had fitted before. */
+th .unit { display: block; font-size: 9px; color: var(--t4); font-weight: 400;
+  letter-spacing: 0.04em; text-transform: none; margin-top: 2px; }
 tr:hover td { background: rgba(255,255,255,0.015); }
 td.best { color: var(--rye-green); }
 td.total { color: var(--t1); }
@@ -486,7 +491,7 @@ function buildBreakdown() {
     <div class="table-wrap"><table>
       <thead><tr><th>Offer</th>` +
       comps.map(c => `<th>${esc(c.label)}</th>`).join("") +
-      `<th>Eff. p/kWh</th><th>Total</th>${inc ? `<th>vs ${baseLc}</th>` : ""}<th></th></tr></thead><tbody>` +
+      thU("Eff.", "p/kWh") + `<th>Total</th>${inc ? `<th>vs ${baseLc}</th>` : ""}<th></th></tr></thead><tbody>` +
     allOffers.slice().sort((a, b) => (a.isIncumbent ? -1 : b.isIncumbent ? 1 : a.total - b.total)).map(o => {
       const delta = (inc && !o.isIncumbent)
         ? `<td class="${o.deltaVsIncumbent <= 0 ? "best" : ""}">${gbpSigned(o.deltaVsIncumbent)}</td>`
@@ -525,7 +530,7 @@ function buildSiteMatrix() {
   return `<section>
     <div class="section-label">Supply-by-supply annual cost (£/year)</div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Supply</th><th>EAC kWh</th>` +
+      <thead><tr><th>Supply</th>` + thU("EAC", "kWh") +
       `<th>Efficiency<br>${inc ? baseLc + " / " + offeredLbl : offeredLbl}</th>` +
       allOffers.map(o => `<th>${o.isIncumbent ? baseLabel : esc(o.supplier) + "<br>" + esc(o.term)}</th>`).join("") +
       (singleOffer && inc ? `<th>${isBenchmark ? "Indicative " : ""}Δ vs ${baseLc}</th>` : "") +
@@ -561,18 +566,43 @@ function buildSiteMatrix() {
     }).join("") + `</tbody></table></div></section>`;
 }
 
+/* One unit convention for the whole page: the column NAME on the first line, its
+   UNIT on a muted second line. Applied to every header that carries a unit, so no
+   table mixes "DAY P/KWH" inline with a stacked one. A second line also costs no
+   column width — appending units inline pushed the widest rate books into horizontal
+   scroll at 1280px, where they had fitted. Pass no unit and you get a plain header. */
+function thU(label, unit) {
+  return `<th>${label}${unit ? `<span class="unit">${unit}</span>` : ""}</th>`;
+}
+
 /* ---- Rate books per offer ---- */
 function buildRateBooks() {
+  // Column name on the first line, unit on the second — ONE rule for every table on
+  // the page (see thU). Energy rates are always p/kWh; the four non-commodity charges
+  // state the unit they are actually COSTED on, read from the OFFER's own chargeBasis
+  // (compute_offer already emits it) rather than hardcoded. charge_basis is overridable
+  // per tender AND per offer, so a hardcoded "p/day" could state a falsehood on a client
+  // page — the presentation-layer twin of the p/kWh network mis-cost. An offer with no
+  // chargeBasis degrades to a bare label, never to a guess.
   const rateCols = [
-    ["unitRate", "Unit p/kWh"], ["dayRate", "Day p/kWh"], ["nightRate", "Night p/kWh"],
+    ["unitRate", "Unit"], ["dayRate", "Day"], ["nightRate", "Night"],
     ["standingCharge", "Standing"], ["capacityCharge", "Capacity"],
     ["networkCharge", "Network"], ["meterCharge", "Meter"],
   ];
+  const ENERGY_UNIT = { unitRate: "p/kWh", dayRate: "p/kWh", nightRate: "p/kWh", weekendRate: "p/kWh" };
+  const BASIS_UNIT = {
+    "p/day": "p/day", "p/mpan/day": "p/MPAN/day", "p/kva/day": "p/kVA/day",
+    "p/kwh": "p/kWh", "gbp/day": "£/day", "gbp/month": "£/month", "gbp/year": "£/year",
+  };
+  const colsFor = o => {
+    const cb = o.chargeBasis || {};
+    return rateCols.map(([k, lbl]) => [k, thU(lbl, ENERGY_UNIT[k] || BASIS_UNIT[cb[k]])]);
+  };
   // Contract dates (Start / End) show only on real supplier offers — the
   // incumbent/benchmark baseline has no quoted term to show.
   let anyEstimated = false;
   const body = allOffers.map(o => {
-      const used = rateCols.filter(([k]) => o.sites.some(s => s.rates[k] != null));
+      const used = colsFor(o).filter(([k]) => o.sites.some(s => s.rates[k] != null));
       const showDates = !o.isIncumbent;
       const warn = o.warnings.length
         ? `<div class="notice" style="margin:12px 20px">` +
@@ -583,10 +613,10 @@ function buildRateBooks() {
           <span style="margin-left:auto" class="chip neutral">${gbp(o.total)}/yr</span></summary>
         ${warn}
         <div class="table-wrap"><table>
-          <thead><tr><th>Supply</th><th>EAC kWh</th>` +
-          used.map(([, lbl]) => `<th>${lbl}</th>`).join("") +
+          <thead><tr><th>Supply</th>` + thU("EAC", "kWh") +
+          used.map(([, th]) => th).join("") +
           (showDates ? `<th>Start</th><th>End</th>` : "") +
-          `<th>£/year</th></tr></thead><tbody>` +
+          thU("Annual cost", "£/year") + `</tr></thead><tbody>` +
         o.sites.map(s => {
           let dateCells = "";
           if (showDates) {
