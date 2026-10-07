@@ -34,7 +34,43 @@ Hosted on the **RYE company Vercel Pro** account (project `tender-app`, live at
 `tender-app-chi.vercel.app`; custom domain `tender.rye.energy` in DNS setup). See
 "Deployment & ops status" below for the live config.
 
-**Latest session (2026-09-22 — market snapshot refresh, sixth edition in fourteen days. Straight to
+**Latest session (2026-10-07 — market snapshot refresh, seventh edition, first in fifteen days. Straight
+to `main` per the standing rule. 18 Python suites + 5 jsdom suites green; Market Review rendered headless
+at 1280x1400 and eyeballed, no JS errors.)** `assets/market_snapshot.json` moved to **2026-10-07**. Power
+spot **151.70 £/MWh (+81.03% 1Y**, +6.45% on 22 Sep). NBP **Nov 26 189.74 p/therm (now the front month)**,
+**Dec 26 192.88**, **Jan 27 194.08**, **Feb 27 193.28**, **Q1 27 189.25**, **Mar 27 183.60**, **Summer 27
+144.50**, **Winter 27 137.50**, **Summer 28 89.00**. EU storage 72% (66% a month earlier).
+
+**THE ANGLE — THE RULE BROKE: THIS RISE WAS LED BY THE BACK OF THE CURVE.** Three editions running, near-term
+risk priced into the front and so did its relief. This time 2027 rose faster than this winter: Summer 27
+**+14.5%**, Winter 27 **+10.9%**, Summer 28 +10.2%, against Nov 26 +5.4% to Mar 27 +9.3%. **Winter 27 broke
+above the 123.75–130.25 range it held across five readings**, and **Summer 27 now prices above Winter 27**
+(144.50 vs 137.50): a refill premium for a storage season starting from a low base. So 2027 is no longer
+the stable anchor the term argument leaned on. Nov 26 has retraced **50.2%** of its 18–22 Sep fall
+(199.45 → 179.96 → 189.74), which closes the "window, not a turn" call from 22 Sep. Signal: FIX.
+
+**BLENDS RE-BASED TO A 01/11/26 START** (Oct 26 and Winter 26 have gone into delivery). Winter leg = Nov–Mar
+average; same 55/45 weighting, ~50% CCGT. Both sides recomputed on today's basis, so not comparable with the
+22 Sep edition's Oct-start figures:
+
+| Contract | 22 Sep | 7 Oct | move | wholesale-equivalent |
+|---|---|---|---|---|
+| 12-month | 154.82 | 169.92 | +9.76% | **+1.03 p/kWh** |
+| 24-month | 129.68 | 142.80 | +10.12% | +0.90 p/kWh |
+
+24m sits **16.0% below 12m** (16.2% on 22 Sep), so term still wins by about the same margin. Term discount
+now measured Q1 27 vs Winter 27 (Winter 26 gone): **27.3%**, from 28.9% on 22 Sep's board.
+
+**Mechanics.** Power 1Y series **REBUILT** for an Oct 25–Oct 26 window, labels Oct..Oct, 39 points;
+`series[0]` re-tuned to **83.8** (+81.03%). Tail: 147.24 (9 Sep), **158 (mid-Sep peak, chart-read)**, 142.51
+(22 Sep), 151.70. **`rangeLong.max` 153 → 158**: TE shows a ~158 peak that fell between our 14 and 18 Sep
+editions, so 153 understated the 3-year high; it is chart-read, tighten if a tick print turns up. Last
+`axisLabels` → "Oct 26". Cards a 3×3 of nine: Q1 27 takes Winter 26's slot, Summer 28 takes Winter 28's
+(no Winter 28 print visible). Q2 27 148.25 left off. No N2EX board this time, so the day-ahead volatility
+closing line is dropped rather than repeated stale. Commentary 234 words, one block. TE now shows 142.83 for
+22 Sep with 142.51 the session before: its date stamps run one session later than ours. Immaterial.
+
+**Prior session (2026-09-22 — market snapshot refresh, sixth edition in fourteen days. Straight to
 `main` per the standing rule that only a snapshot refresh skips the branch. 18 Python suites + 4 jsdom
 suites green; Market Review rendered headless at 1280x1400 and eyeballed, no JS errors.)**
 `assets/market_snapshot.json` moved to **2026-09-22**. Power spot **142.51 £/MWh (+86.04% 1Y**, down
