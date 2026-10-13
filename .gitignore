@@ -12,3 +12,6 @@ node_modules/
 package.json
 package-lock.json
 Claude outputs/
+
+# DB exports for reference: real client data, never commit
+db sample/

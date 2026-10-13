@@ -23,7 +23,7 @@ comparison dashboard, published as an unguessable per-client link. It productise
 - **Stack:** Vercel (FastAPI Python functions + static), Claude via Vercel AI Gateway (header mapping
   only), Retool DB (tender store + mapping cache), vanilla JS team UI (no build step).
 
-## 2. Current state (13 Oct 2026)
+## 2. Start here: current state (13 Oct 2026)
 
 - **Complete and live.** Full flow map → extract → assemble → cost → render → publish, plus register,
   edit-from-register and staged publish, all verified end to end on production. Real client tenders
@@ -132,6 +132,8 @@ comparison dashboard, published as an unguessable per-client link. It productise
 - Every save is a new version (audit trail). Field naming is deliberately mixed: tender/meta
   snake_case, line fields the fixed CSV camelCase.
 - Raw uploaded quote files are **not stored**, only the extracted result.
+- **Reference exports** of `tenders`, `tenders_latest` and `supplier_mappings` (13 Oct) are in `db sample/`.
+  Real client data: gitignored, never commit, never paste into chat. Re-export rather than trust them for long.
 
 **UI**
 - Team app: `web/index.html`, `web/app.css` (tokens at top), `web/app.js`. Wizard: basics → upload →
@@ -273,22 +275,26 @@ client sees a new tender.
 
 **Backlog**
 4. Register clean-up: hard delete for drafts/test rows, soft archive for published. Plus a test mode
-   that keeps dry runs out of the register.
-5. Wizard: free back/forward before first save; Tier 2 edit (re-upload one quote inside an edit).
-6. Savings timeline for combined gas + elec tenders (single-fuel only today).
-7. Combined Summary: hero byline and counts read from electricity only (undercount); efficiency and
+   that keeps dry runs out of the register. At 13 Oct: 115 tenders (72 published, 43 draft), 25 test-named,
+   **and at least 7 webhook-test tenders are still published with live public links** (revoke these now).
+   Client names have drifted (`X + Why` / `X & Why` / `x+why`, `Pizzarova` / `PIzzarova`): normalise or pick
+   from a list. `TEST SUPPLIER` rows sit in the mapping cache.
+5. `created_by` is `unknown@rye.energy` on every tender: nothing records who built or published what.
+6. Wizard: free back/forward before first save; Tier 2 edit (re-upload one quote inside an edit).
+7. Savings timeline for combined gas + elec tenders (single-fuel only today).
+8. Combined Summary: hero byline and counts read from electricity only (undercount); efficiency and
    incl./excl. commission rows absent.
-8. Portfolio matrix delta signs contradict each other (`(−£1,262)` vs `+£1,262`). Left on Rory's
+9. Portfolio matrix delta signs contradict each other (`(−£1,262)` vs `+£1,262`). Left on Rory's
     instruction; tidy if wanted.
-9. Dedicated unit tests for the commission and benchmark paths (covered only indirectly).
-10. Margin analysis: `added_at` on every quote makes "rate move minus wholesale-equivalent move"
+10. Dedicated unit tests for the commission and benchmark paths (covered only indirectly).
+11. Margin analysis: `added_at` on every quote makes "rate move minus wholesale-equivalent move"
     computable across RYE's book. Would turn the supplier-competition argument into a number.
-11. Wire the market tab to RYE's weekly market API (`rye-energy/api`) via a thin adapter, instead of
+12. Wire the market tab to RYE's weekly market API (`rye-energy/api`) via a thin adapter, instead of
     hand-edited JSON.
-12. Sync site reference from company Postgres into the tender DB (kills the sites.csv upload).
-13. Decide whether internal "excluded" cost warnings should show client-side.
-14. Longer term "Path B": run the whole tender flow inside Retool. Path A (webhook) is live.
-15. Optional: per-person SSO via a two-project split.
+13. Sync site reference from company Postgres into the tender DB (kills the sites.csv upload).
+14. Decide whether internal "excluded" cost warnings should show client-side.
+15. Longer term "Path B": run the whole tender flow inside Retool. Path A (webhook) is live.
+16. Optional: per-person SSO via a two-project split.
 
 **Known limitations, accepted**
 - Benchmark baselines are not dated or attributed on the client page (removed as clutter).
