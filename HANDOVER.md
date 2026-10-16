@@ -208,18 +208,18 @@ straight to `main`. Updates every live dashboard on deploy.
   delivery seasons, through a ~50% CCGT. Say when a before/after leg is not same-board.
 
 **Carry-forward checks for the next edition**
-- **Winter 27 and Summer 28 not visible on 12 or 16 Oct** (16 Oct screenshot ends at Q4 27). Ask Rory
-  to scroll the full board; the 24m blend is an estimate until both print (method in `_note`).
-- Mar 27 had no print on 16 Oct and Feb 27 was a stale 01:46 trade, so the winter leg used
-  (Nov + Dec + 3 x Q1 27)/5. Go back to singles once Mar prints.
-- Term discount is measured Q1 27 vs Summer 27 (25.3% on 16 Oct, 26.5% on 12 Oct); not comparable with
-  earlier Q1-vs-Winter-27 figures.
-- Apr 27 (181.53) and Q4 27 (156.00) first appeared 16 Oct: lean on them only if they print again.
-- Summer 29 (68.50, 22 Sep) is a first appearance, recorded in `_note`, unused.
+- Winter 27 (156.25) and Summer 28 (97.50) printed again on the 16 Oct 15:25 board, so the 24m blend
+  is same-board from this edition. Ask Rory for the full scrolled board every time.
+- Term discount is measured Q1 27 vs Summer 27 (24.7% on 16 Oct, 26.5% on 12 Oct). Q1 27 vs Winter 27
+  (28.5% on 16 Oct) can resume as the measure from the next edition.
+- Q1 28 (154.60) printed below Q4 27 (157.50): do not treat Q4 as a floor for Winter 27.
+- Summer 29 printed again 16 Oct (76.45, from 68.50 on 22 Sep), with Winter 28 101.75 and Winter 29
+  84.75. Usable for 36m blends if a client asks; recorded in `_note`, not carded.
 
-**16 Oct edition at a glance:** power spot 168.25 £/MWh (+103% 1Y; 3-year high 173.79 on 13 Oct). NBP
-Nov 26 217.12 (above Sep peak), Q1 27 218.00, Summer 27 162.91. Back-led, whole-strip rise; signal FIX.
-12m from 01/11/26 193.43 (+0.81 p/kWh vs 12 Oct); 24m ~+0.7 p/kWh, ~17% below 12m (estimate).
+**16 Oct edition at a glance (15:25 board):** power spot 168.25 £/MWh (+103% 1Y; 3-year high 173.79 on
+13 Oct). NBP Nov 26 217.90 (above Sep peak), Q1 27 218.60, Summer 27 164.50, Winter 27 156.25, Summer 28
+97.50. Back-led, whole-strip rise; signal FIX. 12m from 01/11/26 194.09 (+0.86 p/kWh vs 12 Oct); 24m 161.95
+(~+0.8 p/kWh), 16.6% below 12m.
 
 ## 8. Deployment and ops
 
@@ -278,8 +278,8 @@ client sees a new tender.
 ## 11. Open items (priority order)
 
 **Now: custom domain rollout (spam filters, Rory 13 Oct)**
-1. In order: (a) GoDaddy CNAME `tender` + `_vercel` TXT, values from Vercel → Domains; wait for Valid
-   Configuration and `https://tender.rye.energy/api/health` = 200. (b) Merge `feat/custom-domain`.
+1. In order: (a) DONE 16 Oct: GoDaddy CNAME `tender` → `…vercel-dns-016.com` + `_vercel` TXT, Valid
+   Configuration, `/api/health` = 200. No CAA records on rye.energy. (b) Merge `feat/custom-domain`.
    (c) Set `PUBLIC_BASE_URL` in Production, redeploy. (d) Publish a test tender, check the link,
    revoke it. (e) Optional: `replace()` the host in stored `dashboard_url` (column and
    `payload->dashboard_url`) so the register shows the new link. (f) Check Front templates and the Retool workflow for hardcoded vercel.app links.
