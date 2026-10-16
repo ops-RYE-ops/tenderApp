@@ -23,22 +23,20 @@ comparison dashboard, published as an unguessable per-client link. It productise
 - **Stack:** Vercel (FastAPI Python functions + static), Claude via Vercel AI Gateway (header mapping
   only), Retool DB (tender store + mapping cache), vanilla JS team UI (no build step).
 
-## 2. Start here: current state (13 Oct 2026)
+## 2. Start here: current state (16 Oct 2026)
 
 - **Complete and live.** Full flow map → extract → assemble → cost → render → publish, plus register,
   edit-from-register and staged publish, all verified end to end on production. Real client tenders
   are being published (e.g. Public House Group, X + Why).
-- **Last code change:** PR #35 `fix/rate-book-units` (rate book and table headers state the unit
-  under each non-commodity column, read from the offer's charge basis). Merged.
-- **Last market snapshot:** 16 Oct 2026 (9th edition), drafted on local `main` and riding with the
-  `feat/custom-domain` push at Rory's request (16 Oct), so it goes live when that merges. See section 7.
-- **In flight: `feat/custom-domain`** (13 Oct; founder sign-off 16 Oct, rollout under way). Code done, branch not yet created or pushed. Client links move off `*.vercel.app` (spam-filter
-  risk) to `tender.rye.energy`. Code: `_public_base()` in `main.py` uses `PUBLIC_BASE_URL` (Production
-  only) for new links, else the request host; tests added in `test_publish.py`. Safe to merge before
-  DNS: unset var = old behaviour. Rollout order is section 11 item 1. Old vercel.app links keep working.
-- Merged branches still to delete: local `fix/rate-book-units`; remote `feat/savings-timeline`,
-  `fix/fee-net-sign`, `fix/rate-book-units`.
-- **Tests:** 19 Python suites + 5 jsdom suites, all green (re-run 13 Oct; section 10).
+- **Last code change:** `feat/custom-domain`, merged 16 Oct. Client links now publish as
+  `https://tender.rye.energy/d/<slug>/<uuid>` (verified on a real client tender 16 Oct). `_public_base()`
+  in `main.py` reads `PUBLIC_BASE_URL` (Production only, plain config, not Sensitive), else the request
+  host. Old `vercel.app` links keep working. Team builder: use `https://tender.rye.energy/app/`.
+- **Last market snapshot:** 16 Oct 2026 (9th edition, 15:25 ICE board), shipped in the same merge.
+  See section 7.
+- Merged branches still to delete: local `fix/rate-book-units`, `feat/custom-domain`; remote
+  `feat/savings-timeline`, `fix/fee-net-sign`, `fix/rate-book-units`, `feat/custom-domain`.
+- **Tests:** 19 Python suites + 5 jsdom suites, all green (re-run 16 Oct; section 10).
 
 ## 3. Rules (do not break, do not relitigate without reason)
 
@@ -277,12 +275,11 @@ client sees a new tender.
 
 ## 11. Open items (priority order)
 
-**Now: custom domain rollout (spam filters, Rory 13 Oct)**
-1. In order: (a) DONE 16 Oct: GoDaddy CNAME `tender` → `…vercel-dns-016.com` + `_vercel` TXT, Valid
-   Configuration, `/api/health` = 200. No CAA records on rye.energy. (b) Merge `feat/custom-domain`.
-   (c) Set `PUBLIC_BASE_URL` in Production, redeploy. (d) Publish a test tender, check the link,
-   revoke it. (e) Optional: `replace()` the host in stored `dashboard_url` (column and
-   `payload->dashboard_url`) so the register shows the new link. (f) Check Front templates and the Retool workflow for hardcoded vercel.app links.
+**Now: custom domain follow-ups (rollout done 16 Oct: DNS, merge, `PUBLIC_BASE_URL`, live test)**
+1. Find hardcoded `tender-app-chi.vercel.app` links in Front templates, WhatsApp saved replies,
+   signatures and the Retool "Tender Database Update" workflow. Optional: `replace()` the host in stored
+   `dashboard_url` (column and `payload->dashboard_url`) so the register shows the new link; old links
+   work either way.
 
 **Housekeeping**
 2. Disconnect or delete the old hobby Vercel project so a push cannot deploy twice.
