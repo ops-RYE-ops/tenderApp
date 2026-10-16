@@ -30,10 +30,14 @@ comparison dashboard, published as an unguessable per-client link. It productise
   are being published (e.g. Public House Group, X + Why).
 - **Last code change:** PR #35 `fix/rate-book-units` (rate book and table headers state the unit
   under each non-commodity column, read from the offer's charge basis). Merged.
-- **Last market snapshot:** 12 Oct 2026 (8th edition). Next refresh only when something is going to
-  a client (Rory, 13 Oct). See section 7.
-- **Nothing in flight.** No open feature branches. Merged branches still to delete: local
-  `fix/rate-book-units`; remote `feat/savings-timeline`, `fix/fee-net-sign`, `fix/rate-book-units`.
+- **Last market snapshot:** 16 Oct 2026 (9th edition), drafted on local `main` and riding with the
+  `feat/custom-domain` push at Rory's request (16 Oct), so it goes live when that merges. See section 7.
+- **In flight: `feat/custom-domain`** (13 Oct; founder sign-off 16 Oct, rollout under way). Code done, branch not yet created or pushed. Client links move off `*.vercel.app` (spam-filter
+  risk) to `tender.rye.energy`. Code: `_public_base()` in `main.py` uses `PUBLIC_BASE_URL` (Production
+  only) for new links, else the request host; tests added in `test_publish.py`. Safe to merge before
+  DNS: unset var = old behaviour. Rollout order is section 11 item 1. Old vercel.app links keep working.
+- Merged branches still to delete: local `fix/rate-book-units`; remote `feat/savings-timeline`,
+  `fix/fee-net-sign`, `fix/rate-book-units`.
 - **Tests:** 19 Python suites + 5 jsdom suites, all green (re-run 13 Oct; section 10).
 
 ## 3. Rules (do not break, do not relitigate without reason)
@@ -183,9 +187,9 @@ straight to `main`. Updates every live dashboard on deploy.
 - `power.series` holds **39 points against 13 labels**. Replace the latest bucket's print rather than
   append when the count would break; rebuild the window when the year rolls.
 - Re-tune `power.series[0]` (a float) every refresh so the "trend vs start" KPI reconciles with TE's
-  1Y %. 12 Oct value: `80.85` for +100.99%.
+  1Y %. 16 Oct value: `82.99` for +102.74%.
 - `rangeLong` is a **3-year** window on purpose (5 years lets 2022 dwarf today). `max` must be a
-  verbatim print (162.50 at 12 Oct).
+  verbatim print (173.79 at 13 Oct).
 - `gas.series` appends. Gas cards: at most nine (3×3).
 - Commentary renders via `textContent`: `\n\n` does nothing. Write one tight block, ~230-260 words.
 
@@ -204,14 +208,18 @@ straight to `main`. Updates every live dashboard on deploy.
   delivery seasons, through a ~50% CCGT. Say when a before/after leg is not same-board.
 
 **Carry-forward checks for the next edition**
-- **Winter 27 had no print on 12 Oct.** Verify it; the 24m blend range depends on it.
-- Term discount is currently measured Q1 27 vs Summer 27 (26.5%); not comparable with earlier
-  Q1-vs-Winter-27 figures.
-- Summer 29 (68.50, 22 Sep) is a first appearance, recorded in `_note`, unused.
+- Winter 27 (156.25) and Summer 28 (97.50) printed again on the 16 Oct 15:25 board, so the 24m blend
+  is same-board from this edition. Ask Rory for the full scrolled board every time.
+- Term discount is measured Q1 27 vs Summer 27 (24.7% on 16 Oct, 26.5% on 12 Oct). Q1 27 vs Winter 27
+  (28.5% on 16 Oct) can resume as the measure from the next edition.
+- Q1 28 (154.60) printed below Q4 27 (157.50): do not treat Q4 as a floor for Winter 27.
+- Summer 29 printed again 16 Oct (76.45, from 68.50 on 22 Sep), with Winter 28 101.75 and Winter 29
+  84.75. Usable for 36m blends if a client asks; recorded in `_note`, not carded.
 
-**12 Oct edition at a glance:** power spot 162.50 £/MWh (+101% 1Y, 3-year high). NBP Nov 26 206.75,
-Q1 27 205.30, Summer 27 150.92, Summer 28 90.25. Front-led rise; signal FIX. 12m from 01/11/26 181.50
-(+0.79 p/kWh vs 7 Oct); 24m ~17% below 12m.
+**16 Oct edition at a glance (15:25 board):** power spot 168.25 £/MWh (+103% 1Y; 3-year high 173.79 on
+13 Oct). NBP Nov 26 217.90 (above Sep peak), Q1 27 218.60, Summer 27 164.50, Winter 27 156.25, Summer 28
+97.50. Back-led, whole-strip rise; signal FIX. 12m from 01/11/26 194.09 (+0.86 p/kWh vs 12 Oct); 24m 161.95
+(~+0.8 p/kWh), 16.6% below 12m.
 
 ## 8. Deployment and ops
 
@@ -219,6 +227,7 @@ Q1 27 205.30, Summer 27 150.92, Summer 28 90.25. Front-led rise; signal FIX. 12m
 |---|---|
 | Env vars (Production + Preview) | `TEAM_ACCESS_KEY`, `RETOOL_DATABASE_URL`, `ANTHROPIC_API_KEY`, optional `ANTHROPIC_BASE_URL` |
 | Webhook env vars | `PUBLISH_WEBHOOK_URL` (full Retool URL), `PUBLISH_WEBHOOK_SECRET` (`retool_wk_…`, sent as `X-Workflow-Api-Key`). Unset = webhook off. Keys are per Retool environment. Prod key rotated after the 19 Aug leak (confirmed 13 Oct). Never paste keys into chat |
+| Client link domain | `PUBLIC_BASE_URL=https://tender.rye.energy`, **Production scope only** (a Preview copy would point preview publishes at prod). Must start `https://` or it is ignored. Set only once the domain shows Valid Configuration in Vercel |
 | Data residency | Retool Cloud DB is US-hosted. **Accepted decision** (Rory, 13 Oct), under Retool's DPA/SCCs. If it ever changes, moving is a `RETOOL_DATABASE_URL` swap to a UK/EU Postgres (DDL in `schema/retool_tables.sql`), no code change |
 | Access | App-level HTTP Basic gate (`team_gate`) on `/api` and `/app`; `/d/*`, `/api/health`, `/` exempt. **Vercel Deployment Protection stays OFF** (cannot exempt `/d/*`) |
 | Region | `lhr1` via `vercel.json` |
@@ -268,9 +277,15 @@ client sees a new tender.
 
 ## 11. Open items (priority order)
 
+**Now: custom domain rollout (spam filters, Rory 13 Oct)**
+1. In order: (a) DONE 16 Oct: GoDaddy CNAME `tender` → `…vercel-dns-016.com` + `_vercel` TXT, Valid
+   Configuration, `/api/health` = 200. No CAA records on rye.energy. (b) Merge `feat/custom-domain`.
+   (c) Set `PUBLIC_BASE_URL` in Production, redeploy. (d) Publish a test tender, check the link,
+   revoke it. (e) Optional: `replace()` the host in stored `dashboard_url` (column and
+   `payload->dashboard_url`) so the register shows the new link. (f) Check Front templates and the Retool workflow for hardcoded vercel.app links.
+
 **Housekeeping**
-1. Disconnect or delete the old hobby Vercel project so a push cannot deploy twice.
-2. Finish `tender.rye.energy` (GoDaddy CNAME + `_vercel` TXT). Cosmetic.
+2. Disconnect or delete the old hobby Vercel project so a push cannot deploy twice.
 3. Delete merged branches (section 2).
 
 **Backlog**

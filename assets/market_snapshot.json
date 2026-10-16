@@ -1,13 +1,13 @@
 {
- "_note": "Market snapshot taken 2026-10-12 from Rory's Trading Economics (UK power spot 162.50 GBP/MWh, +81.65 / +100.99% 1Y, -33.08% 5Y), the ICE Futures Europe UK NBP gas forward board (12 Oct 2026, ~10:24 GMT, Nov 26 front month 206.750, +2.069% on the day), an N2EX UK day-ahead board for 8-13 Oct, and a driver summary Rory supplied (IRGC claims strike on an LPG carrier and warns shipping across the wider region, Houthi attacks on Saudi incl. Riyadh airport twice over the weekend, Trump ruling out further Iran strikes before the 03/11/2026 midterms; colder forecast end of this week into next; weak European wind and solar; French nuclear constrained by low rivers; UK-EU ETS linking announced last week, UKAs at eight-month highs). Drivers are Rory-supplied, not wire-verified. Every contract price read verbatim off the ICE board; power SERIES shapes traced off TE, not tick-exact. power.series[0] RE-TUNED 83.8 -> 80.85 (= 162.50 / 2.0099) so the Trend KPI reconciles with TE's +100.99% (renders +101%) - RE-TUNE IT EVERY REFRESH. Power 1Y series: 39 points against 13 labels Oct..Oct kept; last point 151.70 (7 Oct) REPLACED by 162.50 rather than appended. Tail now 147.24, 158 (chart-read), 142.51, 162.50. rangeLong.max 158 -> 162.50 (today is a verbatim print and the new 3-year high, so the chart-read 158 caveat is retired); rangeLong last point 151.70 replaced by 162.50. gas.series appends 206.75. WINTER 27 HAD NO PRINT on the 12 Oct board (rows jump SEP27 -> APR28), so its card is DROPPED, not carried at 137.50. Cards are 8: NOV 26, DEC 26, JAN 27, FEB 27, Q1 27, MAR 27, SUMMER 27, SUMMER 28. Like-for-like moves since 7 Oct: Nov 26 +8.96%, Dec 26 +8.46%, Jan 27 +8.39%, Feb 27 +7.75%, Q1 27 +8.48%, Mar 27 +7.84%, Summer 27 +4.44%, Summer 28 +1.40%, power spot +7.12%. THE FRONT LED AGAIN, reversing 7 Oct's back-led rise and back in line with the rule that near-term risk prices into the front. Term discount now measured Q1 27 vs SUMMER 27 because Winter 27 is missing: 26.5% today vs 23.6% on 7 Oct (same measure both days). Blends (55/45 winter-weighted, winter leg = Nov-Mar average, ~50% CCGT, /29.3071), from 01/11/26: 12m 169.92 -> 181.50 (+6.81%, +0.79 p/kWh), same-board. 24m NOT same-board: Winter 27 carried at 137.50 gives 148.87 (+4.25%, +0.41 p/kWh, 18.0% below 12m); Winter 27 moved in line with Summer 27 (+4.44%, 143.61) gives 150.55 (+5.42%, +0.53 p/kWh, 17.1% below 12m). Commentary therefore says 'around 0.5 p/kWh' and 'around 17%'. Verify Winter 27 next edition. N2EX day-ahead daily averages: 8 Oct 118.02, 9 Oct 76.80, 10 Oct 50.94 (min 9.28, 02:00-03:00 Sat), 11 Oct 108.34, 12 Oct 142.58 (max 162.18, 07:00-08:00), 13 Oct 116.36. Note 13 Oct day-ahead is 18% below 12 Oct and TE spot (162.50) sits well above the N2EX daily average; different measures, quoted separately, not reconciled. A single day's day-ahead dip is not a forward signal. COMMENTARY IS RENDERED WITH textContent, so it is one block.",
- "updated": "2026-10-12",
- "headline": "power has doubled in a year, and the coming winter led this week's rise",
- "commentary": "UK power spot is 162.50 £/MWh, up 7.1% since our update on 7 October and now double where it was a year ago, the highest level in the three years shown here. The gas front month, November, is 206.75 p/therm, up 9.0% since 7 October. That takes it back above where it stood before the late-September fall and within half a percent of September's peak. Several things are pushing at once: an Iranian strike on an LPG carrier and warnings to shipping across the wider Middle East, with no sign of de-escalation; a colder forecast for late this week and next; weak wind and solar across Europe; French nuclear output held back by low rivers; and the plan to link UK and EU carbon markets, which has lifted UK carbon prices to eight-month highs. Unlike last time, the rise landed on this winter. November to March are up about 8 to 9%, Summer 27 4.4% and Summer 28 1.4%. That widens the gap between this winter and next year, which strengthens the case for term. A 12-month contract starting in November is about 0.79 p/kWh higher on a wholesale-equivalent basis than on 7 October, a 24-month around 0.5 p/kWh, and the 24-month now sits around 17% below the 12-month, up from 16%. Weather and shipping risk can ease quickly; carbon linking will not, and waiting has now cost money in both updates since late September. Day-ahead prices this past week ran from £9.28/MWh early on Saturday to £162.18 on Monday morning, the swing a fixed price removes.",
+ "_note": "Market snapshot taken 2026-10-16 from Rory's Trading Economics (UK power spot 168.25 GBP/MWh, +85.26 / +102.74% 1Y; intra-week high 173.79 on 13 Oct, +5.52 / +3.28% that day), the ICE Futures Europe UK NBP gas forward board (16 Oct 2026, 15:25 GMT close-of-session board (supersedes the 10:42 board drafted earlier the same day), Nov 26 front month 217.900, +1.989% on the day; 3M chart shows ~217 earlier this week, prior settle ~213.65), an N2EX UK day-ahead board for 11-17 Oct, and two Montel articles Rory supplied (Baringa: European Oct-Mar LNG imports +9% y/y to 96 bcm to support tighter storage; France set for highest weekly spot power since Dec 2022, week-ahead EUR 183.10/MWh, efficient CCGT short-run cost +EUR15 on the week to EUR 187.50/MWh as gas soared to near four-year highs, French demand +3.4 GW to 47.3 GW, nuclear availability 40.3 -> 42.9 GW, residual load +0.4 GW). Drivers are Rory-supplied (Montel), not independently wire-verified; the UK-imports-from-France link is RYE's reasoning, not from the article. Earlier drivers (Middle East shipping, UK-EU ETS linking) not re-supplied this edition and not re-asserted. Every contract price read verbatim off the 15:25 ICE board (full strip to Winter 29 visible); power SERIES shapes traced off TE, not tick-exact; TE spot and N2EX unchanged from the morning draft. power.series[0] RE-TUNED 80.85 -> 82.99 (= 168.25 - 85.26) so the Trend KPI reconciles with TE's +102.74% (renders +103%) - RE-TUNE IT EVERY REFRESH. Power 1Y series: 39 points against 13 labels kept; last point 162.50 (12 Oct) REPLACED by 168.25. rangeLong: last point 162.50 replaced by 173.79 (13 Oct, verbatim TE print, new 3-year high) and 168.25 APPENDED; rangeLong.max 162.50 -> 173.79. gas.series appends 217.90 (one point for 16 Oct; the morning 217.12 was replaced). CARDS (9): NOV 26, DEC 26, JAN 27, FEB 27, Q1 27, MAR 27, SUMMER 27, WINTER 27, SUMMER 28. Also on the board, not carded: APR 27 182.25, MAY 27 169.75, Q2 27 170.70, Q3 27 157.70, Q4 27 157.50, Q1 28 154.60, WINTER 28 101.75, SUMMER 29 76.45, WINTER 29 84.75 (Q4 27 and Q1 28 bracket Winter 27, consistent). WINTER 27 back after two editions without a print: 156.25 vs 137.50 on 7 Oct (+13.6%, 9 days, not like-for-like with the 12 Oct moves). Note Q1 28 (154.60) sits BELOW Q4 27 (157.50), so the morning draft's 'Q4 27 as a floor for Winter 27' assumption was wrong; superseded. Like-for-like moves since 12 Oct: Nov 26 +5.39%, Dec 26 +5.70%, Jan 27 +5.94%, Feb 27 +5.57%, Q1 27 +6.48%, Mar 27 +5.94%, Summer 27 +9.00%, Summer 28 +8.03%, power spot +3.54%. BACK LED: whole strip up, 2027-28 summers most. Risk-premium shape, so the term argument is 'term still averages lower, and waiting does not avoid the rise'. Term discount Q1 27 vs Summer 27: 24.75% today vs 26.49% on 12 Oct (same measure). Q1 27 vs Winter 27 = 28.5% today, no 12 Oct comparator. BLENDS (55/45 winter-weighted, winter leg = Nov-Mar singles average, ~50% CCGT, /29.3071), from 01/11/26: 12m 194.09 vs 181.50, +6.94%, +0.86 p/kWh, same-board. 24m 161.95, same-board TODAY (W27 156.25, S28 97.50), 16.6% below 12m. The 12 Oct 24m was not same-board, so the move is a range: +0.78 p/kWh vs the 150.55 estimate, +0.89 vs the 148.87 carry. Commentary says 'around 0.8 p/kWh' and 'around 17%'. N2EX day-ahead daily averages: 11 Oct 108.34, 12 Oct 142.58, 13 Oct 116.36, 14 Oct 116.29 (min 86.89), 15 Oct 126.12, 16 Oct 141.41 (max 153.37, 07:00-08:00), 17 Oct 131.48 (min 114.51, max 141.16). 13-17 Oct range 86.89-153.37, no negatives; overnight floor lifting. TE spot and N2EX daily average are different measures, quoted separately, not reconciled. COMMENTARY IS RENDERED WITH textContent, so it is one block.",
+ "updated": "2026-10-16",
+ "headline": "gas has broken above September's peak, and next year rose faster than this winter",
+ "commentary": "UK power spot is 168.25 £/MWh, up 3.5% since our update on 12 October and now more than double where it was a year ago. On 13 October it touched 173.79, the highest level in the three years shown here. The gas front month, November, is 217.90 p/therm, up 5.4% since 12 October and about 4.9% above September's peak. Market reporting this week points to European gas near four-year highs, Europe needing around 9% more LNG this winter to support tighter storage, and French power heading for its highest weekly price since December 2022 as demand rises and gas-fired generation costs climb. The UK imports power from France, so that pressure reaches us too. This time next year rose faster than this winter: November to March are up 5.4 to 5.9%, Summer 27 9.0% and Summer 28 8.0%. When the whole curve lifts like this, the market is pricing risk into next year too, so waiting for this winter to pass does not avoid it. A 12-month contract starting in November is about 0.86 p/kWh higher on a wholesale-equivalent basis than on 12 October. A 24-month is up around 0.8 p/kWh and still sits around 17% below the 12-month, so term still buys a lower average price. Waiting has now cost money in all three updates since late September. Day-ahead prices this week ran from £86.89/MWh to £153.37, and the floor is rising: the cheapest hour for 17 October is £114.51, the swing and the level a fixed price takes off the table.",
  "power": {
   "unit": "£/MWh",
-  "spotNow": 162.5,
+  "spotNow": 168.25,
   "series": [
-   80.85,
+   82.99,
    83,
    78,
    83,
@@ -45,7 +45,7 @@
    147.24,
    158.0,
    142.51,
-   162.5
+   168.25
   ],
   "seriesLabels": [
    "Oct",
@@ -65,7 +65,7 @@
   "rangeLong": {
    "years": 3,
    "min": 56,
-   "max": 162.5,
+   "max": 173.79,
    "series": [
     85,
     78,
@@ -107,7 +107,8 @@
     147.24,
     158.0,
     142.51,
-    162.5
+    173.79,
+    168.25
    ],
    "axisLabels": [
     "Aug 23",
@@ -122,8 +123,8 @@
  },
  "gas": {
   "unit": "p/therm",
-  "spotNow": 206.75,
-  "note": "NBP front month Nov 26 is 206.75 p/therm, up 9.0% on its 7 Oct print of 189.74 and above its 18 Sep level of 199.45, so the late-September fall has fully reversed. The rest of this winter: Dec 26 209.20, Jan 27 210.37, Feb 27 208.25, Mar 27 197.99, Q1 27 205.30. This time the rise is led by the front of the curve: the winter months are up 7.8 to 9.0%, against Summer 27 150.92 (+4.4%) and Summer 28 90.25 (+1.4%). So the step-down from this winter has widened: Q1 27 205.30 to Summer 27 150.92 is a 26.5% discount, from 23.6% on 7 Oct, and Summer 28 at 90.25 is a further step below. A 24-month contract blends this winter down with cheaper 2027 and 2028, and that blend did more work this week than last.",
+  "spotNow": 217.9,
+  "note": "NBP front month Nov 26 is 217.90 p/therm, up 5.4% on its 12 Oct print of 206.75 and about 4.9% above September's peak, a new high for this run. The rest of this winter: Dec 26 221.13, Jan 27 222.86, Feb 27 219.85, Mar 27 209.75, Q1 27 218.60. This time the back of the curve rose faster than the front: the winter months are up 5.4 to 5.9%, against Summer 27 164.50 (+9.0%) and Summer 28 97.50 (+8.0%). So the step down from this winter narrowed slightly: Q1 27 to Summer 27 is a 24.7% discount, from 26.5% on 12 Oct. Winter 27 prints again at 156.25, its first price since 7 Oct, up from 137.50. A rise across the whole curve means a longer contract does not dodge the increase, but it still blends this winter down with cheaper years.",
   "series": [
    76,
    77,
@@ -163,40 +164,45 @@
    197.06,
    176.89,
    189.74,
-   206.75
+   206.75,
+   217.9
   ],
   "contracts": [
    [
     "NOV 26",
-    206.75
+    217.9
    ],
    [
     "DEC 26",
-    209.2
+    221.13
    ],
    [
     "JAN 27",
-    210.37
+    222.86
    ],
    [
     "FEB 27",
-    208.25
+    219.85
    ],
    [
     "Q1 27",
-    205.3
+    218.6
    ],
    [
     "MAR 27",
-    197.99
+    209.75
    ],
    [
     "SUMMER 27",
-    150.92
+    164.5
+   ],
+   [
+    "WINTER 27",
+    156.25
    ],
    [
     "SUMMER 28",
-    90.25
+    97.5
    ]
   ]
  }
