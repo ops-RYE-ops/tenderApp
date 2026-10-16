@@ -1338,6 +1338,18 @@ def _is_expired(expires_at) -> bool:
         return False
 
 
+def _public_base(request: Request) -> str:
+    """Origin for client links. PUBLIC_BASE_URL (Production only, e.g.
+    https://tender.rye.energy) wins, so links carry RYE's own domain whichever host
+    the team publishes from. Unset (previews, tests) = the host that served the
+    request. Generic *.vercel.app links are a spam-filter risk; see HANDOVER s.8.
+    """
+    env = (os.environ.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if env.startswith("https://"):
+        return env
+    return str(request.base_url).rstrip("/")
+
+
 @app.post("/api/publish")
 def publish_endpoint(body: PublishBody, request: Request):
     """Publish a tender: mint/keep its unguessable link and mark it live.
@@ -1364,8 +1376,7 @@ def publish_endpoint(body: PublishBody, request: Request):
     if nv is not None:
         tender["version"] = nv
     tender["created_at"] = at._now_rfc3339_z()
-    base = str(request.base_url).rstrip("/")
-    tender["dashboard_url"] = f"{base}/d/{tender['slug']}/{tender['url_uuid']}"
+    tender["dashboard_url"] = f"{_public_base(request)}/d/{tender['slug']}/{tender['url_uuid']}"
 
     try:
         at.validate_tender(tender)

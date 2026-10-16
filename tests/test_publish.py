@@ -66,7 +66,23 @@ def main_test():
     check("version bumped to 2", body["version"] == 2)
     check("returns a /d/<slug>/<uuid> link", "/d/amorino-uk/" in body["url"])
     check("url_uuid present", bool(body["url_uuid"]))
+    check("no PUBLIC_BASE_URL -> link uses the request host",
+          body["url"].startswith("http://testserver/d/"))
     published = store["latest"]
+
+    print("1b) PUBLIC_BASE_URL puts client links on RYE's own domain")
+    os.environ["PUBLIC_BASE_URL"] = "https://tender.rye.energy/"
+    try:
+        rb = client.post("/api/publish", json={"tender_id": TID}).json()
+        check("link on tender.rye.energy",
+              rb["url"].startswith("https://tender.rye.energy/d/amorino-uk/"))
+        check("stored dashboard_url matches", store["latest"]["dashboard_url"] == rb["url"])
+        os.environ["PUBLIC_BASE_URL"] = "tender.rye.energy"   # no scheme -> ignored
+        rc = client.post("/api/publish", json={"tender_id": TID}).json()
+        check("malformed PUBLIC_BASE_URL ignored", rc["url"].startswith("http://testserver/d/"))
+    finally:
+        os.environ.pop("PUBLIC_BASE_URL", None)
+    store["latest"] = published
 
     print("2) the public route serves the published dashboard, noindex, no auth")
     main._get_tender_by_uuid = lambda u: published if u == published["url_uuid"] else None  # type: ignore

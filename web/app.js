@@ -954,7 +954,8 @@ function renderAssembleResult(r) {
 function wouldBeUrl(saved) {
   const slug = (saved && saved.slug) || "client";
   const uuid = (saved && saved.url_uuid) || "…";
-  return `rye.energy/${slug}/${uuid}`;
+  // Label only: the real link comes back from /api/publish (PUBLIC_BASE_URL in prod).
+  return `tender.rye.energy/d/${slug}/${uuid}`;
 }
 
 function openPublishStep() {
