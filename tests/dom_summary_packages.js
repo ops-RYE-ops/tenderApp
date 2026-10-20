@@ -37,5 +37,11 @@ const want = E('Supplier B').total + G('Supplier B').total;
 ck('headline spend is B elec + B gas', sum.textContent.includes(gbp(want)), gbp(want));
 ck('headline is not A gas under B electricity',
    !sum.textContent.includes(gbp(E('Supplier B').total + G('Supplier A').total)));
+// Labels: with gas ticked, a bar names every supplier in its package; unticked, only electricity.
+const names = () => [...sum.querySelectorAll('.bar-row .bar-name')].map(n => n.childNodes[0].textContent.trim());
+ck('gas on: same-supplier package reads once (Supplier A)', names().includes('Supplier A'), names().join(' | '));
+ck('gas on: D (fallback to B gas) names both suppliers', names().includes('Supplier D + Supplier B'), names().join(' | '));
+cb.checked = false; cb.dispatchEvent(new dom.window.Event('change'));
+ck('gas off: bars name the electricity supplier only', names().every(n => !n.includes(' + ')), names().join(' | '));
 console.log(fails ? `${fails} FAILED` : 'ALL SUMMARY-PACKAGE DOM CHECKS PASSED');
 process.exit(fails ? 1 : 0);
