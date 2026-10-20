@@ -844,10 +844,15 @@ async function doAssemble() {
     return;
   }
   {
-    const present = [];
-    for (const o of state.offers) { const f = o.fuel || "electricity"; if (!present.includes(f)) present.push(f); }
+    // A fuel is covered when any ticked offer prices it. A package quote (one sheet
+    // carrying both fuels) is a single offer listed under electricity but covers gas
+    // too; `fuels` comes from /api/cost (older responses fall back to `fuel`).
+    const fuelsOf = (o) => (o && o.fuels && o.fuels.length ? o.fuels : [(o && o.fuel) || "electricity"]);
+    const present = [], covered = new Set();
+    for (const o of state.offers) for (const f of fuelsOf(o)) if (!present.includes(f)) present.push(f);
+    state.featured.forEach((idx) => fuelsOf(state.offers.find((x) => x.index === idx)).forEach((f) => covered.add(f)));
     for (const f of present) {
-      if (!featuredCountForFuel(f)) {
+      if (!covered.has(f)) {
         notice($("assemble-msg"), `Tick at least one ${(FUEL_LABEL[f] || f).toLowerCase()} offer to show the client.`, "error");
         return;
       }

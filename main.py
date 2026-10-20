@@ -1107,8 +1107,14 @@ async def cost(extracts: str = Form(...), sites_csv: Optional[UploadFile] = File
                                     detail=f"Costing '{q.get('supplier')}' failed: {type(e).__name__}: {e}")
             line_mpxns = {ln.get("mpxn") for ln in q.get("lines", []) if ln.get("mpxn")}
             ofuel = _offer_fuel(q.get("lines", []))
+            # Every fuel this quote prices. A package (one sheet carrying both fuels) is
+            # still ONE offer here (ranked under its first fuel), but it covers gas too,
+            # so the wizard must not demand a separate gas tick for it.
+            ofuels = sorted({f for f in (bd._line_fuel(ln, sites_fuel) for ln in q.get("lines", [])) if f}
+                            or {ofuel}, key=lambda f: {"electricity": 0, "gas": 1}.get(f, 9))
             offers.append({
                 "index": i,
+                "fuels": ofuels,
                 "supplier": q.get("supplier"),
                 "term": q.get("term", ""),
                 "category": computed.get("category"),
