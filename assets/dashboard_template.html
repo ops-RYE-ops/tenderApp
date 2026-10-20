@@ -97,8 +97,10 @@ h1 { font-family: var(--rye-display); font-size: 44px; font-weight: 500;
   padding-top: 14px; border-top: 1px solid var(--border); }
 .bar-gas-sw { opacity: 0.4; }
 .bar-row { display: grid; grid-template-columns: 220px 1fr 110px; gap: 12px; align-items: center; }
-.bar-name { font-size: 13px; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-name .term { font-family: var(--rye-mono); font-size: 11px; color: var(--t3); margin-left: 6px; }
+.bar-name { font-size: 13px; color: var(--t1); line-height: 1.35; overflow-wrap: anywhere; }
+/* The term never clips: it stays on the supplier's line when it fits and drops to
+   the next line, whole, when it doesn't (a long name + "24 months" used to read "24 mon…"). */
+.bar-name .term { font-family: var(--rye-mono); font-size: 11px; color: var(--t3); margin-left: 6px; white-space: nowrap; display: inline-block; }
 .bar-track { height: 22px; position: relative; }
 .bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 1px;
   transform-origin: left; animation: growBarH 600ms ease-out both; }
@@ -855,10 +857,14 @@ function summaryBars(on) {
   const gasInc = secs.reduce((a, f) => a + (f.incumbent ? f.incumbent.total : 0), 0);
   const recId = P.recommendedId || P.bestId;
   const split = on && secs.length > 0;
-  // With gas included, a bar is a package: name every supplier in it (electricity
-  // offer + its gas twin), so a Capture + Yu package never reads "Capture Energy".
-  const barName = o => !split || o.isIncumbent ? offerName(o)
-    : supplierLabel([...siteSuppliers(o), ...secs.flatMap(f => siteSuppliers(gasTwin(f, o)))]) || offerName(o);
+  // With gas included, a bar is a package (electricity offer + its gas twin). One
+  // supplier across it reads as that supplier; more than one reads "Multiple
+  // suppliers" so the bar label stays short (the headline card names them all).
+  const barName = o => {
+    if (!split || o.isIncumbent) return offerName(o);
+    const sup = [...new Set([...siteSuppliers(o), ...secs.flatMap(f => siteSuppliers(gasTwin(f, o)))])];
+    return sup.length > 1 ? "Multiple suppliers" : (sup[0] || offerName(o));
+  };
   const rows = (P.incumbent ? [P.incumbent] : []).concat(P.offers).map(o => {
     const g = !split ? 0 : (o.isIncumbent ? (gasIncKnown ? gasInc : gasRec) : gasFor(o));
     return { o, name: barName(o), elec: o.total, gas: g, total: o.total + g };
@@ -877,7 +883,7 @@ function summaryBars(on) {
       : o.id === recId ? `<span class="chip success">recommended</span>` : "";
     const ew = (r.elec / maxTotal * 100).toFixed(1), gw = (r.gas / maxTotal * 100).toFixed(1);
     const tip = r.gas ? `${esc(r.name)} — electricity ${gbp(r.elec)} + gas ${gbp(r.gas)}` : "";
-    return `<div class="bar-row" data-cat="${esc(o.category || 'other')}"${tip ? ` title="${tip}"` : ""}>
+    return `<div class="bar-row" data-cat="${esc(o.category || 'other')}" data-offer="${esc(o.id)}"${tip ? ` title="${tip}"` : ""}>
       <div class="bar-name">${esc(r.name)}${o.isIncumbent && isBenchmark ? "" : `<span class="term">${esc(o.term)}</span>`}</div>
       <div class="bar-track">
         <div class="bar-fill" style="width:${ew}%;background:${fill};animation-delay:${i * 60}ms"></div>

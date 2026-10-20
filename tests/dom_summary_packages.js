@@ -21,7 +21,7 @@ const G = s => fuel('gas').offers.find(o => o.supplier === s);
 const cb = d.getElementById('inc-gas');
 cb.checked = true; cb.dispatchEvent(new dom.window.Event('change'));
 const sum = d.getElementById('tab-savings');
-const bar = s => { const r = [...sum.querySelectorAll('.bar-row')].find(r => r.querySelector('.bar-name').textContent.startsWith(s));
+const bar = s => { const id = E(s).id; const r = sum.querySelector(`.bar-row[data-offer="${id}"]`);
   return r ? r.querySelector('.bar-val').childNodes[0].textContent.trim() : null; };
 
 ck('B (recommended) bar = B elec + B gas', bar('Supplier B') === gbp(E('Supplier B').total + G('Supplier B').total), bar('Supplier B'));
@@ -40,7 +40,8 @@ ck('headline is not A gas under B electricity',
 // Labels: with gas ticked, a bar names every supplier in its package; unticked, only electricity.
 const names = () => [...sum.querySelectorAll('.bar-row .bar-name')].map(n => n.childNodes[0].textContent.trim());
 ck('gas on: same-supplier package reads once (Supplier A)', names().includes('Supplier A'), names().join(' | '));
-ck('gas on: D (fallback to B gas) names both suppliers', names().includes('Supplier D + Supplier B'), names().join(' | '));
+ck('gas on: D (fallback to B gas) reads "Multiple suppliers"', names().includes('Multiple suppliers'), names().join(' | '));
+ck('gas on: no bar lists suppliers with " + "', names().every(n => !n.includes(' + ')), names().join(' | '));
 cb.checked = false; cb.dispatchEvent(new dom.window.Event('change'));
 ck('gas off: bars name the electricity supplier only', names().every(n => !n.includes(' + ')), names().join(' | '));
 console.log(fails ? `${fails} FAILED` : 'ALL SUMMARY-PACKAGE DOM CHECKS PASSED');
