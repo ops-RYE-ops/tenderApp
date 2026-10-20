@@ -686,14 +686,17 @@ function buildMarketPane() {
    when the client ticks it in, and switches fuel within the Portfolio tab. The
    RYE charge is whole-tender (all meters) regardless of the tick. */
 function recOf(f) { return (f.offers || []).find(o => o.id === (f.recommendedId || f.bestId)) || (f.offers || [])[0]; }
-/* Gas twin for an electricity offer: the secondary-fuel offer quoted on the SAME term
-   label (one upload sheet = one package, e.g. "Rolling elec + 12m gas"), else the
-   recommended offer for that fuel. Tenders whose fuels share no term labels render
-   exactly as before (recommended gas on every bar). */
-function normTerm(t) { return String(t || "").trim().toLowerCase(); }
+/* Gas twin for an electricity offer: the secondary-fuel offer split from the SAME
+   canonical quote (packageId = its index in tender.quotes, so one upload sheet carrying
+   both fuels is one package). Exactly one match or nothing: a term label is NOT an
+   identity (several suppliers can quote "12 months"), so anything else falls back to
+   the recommended offer for that fuel, which is the pre-existing behaviour. */
 function gasTwin(f, o) {
-  const t = o && !o.isIncumbent ? normTerm(o.term) : "";
-  return (t && (f.offers || []).find(x => normTerm(x.term) === t)) || recOf(f);
+  if (o && !o.isIncumbent && o.packageId != null) {
+    const hits = (f.offers || []).filter(x => x.packageId === o.packageId);
+    if (hits.length === 1) return hits[0];
+  }
+  return recOf(f);
 }
 function siteSuppliers(offer) { return offer ? [...new Set(offer.sites.map(s => s.supplier || offer.supplier).filter(Boolean))] : []; }
 function supplierLabel(list) { const u = [...new Set(list)].filter(Boolean); return u.length === 0 ? "" : (u.length <= 3 ? u.join(" + ") : "Best of market mix"); }
@@ -832,8 +835,9 @@ function buildSummaryMulti() {
    bar GROWS by a gas segment, so its length is the client's total annual spend.
    The two fuels are tendered separately, so a non-recommended electricity offer has no
    gas twin by default: every offer bar carries the RECOMMENDED gas offer (held constant
-   across the bars), unless a gas offer shares its term label, i.e. was quoted as one
-   package on the same sheet (gasTwin). Then that package's own gas is used, while the incumbent carries its OWN
+   across the bars), unless a gas offer was split from the same quote (same packageId:
+   one upload sheet carrying both fuels, see gasTwin). Then that package's own gas is
+   used. The incumbent carries its OWN
    current gas — the baseline has to be what they actually pay. The footnote says so. */
 function summaryBars(on) {
   const P = FUELS[primaryIndex];

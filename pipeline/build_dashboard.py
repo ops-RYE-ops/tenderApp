@@ -286,6 +286,7 @@ def compute_offer(entry, tender, incumbent=False):
         "id": entry["_id"],
         "supplier": entry["supplier"],
         "term": entry.get("term", ""),
+        "packageId": entry.get("package"),
         "category": offer_category(entry),
         "isIncumbent": incumbent,
         "sites": sites,
@@ -388,11 +389,15 @@ def _sub_tender_for_fuel(tender, fuel):
     sub = dict(tender)
     sub["sites"] = [s for s in tender.get("sites", []) if sites_fuel.get(s.get("mpxn")) == fuel]
     quotes = []
-    for q in tender.get("quotes", []):
+    for qi, q in enumerate(tender.get("quotes", [])):
         lines = [ln for ln in q.get("lines", []) if _line_fuel(ln, sites_fuel) == fuel]
         if lines:
             nq = dict(q)
             nq["lines"] = lines
+            # Package identity: the canonical quote this per-fuel offer was split from.
+            # One quote (one upload sheet) yields at most one offer per fuel, so the
+            # Summary can pair an electricity offer with the gas quoted alongside it.
+            nq["_package"] = qi
             quotes.append(nq)
     sub["quotes"] = quotes
     inc = tender.get("incumbent")
@@ -428,6 +433,8 @@ def _build_cfg(tender, work, tag="", include_charge=True):
             entry["category"] = q["category"]
         if q.get("charge_basis"):
             entry["charge_basis"] = q["charge_basis"]
+        if q.get("_package") is not None:
+            entry["package"] = q["_package"]
         cfg_quotes.append(entry)
     cfg["quotes"] = cfg_quotes
     inc = tender.get("incumbent")
