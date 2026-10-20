@@ -159,6 +159,21 @@ def test_endpoint_guards():
     check("electricity offer tagged electricity", byfuel.get("EDF") == "electricity")
     check("gas offer tagged gas", byfuel.get("British Gas") == "gas")
     check("cheapest marked once per fuel", sum(1 for o in j["offers"] if o["cheapest"]) == 2)
+    check("single-fuel offers report one fuel each",
+          {o["supplier"]: o["fuels"] for o in j["offers"]} == {"EDF": ["electricity"], "British Gas": ["gas"]})
+
+    # A PACKAGE: one quote (one upload sheet) pricing both fuels. It stays one offer,
+    # but reports both fuels so the wizard counts it as covering gas (Public House
+    # Group, Oct 2026: "Tick at least one gas offer" blocked a package-only tender).
+    pkg = {"sites": extract["sites"], "quotes": [
+        {"supplier": "Multiple suppliers", "term": "24 months", "lines": [
+            {"mpxn": MPAN_A, "unitRate": 25.0, "standingCharge": 40.0, "fuel": "electricity"},
+            {"mpxn": MPRN_G, "unitRate": 6.5, "standingCharge": 30.0, "fuel": "gas"}]}]}
+    r = client.post("/api/cost", data={"extracts": json.dumps([pkg])})
+    po = r.json()["offers"] if r.status_code == 200 else []
+    check("package quote -> one offer", r.status_code == 200 and len(po) == 1)
+    check("package offer reports both fuels, electricity first",
+          bool(po) and po[0].get("fuels") == ["electricity", "gas"])
 
     r = client.post("/api/assemble", data={
         "extracts": json.dumps([extract]),
