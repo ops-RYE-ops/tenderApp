@@ -371,11 +371,11 @@ function buildRecVsInc() {
   const cOther = commission ? (commission.included ? commission.rateExclCommission : commission.rateInclCommission) : null;
   const cOtherLabel = commission && commission.included ? "excl." : "incl.";
   return `<section>
-    <div class="section-label">Our recommendation — ${esc(rec.supplier)} · ${esc(rec.term)}</div>
+    <div class="section-label">Our recommendation — ${esc(offerName(rec))} · ${esc(rec.term)}</div>
     <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:14px" class="rec-grid">
       <div class="card accent-green">
         <span class="chip success">recommended</span>
-        <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-top:12px">${esc(rec.supplier)}</div>
+        <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-top:12px">${esc(offerName(rec))}</div>
         <div class="kpi-sub">${esc(rec.term)} fixed · covers all ${TENDER.sites.length} supply point${TENDER.sites.length === 1 ? "" : "s"}</div>
         <div class="kpi-label" style="margin-top:18px">${isBenchmark ? "Indicative" : "Forecasted"} annual ${savings >= 0 ? "saving" : "increase"}</div>
         <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}" style="font-size:40px;margin-top:8px">${gbp(Math.abs(savings))}</div>
@@ -401,7 +401,7 @@ function buildRecVsInc() {
       <div class="table-wrap"><table>
         <thead><tr><th>Standardised comparison</th>
           <th>${baseLabel}</th>
-          <th>${esc(rec.supplier)} · ${esc(rec.term)}</th></tr></thead>
+          <th>${esc(offerName(rec))} · ${esc(rec.term)}</th></tr></thead>
         <tbody>
           <tr><td class="name">Mean unit rate (p/kWh)</td>${pk(inc.perKwh.unit)}${pk(rec.perKwh.unit, rec.perKwh.unit <= inc.perKwh.unit ? "best" : "")}</tr>
           <tr><td class="name">Mean non-commodity costs (p/kWh)</td>${pk(inc.perKwh.nonCommodity)}${pk(rec.perKwh.nonCommodity, rec.perKwh.nonCommodity <= inc.perKwh.nonCommodity ? "best" : "")}</tr>
@@ -478,7 +478,7 @@ function buildBars(opts) {
       const chip = o.isIncumbent ? `<span class="chip warning">${baseChip}</span>`
         : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
       return `<div class="bar-row" data-cat="${esc(o.category || 'other')}">
-        <div class="bar-name">${esc(o.supplier)}${o.isIncumbent && isBenchmark ? "" : `<span class="term">${esc(o.term)}</span>`}</div>
+        <div class="bar-name">${esc(offerName(o))}${o.isIncumbent && isBenchmark ? "" : `<span class="term">${esc(o.term)}</span>`}</div>
         <div class="bar-track"><div class="bar-fill" style="width:${(o.total / maxTotal * 100).toFixed(1)}%;background:${fill};animation-delay:${i * 60}ms"></div></div>
         <div class="bar-val">${gbp(o.total)} ${chip}</div>
       </div>`;
@@ -499,7 +499,7 @@ function buildBreakdown() {
       const chip = o.isIncumbent ? `<span class="chip warning">${baseChip}</span>`
         : o.id === rec.id ? `<span class="chip success">recommended</span>` : "";
       return `<tr class="${o.isIncumbent ? "incumbent-row" : ""}">
-        <td class="name">${esc(o.supplier)}<span class="sub">${esc(o.term)}</span></td>` +
+        <td class="name">${esc(offerName(o))}<span class="sub">${esc(o.term)}</span></td>` +
         comps.map(c => `<td>${o.totals[c.key] ? gbp(o.totals[c.key]) : "—"}</td>`).join("") +
         `<td>${o.perKwh.effective == null ? "—" : o.perKwh.effective.toFixed(2)}</td>` +
         `<td class="total ${o.id === rec.id ? "best" : ""}">${gbp(o.total)}</td>${delta}<td>${chip}</td></tr>`;
@@ -532,7 +532,7 @@ function buildSiteMatrix() {
     <div class="table-wrap"><table>
       <thead><tr><th>Supply</th>` + thU("EAC", "kWh") +
       `<th>Efficiency<br>${inc ? baseLc + " / " + offeredLbl : offeredLbl}</th>` +
-      allOffers.map(o => `<th>${o.isIncumbent ? baseLabel : esc(o.supplier) + "<br>" + esc(o.term)}</th>`).join("") +
+      allOffers.map(o => `<th>${o.isIncumbent ? baseLabel : esc(offerName(o)) + "<br>" + esc(o.term)}</th>`).join("") +
       (singleOffer && inc ? `<th>${isBenchmark ? "Indicative " : ""}Δ vs ${baseLc}</th>` : "") +
       `</tr></thead><tbody>` +
     TENDER.sites.map(site => {
@@ -608,7 +608,7 @@ function buildRateBooks() {
         ? `<div class="notice" style="margin:12px 20px">` +
           o.warnings.map(w => `<div><span class="chip warning">note</span>${esc(w)}</div>`).join("") + `</div>` : "";
       return `<details>
-        <summary><span class="caret">▶</span>${esc(o.supplier)}
+        <summary><span class="caret">▶</span>${esc(offerName(o))}
           <span class="chip ${o.isIncumbent ? "warning" : "neutral"}">${esc(o.isIncumbent ? baseChip : o.term)}</span>
           <span style="margin-left:auto" class="chip neutral">${gbp(o.total)}/yr</span></summary>
         ${warn}
@@ -688,6 +688,11 @@ function buildMarketPane() {
 function recOf(f) { return (f.offers || []).find(o => o.id === (f.recommendedId || f.bestId)) || (f.offers || [])[0]; }
 function siteSuppliers(offer) { return offer ? [...new Set(offer.sites.map(s => s.supplier || offer.supplier).filter(Boolean))] : []; }
 function supplierLabel(list) { const u = [...new Set(list)].filter(Boolean); return u.length === 0 ? "" : (u.length <= 3 ? u.join(" + ") : "Best of market mix"); }
+/* Offer display name from its rows' own suppliers, so a quote uploaded under one
+   builder supplier (e.g. "Multiple suppliers") still reads "Capture Energy" or "Yu Energy".
+   Display only: o.supplier stays the matching key for recommended/featured. The
+   incumbent keeps its assembled label ("Various" etc.). */
+function offerName(o) { return !o ? "" : (o.isIncumbent ? o.supplier : (supplierLabel(siteSuppliers(o)) || o.supplier)); }
 
 /* Shared arithmetic for the combined-tender Summary — ONE source of truth for the
    builder and the live recompute, so the two can never drift. Electricity is the
@@ -845,9 +850,9 @@ function summaryBars(on) {
     const chip = o.isIncumbent ? `<span class="chip warning">${baseChip}</span>`
       : o.id === recId ? `<span class="chip success">recommended</span>` : "";
     const ew = (r.elec / maxTotal * 100).toFixed(1), gw = (r.gas / maxTotal * 100).toFixed(1);
-    const tip = r.gas ? `${esc(o.supplier)} — electricity ${gbp(r.elec)} + gas ${gbp(r.gas)}` : "";
+    const tip = r.gas ? `${esc(offerName(o))} — electricity ${gbp(r.elec)} + gas ${gbp(r.gas)}` : "";
     return `<div class="bar-row" data-cat="${esc(o.category || 'other')}"${tip ? ` title="${tip}"` : ""}>
-      <div class="bar-name">${esc(o.supplier)}${o.isIncumbent && isBenchmark ? "" : `<span class="term">${esc(o.term)}</span>`}</div>
+      <div class="bar-name">${esc(offerName(o))}${o.isIncumbent && isBenchmark ? "" : `<span class="term">${esc(o.term)}</span>`}</div>
       <div class="bar-track">
         <div class="bar-fill" style="width:${ew}%;background:${fill};animation-delay:${i * 60}ms"></div>
         ${r.gas ? `<div class="bar-fill bar-gas" style="left:${ew}%;width:${gw}%;background:${fill};animation-delay:${i * 60 + 600}ms"></div>` : ""}
