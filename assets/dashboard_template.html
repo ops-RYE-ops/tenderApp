@@ -686,6 +686,15 @@ function buildMarketPane() {
    when the client ticks it in, and switches fuel within the Portfolio tab. The
    RYE charge is whole-tender (all meters) regardless of the tick. */
 function recOf(f) { return (f.offers || []).find(o => o.id === (f.recommendedId || f.bestId)) || (f.offers || [])[0]; }
+/* Gas twin for an electricity offer: the secondary-fuel offer quoted on the SAME term
+   label (one upload sheet = one package, e.g. "Rolling elec + 12m gas"), else the
+   recommended offer for that fuel. Tenders whose fuels share no term labels render
+   exactly as before (recommended gas on every bar). */
+function normTerm(t) { return String(t || "").trim().toLowerCase(); }
+function gasTwin(f, o) {
+  const t = o && !o.isIncumbent ? normTerm(o.term) : "";
+  return (t && (f.offers || []).find(x => normTerm(x.term) === t)) || recOf(f);
+}
 function siteSuppliers(offer) { return offer ? [...new Set(offer.sites.map(s => s.supplier || offer.supplier).filter(Boolean))] : []; }
 function supplierLabel(list) { const u = [...new Set(list)].filter(Boolean); return u.length === 0 ? "" : (u.length <= 3 ? u.join(" + ") : "Best of market mix"); }
 /* Offer display name from its rows' own suppliers, so a quote uploaded under one
@@ -699,10 +708,10 @@ function offerName(o) { return !o ? "" : (o.isIncumbent ? o.supplier : (supplier
    default basis; the include-gas tick switches to the combined one. */
 function summaryFigures() {
   const P = FUELS[primaryIndex];
+  const eRec = recOf(P), eInc = P.incumbent;
   const gas = FUELS.filter((_, i) => i !== primaryIndex)
     .filter(f => (f.offers || []).length)
-    .map(f => ({ f, rec: recOf(f), inc: f.incumbent }));
-  const eRec = recOf(P), eInc = P.incumbent;
+    .map(f => ({ f, rec: gasTwin(f, eRec), inc: f.incumbent }));
   const haveAll = !!eInc && gas.every(g => g.inc);
   const cInc = haveAll ? eInc.total + gas.reduce((a, g) => a + g.inc.total, 0) : null;
   const cRec = eRec.total + gas.reduce((a, g) => a + g.rec.total, 0);
@@ -822,19 +831,21 @@ function buildSummaryMulti() {
 /* ONE set of Summary bars. Electricity only by default; on the include-gas tick each
    bar GROWS by a gas segment, so its length is the client's total annual spend.
    The two fuels are tendered separately, so a non-recommended electricity offer has no
-   gas twin: every offer bar carries the RECOMMENDED gas offer (held constant across the
-   bars, which keeps the comparison like-for-like), while the incumbent carries its OWN
+   gas twin by default: every offer bar carries the RECOMMENDED gas offer (held constant
+   across the bars), unless a gas offer shares its term label, i.e. was quoted as one
+   package on the same sheet (gasTwin). Then that package's own gas is used, while the incumbent carries its OWN
    current gas — the baseline has to be what they actually pay. The footnote says so. */
 function summaryBars(on) {
   const P = FUELS[primaryIndex];
   const secs = FUELS.filter((_, i) => i !== primaryIndex).filter(f => (f.offers || []).length);
   const gasRec = secs.reduce((a, f) => a + ((recOf(f) || {}).total || 0), 0);
+  const gasFor = o => secs.reduce((a, f) => a + ((gasTwin(f, o) || {}).total || 0), 0);
   const gasIncKnown = secs.length > 0 && secs.every(f => f.incumbent);
   const gasInc = secs.reduce((a, f) => a + (f.incumbent ? f.incumbent.total : 0), 0);
   const recId = P.recommendedId || P.bestId;
   const split = on && secs.length > 0;
   const rows = (P.incumbent ? [P.incumbent] : []).concat(P.offers).map(o => {
-    const g = !split ? 0 : (o.isIncumbent ? (gasIncKnown ? gasInc : gasRec) : gasRec);
+    const g = !split ? 0 : (o.isIncumbent ? (gasIncKnown ? gasInc : gasRec) : gasFor(o));
     return { o, elec: o.total, gas: g, total: o.total + g };
   }).sort((a, b) => a.total - b.total);
   const maxTotal = Math.max(...rows.map(r => r.total)) || 1;
