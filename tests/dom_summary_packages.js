@@ -1,7 +1,8 @@
 // Behavioural half of tests/test_summary_packages.py: the combined Summary pairs each
 // electricity offer with the gas from its OWN package (same packageId), and falls
 // back to the recommended gas when it has none. Supplier A and Supplier B both quote
-// both fuels on "12 months"; D quotes electricity only; B is recommended.
+// both fuels on "12 months"; D quotes electricity only; C quotes all electricity
+// but only one gas meter (partial); B is recommended.
 // Run from the repo root: node tests/dom_summary_packages.js   (needs npm i jsdom)
 const fs = require('fs'), path = require('path');
 const FIX = path.join(__dirname, '_work', '_summary_packages.html');
@@ -28,6 +29,10 @@ ck('A bar = A elec + A gas (not B gas, despite the same term)',
    bar('Supplier A') === gbp(E('Supplier A').total + G('Supplier A').total), bar('Supplier A'));
 ck('D bar (no gas in its package) falls back to recommended gas (B)',
    bar('Supplier D') === gbp(E('Supplier D').total + G('Supplier B').total), bar('Supplier D'));
+ck('C bar (partial gas package) falls back to recommended gas (B), not its partial gas',
+   bar('Supplier C') === gbp(E('Supplier C').total + G('Supplier B').total), bar('Supplier C'));
+ck('C bar never uses the partial gas total',
+   bar('Supplier C') !== gbp(E('Supplier C').total + G('Supplier C').total));
 const want = E('Supplier B').total + G('Supplier B').total;
 ck('headline spend is B elec + B gas', sum.textContent.includes(gbp(want)), gbp(want));
 ck('headline is not A gas under B electricity',

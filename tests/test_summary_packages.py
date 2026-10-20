@@ -10,7 +10,8 @@ same packageId. A term label is not an identity: several suppliers routinely quo
 electricity and report a package nobody quoted (review of feat/summary-pair-by-term).
 
 Shape: Supplier A and Supplier B each quote BOTH fuels on "12 months" (two packages,
-same term); Supplier D quotes electricity only on "12 months"; recommended is B.
+same term); Supplier D quotes electricity only on "12 months"; Supplier C quotes all
+electricity but only one of two gas meters (partial gas); recommended is B.
 Payload checks here; the rendered fixture tests/_work/_summary_packages.html goes to
 tests/dom_summary_packages.js for the bars and headline (skipped without node/jsdom).
 
@@ -57,6 +58,10 @@ def _tender(quotes=None):
              "lines": _lines(MPANS, 23.00, 50.0, "electricity") + _lines(MPRNS, 9.00, 30.0, "gas")},
             {"supplier": "Supplier D", "term": "12 months",
              "lines": _lines(MPANS, 25.00, 50.0, "electricity")},
+            # C covers every electricity meter but only ONE of the two gas meters: its
+            # gas is a partial offer and must not be used as C's twin
+            {"supplier": "Supplier C", "term": "12 months",
+             "lines": _lines(MPANS, 23.50, 50.0, "electricity") + _lines(MPRNS[:1], 5.00, 30.0, "gas")},
         ],
     }
     incumbent = {"supplier": "Various", "term": "current",
@@ -80,6 +85,9 @@ def test_payload():
           e["Supplier A"]["packageId"] != e["Supplier B"]["packageId"])
     check("D (electricity only) has no gas in its package",
           all(x["packageId"] != e["Supplier D"]["packageId"] for x in g.values()))
+    check("C's partial gas is in the payload (kept, flagged) with C's packageId",
+          g["Supplier C"]["packageId"] == e["Supplier C"]["packageId"]
+          and len(g["Supplier C"]["sites"]) < len(fu["gas"]["sites"]))
     check("recommended is B in both fuels",
           fu["electricity"]["recommendedId"] == e["Supplier B"]["id"]
           and fu["gas"]["recommendedId"] == g["Supplier B"]["id"])

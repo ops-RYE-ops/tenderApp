@@ -689,12 +689,19 @@ function recOf(f) { return (f.offers || []).find(o => o.id === (f.recommendedId 
 /* Gas twin for an electricity offer: the secondary-fuel offer split from the SAME
    canonical quote (packageId = its index in tender.quotes, so one upload sheet carrying
    both fuels is one package). Exactly one match or nothing: a term label is NOT an
-   identity (several suppliers can quote "12 months"), so anything else falls back to
-   the recommended offer for that fuel, which is the pre-existing behaviour. */
+   identity (several suppliers can quote "12 months"), and the twin must cover the
+   fuel's WHOLE site universe (f.sites): a package that quotes only some gas meters
+   would understate the combined total. Anything else falls back to the recommended
+   offer for that fuel, which is the pre-existing behaviour. */
+function coversFuel(f, x) {
+  const need = (f.sites || []).map(s => s.mpxn);
+  const have = new Set(((x && x.sites) || []).map(s => s.mpxn));
+  return need.length > 0 && need.every(m => have.has(m));
+}
 function gasTwin(f, o) {
   if (o && !o.isIncumbent && o.packageId != null) {
     const hits = (f.offers || []).filter(x => x.packageId === o.packageId);
-    if (hits.length === 1) return hits[0];
+    if (hits.length === 1 && coversFuel(f, hits[0])) return hits[0];
   }
   return recOf(f);
 }
