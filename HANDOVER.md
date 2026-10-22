@@ -23,7 +23,7 @@ comparison dashboard, published as an unguessable per-client link. It productise
 - **Stack:** Vercel (FastAPI Python functions + static), Claude via Vercel AI Gateway (header mapping
   only), Retool DB (tender store + mapping cache), vanilla JS team UI (no build step).
 
-## 2. Start here: current state (16 Oct 2026)
+## 2. Start here: current state (22 Oct 2026)
 
 - **Complete and live.** Full flow map → extract → assemble → cost → render → publish, plus register,
   edit-from-register and staged publish, all verified end to end on production. Real client tenders
@@ -32,11 +32,13 @@ comparison dashboard, published as an unguessable per-client link. It productise
   `https://tender.rye.energy/d/<slug>/<uuid>` (verified on a real client tender 16 Oct). `_public_base()`
   in `main.py` reads `PUBLIC_BASE_URL` (Production only, plain config, not Sensitive), else the request
   host. Old `vercel.app` links keep working. Team builder: use `https://tender.rye.energy/app/`.
-- **Last market snapshot:** 16 Oct 2026 (9th edition, 15:25 ICE board), shipped in the same merge.
-  See section 7.
+- **Last market snapshot:** 22 Oct 2026 (10th edition, 16:17 ICE board). Straight to `main`. See section 7.
+- **Git state 22 Oct:** working tree was on `fix/amr-cron-no-route-skip`, 6 commits (20 Oct gas pairing /
+  package fuels) ahead of local `main`; GitHub `main` (ae384a2) is ahead of local `main`. Check whether
+  that branch is merged before relying on the "last code change" line above.
 - Merged branches still to delete: local `fix/rate-book-units`, `feat/custom-domain`; remote
   `feat/savings-timeline`, `fix/fee-net-sign`, `fix/rate-book-units`, `feat/custom-domain`.
-- **Tests:** 19 Python suites + 5 jsdom suites, all green (re-run 16 Oct; section 10).
+- **Tests:** 20 Python suites + 7 jsdom suites, all green (re-run 22 Oct; section 10).
 
 ## 3. Rules (do not break, do not relitigate without reason)
 
@@ -185,7 +187,7 @@ straight to `main`. Updates every live dashboard on deploy.
 - `power.series` holds **39 points against 13 labels**. Replace the latest bucket's print rather than
   append when the count would break; rebuild the window when the year rolls.
 - Re-tune `power.series[0]` (a float) every refresh so the "trend vs start" KPI reconciles with TE's
-  1Y %. 16 Oct value: `82.99` for +102.74%.
+  1Y %. 22 Oct value: `81.44` for +109.01%.
 - `rangeLong` is a **3-year** window on purpose (5 years lets 2022 dwarf today). `max` must be a
   verbatim print (173.79 at 13 Oct).
 - `gas.series` appends. Gas cards: at most nine (3×3).
@@ -206,18 +208,21 @@ straight to `main`. Updates every live dashboard on deploy.
   delivery seasons, through a ~50% CCGT. Say when a before/after leg is not same-board.
 
 **Carry-forward checks for the next edition**
-- Winter 27 (156.25) and Summer 28 (97.50) printed again on the 16 Oct 15:25 board, so the 24m blend
-  is same-board from this edition. Ask Rory for the full scrolled board every time.
-- Term discount is measured Q1 27 vs Summer 27 (24.7% on 16 Oct, 26.5% on 12 Oct). Q1 27 vs Winter 27
-  (28.5% on 16 Oct) can resume as the measure from the next edition.
-- Q1 28 (154.60) printed below Q4 27 (157.50): do not treat Q4 as a floor for Winter 27.
-- Summer 29 printed again 16 Oct (76.45, from 68.50 on 22 Sep), with Winter 28 101.75 and Winter 29
-  84.75. Usable for 36m blends if a client asks; recorded in `_note`, not carded.
+- Ask Rory for the full scrolled board every time. 22 Oct screenshots skipped the rows between Summer 28 and
+  Winter 28, so Q4 27, Q1 28 and Summer 29 were dropped.
+- Term discount measure is now Q1 27 vs Winter 27 (26.8% on 22 Oct, 28.5% on 16 Oct). Q1 27 vs Summer 27
+  kept in `_note` (23.2%).
+- Q1 27 printed 223.50 with a 0.000% day change, 1.10 above the Jan-Mar singles average. Re-check next board.
+- 24m blend same-board for two editions (W27 163.60, S28 101.50). Winter 28 107.13 and Winter 29 87.00 in
+  `_note` for 36m blends if a client asks.
+- "Waiting has cost money in all four updates since late September": bump or drop the count next edition.
 
-**16 Oct edition at a glance (15:25 board):** power spot 168.25 £/MWh (+103% 1Y; 3-year high 173.79 on
-13 Oct). NBP Nov 26 217.90 (above Sep peak), Q1 27 218.60, Summer 27 164.50, Winter 27 156.25, Summer 28
-97.50. Back-led, whole-strip rise; signal FIX. 12m from 01/11/26 194.09 (+0.86 p/kWh vs 12 Oct); 24m 161.95
-(~+0.8 p/kWh), 16.6% below 12m.
+**22 Oct edition at a glance (16:17 board):** power spot 170.22 £/MWh (+109% 1Y; 3-year high still 173.79
+on 13 Oct). NBP Nov 26 223.85 (new run high, 7.8% above Sep peak), Q1 27 223.50, Summer 27 171.58,
+Winter 27 163.60, Summer 28 101.50. Back-led again (winter +1.9-2.8%, 2027-28 +4.1-4.7%); signal FIX.
+12m from 01/11/26 200.08 (+0.41 p/kWh vs 16 Oct); 24m 167.87 (+0.40 p/kWh), 16.1% below 12m. N2EX
+17-23 Oct 86.94-192.98, no negatives. Drivers (Rory-supplied Montel, 21 Oct): record-low EU storage,
+Hormuz closure, TTF highest since Dec 2022, mild winter forecast with cold-January upside risk.
 
 ## 8. Deployment and ops
 
@@ -307,6 +312,10 @@ client sees a new tender.
 14. Decide whether internal "excluded" cost warnings should show client-side.
 15. Longer term "Path B": run the whole tender flow inside Retool. Path A (webhook) is live.
 16. Optional: per-person SSO via a two-project split.
+17. Shorter client links (Rory 16 Oct: wanted, not urgent): `tender.rye.energy/<slug>/<12-char token>`
+    instead of `/d/<slug>/<uuid>`. Token lowercase base32 (no 0/o/1/l), never shorter than 12. Needs a new
+    `url_token text` column (url_uuid is typed uuid), lookup by token OR uuid so old links live on,
+    regenerate rotates both, reserve slugs `app`/`api`. Never drop the random part: `/d/*` has no auth.
 
 **Known limitations, accepted**
 - Benchmark baselines are not dated or attributed on the client page (removed as clutter).
