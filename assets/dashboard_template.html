@@ -310,11 +310,13 @@ const contractBasis = o => {
   const rolling = ends.filter(e => /rolling/i.test(e)).length;
   return rolling === ends.length ? "rolling" : rolling ? "fixed and rolling" : "fixed";
 };
-// "<term> <basis>", dropping the basis if the term already says it.
+// "<term> <basis>", dropping the basis if the term already says it. A
+// coterminous / dated term already means fixed, so "fixed" is not added to it.
 const termBasis = o => {
   const term = String((o && o.term) || "").trim(), basis = contractBasis(o);
-  return basis && !new RegExp("\\b" + basis.split(" ")[0] + "\\b", "i").test(term)
-    ? [term, basis].filter(Boolean).join(" ") : term;
+  const said = new RegExp("\\b" + basis.split(" ")[0] + "\\b", "i").test(term) ||
+    (basis === "fixed" && /co-?term|aligned|\d{4}-\d{2}-\d{2}/i.test(term));
+  return basis && !said ? [term, basis].filter(Boolean).join(" ") : term;
 };
 const dotTerm = o => (o && o.term) ? ` · ${esc(o.term)}` : "";
 
@@ -829,13 +831,13 @@ function buildSummaryMulti() {
   }
 
   return `<section>
-    <div class="section-label">Our recommendation — <span class="gswap" data-e="${esc(eSup)}" data-c="${esc(cSup)}">${esc(eSup)}</span> · ${esc(eRec.term)}</div>
+    <div class="section-label">Our recommendation — <span class="gswap" data-e="${esc(eSup)}" data-c="${esc(cSup)}">${esc(eSup)}</span>${dotTerm(eRec)}</div>
     ${gas.length ? `<label class="gas-toggle" style="display:inline-flex;align-items:center;gap:8px;margin:2px 0 14px;cursor:pointer;font-size:13px;color:var(--t2)"><input type="checkbox" id="inc-gas"> Include gas in these figures</label>` : ""}
     <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:14px" class="rec-grid">
       <div class="card accent-green">
         <span class="chip success">recommended</span>
         <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-top:12px"><span class="gswap" data-e="${esc(eSup)}" data-c="${esc(cSup)}">${esc(eSup)}</span></div>
-        <div class="kpi-sub">${esc(eRec.term)} · electricity anchor${gas.length ? ` · gas via ${gas.map(g => esc(supplierLabel(siteSuppliers(g.rec)))).join(", ")}` : ""}</div>
+        <div class="kpi-sub">${termBasis(eRec) ? esc(termBasis(eRec)) + " · " : ""}electricity anchor${gas.length ? ` · gas via ${gas.map(g => esc(supplierLabel(siteSuppliers(g.rec)))).join(", ")}` : ""}</div>
         <div class="kpi-label" style="margin-top:18px" id="m-gross-label">${lead} annual ${saveWord(eGross)}</div>
         <div class="kpi-value ${saveTone(eGross)}" id="m-gross" style="font-size:40px;margin-top:8px">${gbp(Math.abs(eGross))}</div>
         <div class="kpi-sub"><span id="m-pct">${ePct}</span>% vs ${baseLc}</div>
