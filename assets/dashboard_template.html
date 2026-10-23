@@ -301,6 +301,23 @@ const fmtDate = iso => {
   return m ? `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}` : esc(iso);
 };
 
+// Contract basis read from the offer's own supply end dates: a dated end is
+// "fixed", an end of "Rolling" is "rolling". No end date anywhere = say nothing
+// rather than guess. Mixed offers say so.
+const contractBasis = o => {
+  const ends = ((o && o.sites) || []).map(s => String(s.endDate || "").trim()).filter(Boolean);
+  if (!ends.length) return /rolling/i.test((o && o.term) || "") ? "rolling" : "";
+  const rolling = ends.filter(e => /rolling/i.test(e)).length;
+  return rolling === ends.length ? "rolling" : rolling ? "fixed and rolling" : "fixed";
+};
+// "<term> <basis>", dropping the basis if the term already says it.
+const termBasis = o => {
+  const term = String((o && o.term) || "").trim(), basis = contractBasis(o);
+  return basis && !new RegExp("\\b" + basis.split(" ")[0] + "\\b", "i").test(term)
+    ? [term, basis].filter(Boolean).join(" ") : term;
+};
+const dotTerm = o => (o && o.term) ? ` · ${esc(o.term)}` : "";
+
 function setState(view) {
   TENDER = view;
   allOffers = (TENDER.incumbent ? [TENDER.incumbent] : []).concat(TENDER.offers);
@@ -373,12 +390,12 @@ function buildRecVsInc() {
   const cOther = commission ? (commission.included ? commission.rateExclCommission : commission.rateInclCommission) : null;
   const cOtherLabel = commission && commission.included ? "excl." : "incl.";
   return `<section>
-    <div class="section-label">Our recommendation — ${esc(offerName(rec))} · ${esc(rec.term)}</div>
+    <div class="section-label">Our recommendation — ${esc(offerName(rec))}${dotTerm(rec)}</div>
     <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:14px" class="rec-grid">
       <div class="card accent-green">
         <span class="chip success">recommended</span>
         <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-top:12px">${esc(offerName(rec))}</div>
-        <div class="kpi-sub">${esc(rec.term)} fixed · covers all ${TENDER.sites.length} supply point${TENDER.sites.length === 1 ? "" : "s"}</div>
+        <div class="kpi-sub">${termBasis(rec) ? esc(termBasis(rec)) + " · " : ""}covers all ${TENDER.sites.length} supply point${TENDER.sites.length === 1 ? "" : "s"}</div>
         <div class="kpi-label" style="margin-top:18px">${isBenchmark ? "Indicative" : "Forecasted"} annual ${savings >= 0 ? "saving" : "increase"}</div>
         <div class="kpi-value ${savings >= 0 ? "pos" : "warn"}" style="font-size:40px;margin-top:8px">${gbp(Math.abs(savings))}</div>
         <div class="kpi-sub">${(Math.abs(savings) / inc.total * 100).toFixed(1)}% vs ${esc(inc.supplier)}</div>
@@ -403,7 +420,7 @@ function buildRecVsInc() {
       <div class="table-wrap"><table>
         <thead><tr><th>Standardised comparison</th>
           <th>${baseLabel}</th>
-          <th>${esc(offerName(rec))} · ${esc(rec.term)}</th></tr></thead>
+          <th>${esc(offerName(rec))}${dotTerm(rec)}</th></tr></thead>
         <tbody>
           <tr><td class="name">Mean unit rate (p/kWh)</td>${pk(inc.perKwh.unit)}${pk(rec.perKwh.unit, rec.perKwh.unit <= inc.perKwh.unit ? "best" : "")}</tr>
           <tr><td class="name">Mean non-commodity costs (p/kWh)</td>${pk(inc.perKwh.nonCommodity)}${pk(rec.perKwh.nonCommodity, rec.perKwh.nonCommodity <= inc.perKwh.nonCommodity ? "best" : "")}</tr>
