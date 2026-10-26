@@ -23,22 +23,26 @@ comparison dashboard, published as an unguessable per-client link. It productise
 - **Stack:** Vercel (FastAPI Python functions + static), Claude via Vercel AI Gateway (header mapping
   only), Retool DB (tender store + mapping cache), vanilla JS team UI (no build step).
 
-## 2. Start here: current state (22 Oct 2026)
+## 2. Start here: current state (23 Oct 2026)
 
 - **Complete and live.** Full flow map → extract → assemble → cost → render → publish, plus register,
   edit-from-register and staged publish, all verified end to end on production. Real client tenders
   are being published (e.g. Public House Group, X + Why).
-- **Last code change:** `feat/custom-domain`, merged 16 Oct. Client links now publish as
-  `https://tender.rye.energy/d/<slug>/<uuid>` (verified on a real client tender 16 Oct). `_public_base()`
-  in `main.py` reads `PUBLIC_BASE_URL` (Production only, plain config, not Sensitive), else the request
-  host. Old `vercel.app` links keep working. Team builder: use `https://tender.rye.energy/app/`.
-- **Last market snapshot:** 22 Oct 2026 (10th edition, 16:17 ICE board). Straight to `main`. See section 7.
-- **Git state 22 Oct:** working tree was on `fix/amr-cron-no-route-skip`, 6 commits (20 Oct gas pairing /
-  package fuels) ahead of local `main`; GitHub `main` (ae384a2) is ahead of local `main`. Check whether
-  that branch is merged before relying on the "last code change" line above.
-- Merged branches still to delete: local `fix/rate-book-units`, `feat/custom-domain`; remote
+- **Last code change:** `fix/contract-basis-label` (PR #39, merged 23 Oct). Recommendation card
+  label comes from the offer's supply end dates: dated = fixed, "Rolling" = rolling, mixed = "fixed
+  and rolling", none = nothing; coterminous/dated terms never get "fixed" appended; no dangling " · "
+  when the term is blank. Both `buildRecVsInc` and `buildSummaryMulti`. Guarded by
+  `tests/dom_contract_basis.js` (needs the `test_summary_multi.py` fixture, so Python suites first).
+  Found on Bondi Bowls (Capture rolling).
+- **Custom domain (16 Oct):** client links publish as `https://tender.rye.energy/d/<slug>/<uuid>`.
+  `_public_base()` in `main.py` reads `PUBLIC_BASE_URL` (Production only, plain config), else the
+  request host. Old `vercel.app` links keep working. Team builder: `https://tender.rye.energy/app/`.
+- **Last market snapshot:** 26 Oct 2026 (11th edition, 12:45 ICE board). Straight to `main`. See section 7.
+- **Git state 23 Oct:** `origin/main` = 4d1bb7b (PR #39 merge). Nothing in flight.
+- Merged branches still to delete: local `fix/rate-book-units`, `feat/custom-domain`,
+  `fix/contract-basis-label`; remote `fix/contract-basis-label`,
   `feat/savings-timeline`, `fix/fee-net-sign`, `fix/rate-book-units`, `feat/custom-domain`.
-- **Tests:** 20 Python suites + 7 jsdom suites, all green (re-run 22 Oct; section 10).
+- **Tests:** 20 Python suites + 8 jsdom suites, all green (re-run 23 Oct; section 10).
 
 ## 3. Rules (do not break, do not relitigate without reason)
 
@@ -187,9 +191,9 @@ straight to `main`. Updates every live dashboard on deploy.
 - `power.series` holds **39 points against 13 labels**. Replace the latest bucket's print rather than
   append when the count would break; rebuild the window when the year rolls.
 - Re-tune `power.series[0]` (a float) every refresh so the "trend vs start" KPI reconciles with TE's
-  1Y %. 22 Oct value: `81.44` for +109.01%.
+  1Y % (use the chart header, not the Yearly tile; they differ). 26 Oct value: `76.96` for +134.52%.
 - `rangeLong` is a **3-year** window on purpose (5 years lets 2022 dwarf today). `max` must be a
-  verbatim print (173.79 at 13 Oct).
+  verbatim print (180.49 at 26 Oct).
 - `gas.series` appends. Gas cards: at most nine (3×3).
 - Commentary renders via `textContent`: `\n\n` does nothing. Write one tight block, ~230-260 words.
 
@@ -208,21 +212,23 @@ straight to `main`. Updates every live dashboard on deploy.
   delivery seasons, through a ~50% CCGT. Say when a before/after leg is not same-board.
 
 **Carry-forward checks for the next edition**
-- Ask Rory for the full scrolled board every time. 22 Oct screenshots skipped the rows between Summer 28 and
-  Winter 28, so Q4 27, Q1 28 and Summer 29 were dropped.
-- Term discount measure is now Q1 27 vs Winter 27 (26.8% on 22 Oct, 28.5% on 16 Oct). Q1 27 vs Summer 27
-  kept in `_note` (23.2%).
-- Q1 27 printed 223.50 with a 0.000% day change, 1.10 above the Jan-Mar singles average. Re-check next board.
-- 24m blend same-board for two editions (W27 163.60, S28 101.50). Winter 28 107.13 and Winter 29 87.00 in
-  `_note` for 36m blends if a client asks.
-- "Waiting has cost money in all four updates since late September": bump or drop the count next edition.
+- Ask Rory for the full scrolled board every time. 26 Oct board had no Summer 27, Q2 27, Q3 27, May-Sep 27
+  or Winter 29 rows, so Summer 27 was dropped and Winter 28 carded instead. Check whether S27 is back.
+- Term discount measure: Q1 27 vs Winter 27 (28.0% on 26 Oct, 26.8% on 22 Oct, 28.5% on 16 Oct).
+- Q1 27 printed with 0.000% day change for a second edition (233.50, exactly +10.00 on 223.50), 1.49 above
+  the Jan-Mar singles average. Still not leaned on.
+- Blends need Summer 27. 26 Oct copy used the winter leg only (12m +0.37 p/kWh, "on the winter months
+  alone"); no full 12m/24m figure or 24m-vs-12m gap was stated. Restore same-board blends when S27 prints.
+- Winter 27 / Summer 28 / Winter 28 were thin prints (vol 5-25, 0.000% day). Treat moves on them cautiously.
+- "Waiting has cost money in all five updates since late September": bump or drop the count next edition.
 
-**22 Oct edition at a glance (16:17 board):** power spot 170.22 £/MWh (+109% 1Y; 3-year high still 173.79
-on 13 Oct). NBP Nov 26 223.85 (new run high, 7.8% above Sep peak), Q1 27 223.50, Summer 27 171.58,
-Winter 27 163.60, Summer 28 101.50. Back-led again (winter +1.9-2.8%, 2027-28 +4.1-4.7%); signal FIX.
-12m from 01/11/26 200.08 (+0.41 p/kWh vs 16 Oct); 24m 167.87 (+0.40 p/kWh), 16.1% below 12m. N2EX
-17-23 Oct 86.94-192.98, no negatives. Drivers (Rory-supplied Montel, 21 Oct): record-low EU storage,
-Hormuz closure, TTF highest since Dec 2022, mild winter forecast with cold-January upside risk.
+**26 Oct edition at a glance (12:45 board):** power spot 180.49 £/MWh (+134.5% 1Y), new 3-year high
+(was 173.79 on 13 Oct). NBP Nov 26 233.99 (new run high, 12.6% above Sep peak), Q1 27 233.50, Winter 27
+168.20, Summer 28 106.00, Winter 28 110.00. Front-led this time (winter singles +4.2-4.6%, Winter 27
++2.8%), so the term discount widened; signal FIX. N2EX 21-27 Oct 4.86-150.47, weekend 24-25 Oct averaged
+24-35 £/MWh, no negatives. Drivers (Rory-supplied Montel, 23 Oct): NESO Winter Outlook margin 5.9 GW /
+9.5% ("credible"), weather the main risk, mild wet windy Q4 but colder February risk; storage and Hormuz
+carried from 21 Oct as last week's reporting.
 
 ## 8. Deployment and ops
 
