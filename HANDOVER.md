@@ -37,7 +37,7 @@ comparison dashboard, published as an unguessable per-client link. It productise
 - **Custom domain (16 Oct):** client links publish as `https://tender.rye.energy/d/<slug>/<uuid>`.
   `_public_base()` in `main.py` reads `PUBLIC_BASE_URL` (Production only, plain config), else the
   request host. Old `vercel.app` links keep working. Team builder: `https://tender.rye.energy/app/`.
-- **Last market snapshot:** 26 Oct 2026 (11th edition, 12:45 ICE board). Straight to `main`. See section 7.
+- **Last market snapshot:** 29 Oct 2026 (12th edition, 13:03-13:11 ICE board, plus Autumn Budget lines). Straight to `main`. See section 7.
 - **Git state 23 Oct:** `origin/main` = 4d1bb7b (PR #39 merge). Nothing in flight.
 - Merged branches still to delete: local `fix/rate-book-units`, `feat/custom-domain`,
   `fix/contract-basis-label`; remote `fix/contract-basis-label`,
@@ -212,23 +212,27 @@ straight to `main`. Updates every live dashboard on deploy.
   delivery seasons, through a ~50% CCGT. Say when a before/after leg is not same-board.
 
 **Carry-forward checks for the next edition**
-- Ask Rory for the full scrolled board every time. 26 Oct board had no Summer 27, Q2 27, Q3 27, May-Sep 27
-  or Winter 29 rows, so Summer 27 was dropped and Winter 28 carded instead. Check whether S27 is back.
-- Term discount measure: Q1 27 vs Winter 27 (28.0% on 26 Oct, 26.8% on 22 Oct, 28.5% on 16 Oct).
-- Q1 27 printed with 0.000% day change for a second edition (233.50, exactly +10.00 on 223.50), 1.49 above
-  the Jan-Mar singles average. Still not leaned on.
-- Blends need Summer 27. 26 Oct copy used the winter leg only (12m +0.37 p/kWh, "on the winter months
-  alone"); no full 12m/24m figure or 24m-vs-12m gap was stated. Restore same-board blends when S27 prints.
-- Winter 27 / Summer 28 / Winter 28 were thin prints (vol 5-25, 0.000% day). Treat moves on them cautiously.
-- "Waiting has cost money in all five updates since late September": bump or drop the count next edition.
+- Ask Rory for the full scrolled board every time. 29 Oct board: Summer 27 BACK (176.11, vol 70, thin),
+  Winter 28 GONE (dropped), Summer 29 first appearance (81.50, vol 5, not carded). Check all three hold.
+- **Nov 26 is expiring.** Next edition the front month is likely Dec 26: re-base the "front month" line,
+  "above September's peak" comparison and the blend start date (from 01/12/26) and say so in `_note`.
+- Term discount measure: Q1 27 vs Winter 27 (29.05% on 29 Oct, 28.0% 26 Oct, 26.8% 22 Oct).
+- Q1 27 printed 0.000% day for a THIRD edition (236.78, 0.46 above Jan-Mar singles avg). Still not leaned on.
+- Season rows (S27, W27, S28) all showed 0.000% day while singles fell ~3.8%: thin prints, treat moves cautiously.
+- Blends were same-board complete on 29 Oct (24m 16.5% / ~2.4 p/kWh below 12m). The change vs 26 Oct was
+  winter leg only (+0.17 p/kWh). Next edition can do a full same-board before/after if S27 prints again.
+- "Waiting has cost money in all six updates since late September": bump or drop the count next edition.
+- gas.series got TWO points on 29 Oct (248.73 Wed tooltip, 239.35 today). Back to one per edition.
+- Budget lines (policy-cost freeze, CCL electricity freeze from Apr 2028, CPS end Apr 2028 "already expected")
+  are one-edition context. Drop them next time unless the Cost Control Framework detail lands.
 
-**26 Oct edition at a glance (12:45 board):** power spot 180.49 £/MWh (+134.5% 1Y), new 3-year high
-(was 173.79 on 13 Oct). NBP Nov 26 233.99 (new run high, 12.6% above Sep peak), Q1 27 233.50, Winter 27
-168.20, Summer 28 106.00, Winter 28 110.00. Front-led this time (winter singles +4.2-4.6%, Winter 27
-+2.8%), so the term discount widened; signal FIX. N2EX 21-27 Oct 4.86-150.47, weekend 24-25 Oct averaged
-24-35 £/MWh, no negatives. Drivers (Rory-supplied Montel, 23 Oct): NESO Winter Outlook margin 5.9 GW /
-9.5% ("credible"), weather the main risk, mild wet windy Q4 but colder February risk; storage and Hormuz
-carried from 21 Oct as last week's reporting.
+**29 Oct edition at a glance (13:03-13:11 board):** power spot 198.54 £/MWh (+146.7% 1Y, +10.0% vs 26 Oct),
+highest since the 2022-23 winter (5Y weekly 203.07 on 26 Dec 2022). NBP Nov 26 hit 248.73 on Wed 28 Oct (new
+run high) then 239.35 today (-3.8% day, +2.3% vs 26 Oct). Winter singles +1.6-2.3% since Monday, Winter 27 flat
+168.00, so term discount widened; signal FIX. N2EX 24-30 Oct 4.86-167.85; 30 Oct flat 152-168, avg 158.02.
+Budget source: one Inspired PLC article Rory supplied. CPS removal was first announced April 2026 (not new).
+Not used client-side but worth an ops note: **EV charging at public/workplace chargers carries 20% VAT and
+CCL from 1 Nov 2026**; BICS relief extends to RO/FiT (Apr 2027) and CM (Oct 2027) for eligible firms.
 
 ## 8. Deployment and ops
 
@@ -335,3 +339,5 @@ client sees a new tender.
 - `git branch -d` does not delete on GitHub: `git push origin --delete <branch>`.
 - FastAPI uploads need `python-multipart` (in requirements.txt).
 - Vercel "Environments" are Pro-only; "Environment Variables" are on all plans.
+- Bridge VM: `/tmp` is not writable, and a stale `/tmp/upd.py` from an earlier session ran silently on 29 Oct
+  (heredoc failed, old script executed). Write scripts to `$HOME/work/` and assert the expected `updated` date first.
